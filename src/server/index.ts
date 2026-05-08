@@ -8,7 +8,6 @@
  *   /get?path=<p>                              → object bytes (Range honored)
  */
 import type { Store } from '../types'
-import { NotFoundError } from '../types'
 
 export interface Handlers {
   /** Try to handle `request`. Returns `null` if the URL doesn't match a
@@ -83,7 +82,10 @@ function jsonResponse(body: unknown, status: number, extra: Record<string, strin
 }
 
 function errorResponse(e: unknown, extra: Record<string, string>): Response {
-  if (e instanceof NotFoundError) {
+  // Use `name === 'NotFoundError'` rather than `instanceof`: subpath exports
+  // each carry their own copy of `../types`, so the `NotFoundError` thrown
+  // from a store impl isn't `instanceof` this module's `NotFoundError`.
+  if (e instanceof Error && e.name === 'NotFoundError') {
     return jsonResponse({ error: e.message }, 404, extra)
   }
   const msg = e instanceof Error ? e.message : String(e)

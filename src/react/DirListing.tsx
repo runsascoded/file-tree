@@ -30,14 +30,32 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
   useEffect(() => {
     let cancelled = false
     setEntries(null); setError(null); setCursor(undefined)
-    store.list(prefix).then(r => {
-      if (cancelled) return
-      setEntries(r.entries)
-      setCursor(r.cursor)
-    }).catch(e => {
-      if (cancelled) return
-      setError(String(e))
-    })
+    // Auto-follow cursors up to a safe cap. R2 (and S3-likes) page their
+    // delimiter-grouped listing internally — a "dir" with 1440 child
+    // objects still requires multiple LIST calls to exhaust. Most users
+    // expect "all entries" when they navigate to a dir, so we follow
+    // automatically. Stop at MAX_PAGES so a runaway prefix can't wedge
+    // the UI; remaining cursor is exposed via the "load more" button.
+    const MAX_PAGES = 20
+    ;(async () => {
+      try {
+        const collected: Entry[] = []
+        let cur: string | undefined = undefined
+        for (let i = 0; i < MAX_PAGES; i++) {
+          const r: { entries: Entry[]; cursor?: string } = await store.list(prefix, cur ? { cursor: cur } : undefined)
+          if (cancelled) return
+          collected.push(...r.entries)
+          if (!r.cursor) { cur = undefined; break }
+          cur = r.cursor
+        }
+        if (cancelled) return
+        setEntries(collected)
+        setCursor(cur)
+      } catch (e) {
+        if (cancelled) return
+        setError(String(e))
+      }
+    })()
     return () => { cancelled = true }
   }, [store, prefix])
 
