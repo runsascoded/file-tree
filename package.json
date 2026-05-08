@@ -32,6 +32,16 @@
       "import": "./dist/stores/http.js",
       "require": "./dist/stores/http.cjs"
     },
+    "./stores/mock": {
+      "types": "./dist/stores/mock.d.ts",
+      "import": "./dist/stores/mock.js",
+      "require": "./dist/stores/mock.cjs"
+    },
+    "./test/conformance": {
+      "types": "./dist/test/conformance.d.ts",
+      "import": "./dist/test/conformance.js",
+      "require": "./dist/test/conformance.cjs"
+    },
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js",
