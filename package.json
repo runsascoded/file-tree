@@ -1,0 +1,84 @@
+{
+  "name": "@rdub/file-tree",
+  "version": "0.0.1",
+  "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.cjs"
+    },
+    "./stores": {
+      "types": "./dist/stores/index.d.ts",
+      "import": "./dist/stores/index.js",
+      "require": "./dist/stores/index.cjs"
+    },
+    "./stores/r2": {
+      "types": "./dist/stores/r2.d.ts",
+      "import": "./dist/stores/r2.js",
+      "require": "./dist/stores/r2.cjs"
+    },
+    "./stores/http": {
+      "types": "./dist/stores/http.d.ts",
+      "import": "./dist/stores/http.js",
+      "require": "./dist/stores/http.cjs"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "require": "./dist/server/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "file-browser",
+    "tree-browser",
+    "directory-listing",
+    "r2",
+    "s3",
+    "cloudflare-workers",
+    "react",
+    "typescript"
+  ],
+  "author": "Ryan Williams",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/runsascoded/file-tree"
+  },
+  "peerDependencies": {
+    "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
+    "react-router-dom": "^6 || ^7"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-dom": { "optional": true },
+    "react-router-dom": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0",
+    "vitest": "^2.1.8"
+  }
+}
