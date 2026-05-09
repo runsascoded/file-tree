@@ -1,8 +1,8 @@
 # `@rdub/file-tree`
 
-Storage-agnostic file/directory tree browser. Plug a `Store` (R2, HTTP-proxied, …) into a React component and get a directory listing + file viewer.
+Storage-agnostic file/directory tree browser. Plug a `Store` (R2, HTTP-proxied, in-memory, …) into a React component and get a directory listing + file viewer.
 
-> **v0.0.1**: minimum viable scaffold. R2 + HTTP stores, dir listing, text viewer. Zip / Parquet / PDF, S3 / GitHub / GitLab / disk-tree stores, static-bucket variants — coming.
+> **v0.0.1**: minimum viable scaffold. R2 + HTTP + Mock stores, dir listing (auto-paginated), text viewer with Range head-fetch, conformance harness for new Stores, demo site at `site/`. See [`specs/handoff.md`](specs/handoff.md) for full status + roadmap.
 
 ## Install
 
@@ -61,7 +61,9 @@ const store = HttpStore('https://api.example.com/v1/files')
 | `@rdub/file-tree/react` | `<FileTree>`, `<DirListing>`, `<TextViewer>`, `<Breadcrumb>`, `parsePath` |
 | `@rdub/file-tree/stores/r2` | `R2Store(bucket, { prefixes? })` — CFW R2 binding |
 | `@rdub/file-tree/stores/http` | `HttpStore(apiBase, { headers? })` — client → server proxy |
+| `@rdub/file-tree/stores/mock` | `MockStore(input)` — in-memory; powers the demo + tests |
 | `@rdub/file-tree/server` | `createHandlers(store, { basePath?, corsOrigin? })` — HTTP endpoints |
+| `@rdub/file-tree/test/conformance` | `runStoreConformance(makeStore)` — vitest battery any Store impl can opt into |
 
 ## Roadmap
 
