@@ -20,16 +20,18 @@ f40f527  @rdub/file-tree v0.0.1: initial scaffold
 | Area | State |
 |------|-------|
 | Core `Store` interface (`src/types.ts`) | Done. `list`, `get`, optional `range` capability, `NotFoundError` |
-| `R2Store` (CFW R2Bucket binding) | Done, validated against ctbk's prod bucket via `wrangler dev --remote` |
-| `HttpStore` (browser → server proxy) | Done, validated against both Crashes' and ctbk's workers |
-| `MockStore` (in-memory) | Done. Powers tests + `site/` demo |
-| Server handlers (`src/server/`) | Done. `createHandlers(store, { basePath?, corsOrigin? })` exposes `/list` + `/get` |
+| `R2Store` (CFW R2Bucket binding) | Done, validated against ctbk's prod bucket. Scoped-`prefixes` empty-prefix list now synthesizes a virtual root (each allowed prefix as a dir) instead of erroring. |
+| `HttpStore` (browser → server proxy) | Done, validated against both Crashes' and ctbk's workers + `site/worker/`. |
+| `MockStore` (in-memory) | Done. Powers tests + `site/` demo. |
+| `MultiStore` (composite of N child stores) | Done. First path segment routes to a child; root list synthesizes a dir per child. Used by `site/worker/` to expose ctbk + crashes side-by-side. |
+| Server handlers (`src/server/`) | Done. `createHandlers(store, { basePath?, corsOrigin? })` exposes `/list` + `/get`. CORS preflight handled by `site/worker/`. |
 | React UI (`src/react/`) | `<FileTree>`, `<DirListing>` (auto-cursor-follow), `<TextViewer>` (Range head-fetch + load-all), `<Breadcrumb>`, `parsePath`, `makeMatcher` (substring/glob filter) |
 | Conformance harness (`src/test/conformance.ts`) | Done. 9 tests; pluggable into any new Store impl. |
-| Vitest tests (`test/mock-store.test.ts`) | Done. 9/9 passing. |
-| Demo site (`site/`) | Vite app on port 8731. Home + MockDemo done. HttpDemo route exists but the worker behind it is TBD. |
-| Playwright e2e against `site/` | **TODO** (Task #49) — small specs over the MockDemo route should be the very next thing |
-| `site/worker/` (CFW for HttpDemo) | **TODO** — needs a small dedicated R2 bucket with demo data, then the worker code follows the same `R2Store` + `createHandlers` pattern as ctbk/crashes |
+| Vitest tests | 35 passing across `test/{mock,multi,r2}-store.test.ts`. MultiStore goes through full conformance via a single-child view. |
+| Demo site (`site/`) | Vite app on port 8731. Home + MockDemo + HttpDemo all wired up. |
+| `site/worker/` (CFW for HttpDemo) | Done. `wrangler dev` (per-binding `remote = true`) on port 8732. `MultiStore({ demo, ctbk, crashes })` over R2 bindings; same prefix scopes as the consumer apps. |
+| `file-tree-demo` R2 bucket | Done. Worker-only access. Populated with 44-file synthetic Hive-partitioned fixture via `site/worker/scripts/populate-demo-bucket.mjs`. Frozen / re-runnable. |
+| Playwright e2e | Done (chromium-only). 14 tests across `e2e/{mock,http}-demo.spec.ts`. `pnpm e2e` boots both site dev + worker via `webServer[]`. |
 | Static-bucket Stores | **TODO** v2 — public-bucket browsing without a server, listing manifest pre-built |
 | `S3Store`, `GitHubStore`, `GitLabStore`, `DiskTreeStore` | **TODO** — design intent in README roadmap table |
 | Zip-entry preview | **TODO** — original Crashes raw browser had this; not lifted yet |
@@ -77,8 +79,40 @@ contract — pass it and the React UI works automatically.
 
 ### `link:..` for `site/`, no pnpm-workspace
 Matches use-kbd's pattern. Avoids needing a workspace file at the repo root.
-If we add more workspace children later, may revisit — but for one demo
-site, link is simpler.
+`site/worker/` also `link:../..`. If we add more workspace children
+later, may revisit — but for two children, link is still simpler.
+
+### `R2Store` synthesizes a virtual root from scoped `prefixes`
+When `R2Store(bucket, { prefixes: ['gbfs/', 'avail/'] })` is asked to
+`list('')`, it now returns one synthetic dir entry per allowed prefix
+(instead of throwing). Two reasons:
+1. `MultiStore` lists a child as `list('')` after stripping the child
+   name from the path — without this, navigating from the virtual
+   multi-root into a scoped bucket immediately errors.
+2. Consumer apps mounting `<FileTree routeBase="/files" />` over a
+   scoped R2Store get a meaningful landing page at `/files/` instead
+   of an "allowed prefix" error.
+Escape-hatch `prefixes: ['']` (whole-bucket) falls through to the normal
+R2 list. Covered by `test/r2-store.test.ts`.
+
+### `MultiStore` for namespaced multi-bucket browsing
+`MultiStore({ name: store, ... })` splices N stores under named
+top-level virtual dirs. First path segment routes; root list synthesizes
+one dir per child. Used by `site/worker/` to expose `demo` (frozen
+fixture) + `ctbk` + `crashes` side-by-side, but generally useful — e.g.
+crashes might later expose both `raw/` and a derived parquet bucket
+through one `<FileTree>`.
+
+### `wrangler dev` per-binding `remote = true`, **not** `--remote`
+`wrangler dev --remote` (legacy) deploys the worker to a CF preview
+namespace and routes R2 ops through a sandboxed preview bucket. For
+buckets created during a session, this preview is empty even though the
+prod bucket has data — confusing failure mode. The newer mode (`remote
+= true` per binding, `wrangler dev` without `--remote`) runs the worker
+locally and routes only the marked bindings through prod resources.
+That's what `site/worker/` uses now. Same applies to `wrangler r2
+object put`: defaults to **local** storage; pass `--remote` to write
+prod (the populate script does this).
 
 ## Live consumers (PoCs validated, not in this repo)
 
@@ -116,9 +150,13 @@ ahead and commit them too" — they may have done so by the time you read this.
 - Build: `tsup` (ESM + CJS + dts), entry per subpath. Add new exports both
   to `tsup.config.ts` and `package.json` `exports`.
 - Test: `vitest`. New Store impls should add a test file in `test/` that
-  invokes `runStoreConformance`.
-- e2e: `playwright`, against `site/`. Not yet set up.
-- Port: site/ on 8731 (hash of "@rdub/file-tree-site" mod 1000 — picked once).
+  invokes `runStoreConformance`. `vitest.config.ts` excludes `e2e/` so
+  Playwright specs don't get scooped up by `pnpm test`.
+- e2e: `playwright` against `site/` + `site/worker/`. `pnpm e2e` boots
+  both via Playwright's `webServer[]`, with `reuseExistingServer: true`
+  locally. Chromium-only for now.
+- Ports: `site/` on 8731 (hash of "@rdub/file-tree-site" mod 1000),
+  `site/worker/` on 8732. Both picked once.
 - TypeScript: `strict` on, `exactOptionalPropertyTypes` off (was friction
   with optional cursor/limit fields, removed in initial scaffold).
 
@@ -138,21 +176,20 @@ ahead and commit them too" — they may have done so by the time you read this.
 
 ## Suggested next steps (in priority order)
 
-1. **Playwright e2e against `site/`** — the cheapest big win. ~30 min. Cover
-   the MockDemo flow: navigate dirs, filter, open text file, hit
-   non-existent path. The conformance harness already covers Store
-   contracts; this layer covers the UI's contract with the user.
-2. **Commit consumer integrations** in Crashes/ctbk if the user hasn't.
-3. **`site/worker/` for HttpDemo** — small CFW with a dedicated demo bucket
-   (user populates). Validates the HTTP path end-to-end.
+1. **Commit consumer integrations** in Crashes/ctbk if the user hasn't.
+2. **`site/worker/` deploy** — currently dev-only (`wrangler dev`, per-
+   binding `remote = true`). Push to a `*.workers.dev` URL and update
+   `HttpDemo.tsx` env default.
+3. **GitHub Pages deploy of `site/`** — pairs with #2; gives a public
+   "see it" link.
 4. **Add `S3Store`** (sister to R2Store, but via signed `fetch` against the
    S3 list-objects-v2 XML API). Will pay for itself when ELvis comes online
    as a third consumer.
 5. **Zip-entry preview** — port from Crashes' raw browser
    (`cells-api/src/raw.ts` has the central-directory parser).
-6. **GitHub Pages deploy of `site/`** — once HttpDemo's worker is deployed,
-   the demo becomes a real "go here to see it" link instead of a localhost
-   thing.
+6. **Cross-browser e2e** — Playwright currently runs chromium only. Add
+   firefox + webkit projects in `playwright.config.ts` once the suite
+   stabilizes.
 
 ## Open design questions
 
@@ -182,4 +219,16 @@ pnpm typecheck       # tsc --noEmit
 cd site
 pnpm install
 pnpm dev             # http://localhost:8731/
+
+# HttpDemo backing worker (separate terminal)
+cd site/worker
+pnpm install
+pnpm dev             # wrangler dev (per-binding remote=true) on :8732
+
+# Re-populate the file-tree-demo bucket (idempotent, ~80s)
+node scripts/populate-demo-bucket.mjs       # uses --remote
+
+# E2E (boots both above as needed)
+cd ../..  # repo root
+pnpm e2e             # playwright, 11 tests
 ```
