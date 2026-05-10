@@ -37,6 +37,11 @@
       "import": "./dist/stores/mock.js",
       "require": "./dist/stores/mock.cjs"
     },
+    "./stores/multi": {
+      "types": "./dist/stores/multi.d.ts",
+      "import": "./dist/stores/multi.js",
+      "require": "./dist/stores/multi.cjs"
+    },
     "./test/conformance": {
       "types": "./dist/test/conformance.d.ts",
       "import": "./dist/test/conformance.js",

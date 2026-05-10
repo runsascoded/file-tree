@@ -20,12 +20,22 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'pnpm build && pnpm --dir site dev',
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: 'pnpm build && pnpm --dir site dev',
+      url: baseURL,
+      reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 120_000,
+    },
+    {
+      command: 'pnpm --dir site/worker dev',
+      url: 'http://localhost:8732/v1/files/list?prefix=',
+      reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 120_000,
+    },
+  ],
 })

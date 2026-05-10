@@ -8,6 +8,7 @@ export default defineConfig({
     'src/stores/r2.ts',
     'src/stores/http.ts',
     'src/stores/mock.ts',
+    'src/stores/multi.ts',
     'src/server/index.ts',
     'src/test/conformance.ts',
   ],
