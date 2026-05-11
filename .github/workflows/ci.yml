@@ -86,3 +86,30 @@ jobs:
       # `dist/` intact on the dist branch (no flattening), so the exports
       # work as-is without an `exports_map`.
       preserve_dirs: dist
+
+  deploy-worker:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build lib (worker consumes via link:../..)
+        run: pnpm build
+      - name: Install worker deps
+        run: pnpm install --frozen-lockfile
+        working-directory: site/worker
+      - name: Deploy via wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          workingDirectory: site/worker
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
