@@ -1,5 +1,7 @@
 export { FileTree } from './FileTree'
-export type { FileTreeProps } from './FileTree'
+export type { FileTreeProps, MarkdownRenderer, ParquetRenderer } from './FileTree'
+export { asyncBufferFromStore } from './asyncBuffer'
+export type { AsyncBuffer } from './asyncBuffer'
 export { Breadcrumb } from './Breadcrumb'
 export type { Crumb } from './Breadcrumb'
 export { DirListing } from './DirListing'

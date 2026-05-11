@@ -9,7 +9,7 @@
  *     <FileTree store={store} routeBase="/files" />
  *   } />
  */
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, type ComponentType, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Store } from '../types'
 import { Breadcrumb, type Crumb } from './Breadcrumb'
@@ -24,6 +24,16 @@ import { type Parsed, parsePath, basename, keyToSplat, extOf } from './parsePath
  *  `<DirListing>` uses it for default-README rendering below the
  *  directory table. */
 export type MarkdownRenderer = (source: string) => ReactNode
+
+/** Optional component that renders a Parquet (`.parquet` / `.pqt`)
+ *  file. Pluggable so the lib doesn't bundle `hyparquet` (or any
+ *  equivalent). When provided, parquet paths render via this component
+ *  instead of a "not supported" placeholder.
+ *
+ *  Recommended implementation: use `asyncBufferFromStore(store, path)`
+ *  (exported from this module) to feed `hyparquet`'s `parquetMetadataAsync`
+ *  + `parquetRead`. See `site/src/ParquetViewer.tsx` for a reference impl. */
+export type ParquetRenderer = ComponentType<{ store: Store; path: string }>
 
 export interface FileTreeProps {
   store: Store
@@ -44,9 +54,13 @@ export interface FileTreeProps {
    *  files render as rich markdown (instead of plaintext `<pre>`) and
    *  any `README.md` in a directory is rendered below the listing. */
   markdownRenderer?: MarkdownRenderer
+  /** Optional parquet renderer (see `ParquetRenderer`). When set,
+   *  `.parquet`/`.pqt` paths render via this component (typically a
+   *  hyparquet-backed table). */
+  parquetRenderer?: ParquetRenderer
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer }: FileTreeProps) {
+export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer }: FileTreeProps) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -57,12 +71,12 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer }) {
   switch (parsed.kind) {
     case 'dir':
       return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
@@ -74,8 +88,11 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer }: { stor
     case 'zip':
     case 'zipEntry':
       return <UnsupportedView label="Zip preview" />
-    case 'parquet':
-      return <UnsupportedView label="Parquet preview" />
+    case 'parquet': {
+      if (!parquetRenderer) return <UnsupportedView label="Parquet preview" />
+      const Component = parquetRenderer
+      return <Component store={store} path={parsed.path} />
+    }
     case 'pdf':
       return <UnsupportedView label="PDF preview" />
     case 'binary':
