@@ -26,12 +26,13 @@ f40f527  @rdub/file-tree v0.0.1: initial scaffold
 | `MultiStore` (composite of N child stores) | Done. First path segment routes to a child; root list synthesizes a dir per child. Used by `site/worker/` to expose ctbk + crashes side-by-side. |
 | `S3Store` (S3-compatible API; AWS / R2-via-S3 / MinIO) | Done. SigV4 via `aws4fetch` (small, fetch + `crypto.subtle`; no AWS SDK). Browser-direct or server-proxy (drop-in for `R2Store` in any `createHandlers` callsite). Public (unsigned) and credentialed paths both work. Conformance harness runs via a fake-S3 `fetch` impl backed by `MockStore`. |
 | Server handlers (`src/server/`) | Done. `createHandlers(store, { basePath?, corsOrigin? })` exposes `/list` + `/get`. CORS preflight handled by `site/worker/`. |
-| React UI (`src/react/`) | `<FileTree>`, `<DirListing>` (auto-cursor-follow), `<TextViewer>` (Range head-fetch + load-all), `<Breadcrumb>`, `parsePath`, `makeMatcher` (substring/glob filter) |
+| React UI (`src/react/`) | `<FileTree>`, `<DirListing>` (auto-cursor-follow + default-`README.md` panel), `<TextViewer>` (Range head-fetch + load-all), `<Breadcrumb>`, `parsePath`, `makeMatcher` (substring/glob filter), `asyncBufferFromStore` (hyparquet adapter). Pluggable `markdownRenderer` + `parquetRenderer` slots; the lib doesn't bundle either dep — consumers wire their renderer of choice. |
+| `<ParquetViewer>` (site-side reference impl) | `site/src/ParquetViewer.tsx`. Hyparquet-backed paginated table, fed via `asyncBufferFromStore`. Wired into both MockDemo + HttpDemo via the `parquetRenderer` prop. Adapted from nj-crashes' existing `ParquetTable`. |
 | Conformance harness (`src/test/conformance.ts`) | Done. 9 tests; pluggable into any new Store impl. |
 | Vitest tests | 52 passing across `test/{mock,multi,r2,s3}-store.test.ts`. MultiStore + S3Store both go through full conformance via wrapper / fake-fetch backends. |
 | Demo site (`site/`) | Vite app on port 8731. Home + MockDemo + HttpDemo all wired up. |
 | `site/worker/` (CFW for HttpDemo) | Done. `wrangler dev` (per-binding `remote = true`) on port 8732. `MultiStore({ demo, ctbk, crashes })` over R2 bindings; same prefix scopes as the consumer apps. |
-| `file-tree-demo` R2 bucket | Done. Worker-only access. Populated with 44-file synthetic Hive-partitioned fixture via `site/worker/scripts/populate-demo-bucket.mjs`. Frozen / re-runnable. |
+| `file-tree-demo` R2 bucket | Done. Worker-only access. Populated with 44-file synthetic Hive-partitioned fixture via `site/worker/scripts/populate-demo-bucket.mjs`. Frozen / re-runnable. **Pending:** the script now also generates a `samples/metrics.parquet` (~5 KB, 1000 rows via `hyparquet-writer`) but it hasn't been uploaded yet — needs a re-run with `CLOUDFLARE_API_TOKEN` set or after `wrangler login`. |
 | Playwright e2e | Done (chromium-only). 14 tests across `e2e/{mock,http}-demo.spec.ts`. `pnpm e2e` boots both site dev + worker via `webServer[]`. |
 | `examples/s3-proxy-worker/` | Copy-pasteable CFW template for downstream consumers. Wraps `S3Store` + `createHandlers`, secrets-driven, supports R2-via-S3 endpoint override. |
 | Static-bucket Stores | "Just use a native Store as a static SPA" works today (S3Store/HttpStore/etc. all browser-direct-capable). Manifest-based variant (pre-built JSON of all keys, for backends without public listing) — **TODO** v2. |
@@ -174,7 +175,9 @@ ahead and commit them too" — they may have done so by the time you read this.
   one-liner test file like `test/mock-store.test.ts`.
 - Don't add zip / parquet / pdf as a `Store` capability — those are *view*
   concerns, dispatched from `parsePath` based on extension. Add new `kind`s
-  to the `Parsed` union and a corresponding view component.
+  to the `Parsed` union and a corresponding view component, then expose a
+  pluggable `{kind}Renderer` prop on `<FileTree>` (e.g. `parquetRenderer`,
+  `markdownRenderer`) so the lib doesn't bundle the renderer dep.
 
 ## Suggested next steps (in priority order)
 
