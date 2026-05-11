@@ -4,10 +4,11 @@ import { FileTree } from '@rdub/file-tree/react'
 import { HttpStore } from '@rdub/file-tree/stores/http'
 import { renderMarkdown } from '../Markdown'
 
-// Default points at the demo worker (TODO: replace with deployed URL).
-// Override via VITE_HTTP_DEMO_BASE for local development.
+// Default points at the deployed demo worker (CFW, multi-bucket).
+// Override via `VITE_HTTP_DEMO_BASE` (e.g. `http://localhost:8732/v1/files`
+// when running `site/worker/` locally).
 const API_BASE = import.meta.env.VITE_HTTP_DEMO_BASE
-  ?? 'http://localhost:8732/v1/files'
+  ?? 'https://file-tree-demo.ryan-0dc.workers.dev/v1/files'
 
 export function HttpDemo() {
   const store = useMemo(() => HttpStore(API_BASE), [])
