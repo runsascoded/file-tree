@@ -9,6 +9,7 @@ export default defineConfig({
     'src/stores/http.ts',
     'src/stores/mock.ts',
     'src/stores/multi.ts',
+    'src/stores/s3.ts',
     'src/server/index.ts',
     'src/test/conformance.ts',
   ],

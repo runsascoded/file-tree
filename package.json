@@ -42,6 +42,11 @@
       "import": "./dist/stores/multi.js",
       "require": "./dist/stores/multi.cjs"
     },
+    "./stores/s3": {
+      "types": "./dist/stores/s3.d.ts",
+      "import": "./dist/stores/s3.js",
+      "require": "./dist/stores/s3.cjs"
+    },
     "./test/conformance": {
       "types": "./dist/test/conformance.d.ts",
       "import": "./dist/test/conformance.js",
@@ -104,5 +109,8 @@
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
     "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
   }
 }
