@@ -14,6 +14,10 @@
  *  and `parsePath`'s `.csv`/`.md`/`.json`/`.yaml`/`.toml` text dispatch.
  */
 import { spawnSync } from 'node:child_process'
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { parquetWriteBuffer } from 'hyparquet-writer'
 
 const BUCKET = 'file-tree-demo'
 const dryRun = process.argv.includes('--dry-run')
@@ -162,6 +166,28 @@ interface Store {
     },
     required: ['year', 'month', 'day'],
   }, null, 2) + '\n', 'application/json'])
+
+  // A synthetic parquet to exercise the `parquetRenderer` slot.
+  // 1000 rows, same hour/region/value shape as the CSV partitions but
+  // with deterministic values so the file content is byte-stable across
+  // re-runs.
+  const N = 1000
+  const hours = new Int32Array(N)
+  const regions = new Array(N)
+  const values = new Float64Array(N)
+  for (let i = 0; i < N; i++) {
+    hours[i] = i % 24
+    regions[i] = ['nyc', 'sfo', 'lax'][i % 3]
+    values[i] = Math.round(((i * 37) % 1000) * 100) / 100
+  }
+  const parquetBuf = parquetWriteBuffer({
+    columnData: [
+      { name: 'hour', data: hours, type: 'INT32' },
+      { name: 'region', data: regions, type: 'STRING' },
+      { name: 'value', data: values, type: 'DOUBLE' },
+    ],
+  })
+  out.push(['samples/metrics.parquet', new Uint8Array(parquetBuf), 'application/vnd.apache.parquet'])
 
   return out
 }

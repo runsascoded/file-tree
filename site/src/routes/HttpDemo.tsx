@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { FileTree } from '@rdub/file-tree/react'
 import { HttpStore } from '@rdub/file-tree/stores/http'
 import { renderMarkdown } from '../Markdown'
+import { ParquetViewer } from '../ParquetViewer'
 
 // Default points at the deployed demo worker (CFW, multi-bucket).
 // Override via `VITE_HTTP_DEMO_BASE` (e.g. `http://localhost:8732/v1/files`
@@ -21,6 +22,7 @@ export function HttpDemo() {
         routeBase="/http"
         title="R2 browser"
         markdownRenderer={renderMarkdown}
+        parquetRenderer={ParquetViewer}
       />
       {atVirtualRoot && (
         <aside style={{ marginTop: '1em', fontSize: '0.9em', opacity: 0.85 }}>
