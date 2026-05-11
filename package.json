@@ -1,11 +1,8 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1",
+  "version": "0.0.1-dist.76284c9",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
-  "files": [
-    "dist"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -53,15 +50,6 @@
       "require": "./dist/server/index.cjs"
     }
   },
-  "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui"
-  },
   "keywords": [
     "file-browser",
     "tree-browser",
@@ -93,16 +81,5 @@
     "react-router-dom": {
       "optional": true
     }
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.59.1",
-    "@types/react": "^18.3.27",
-    "@types/react-dom": "^18.3.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.0",
-    "tsup": "^8.5.0",
-    "typescript": "^5.9.0",
-    "vitest": "^2.1.8"
   }
 }
