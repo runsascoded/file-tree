@@ -26,9 +26,9 @@ export function App() {
           <Route path="/http" element={<HttpDemo />} />
           <Route path="/http/*" element={<HttpDemo />} />
           <Route path="/s3" element={<S3Demo />} />
-          <Route path="/s3/*" element={<S3Demo />} />
+          <Route path="/s3/:slug/*" element={<S3Demo />} />
           <Route path="/r2" element={<R2Demo />} />
-          <Route path="/r2/*" element={<R2Demo />} />
+          <Route path="/r2/:slug/*" element={<R2Demo />} />
         </Routes>
       </main>
     </>
