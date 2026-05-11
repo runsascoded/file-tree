@@ -20,6 +20,15 @@ export function Home() {
           <Link to="/http">HttpStore</Link> — talks to a backend that exposes the file-tree
           HTTP protocol. (Demo backend: see <code>site/worker/</code> in the repo.)
         </li>
+        <li>
+          <Link to="/s3">S3</Link> — browse any S3 bucket directly from your browser via{' '}
+          <code>S3Store</code>. Public buckets work unsigned; paste an access key for private.
+          Credentials persist in LocalStorage on your device only.
+        </li>
+        <li>
+          <Link to="/r2">R2</Link> — browse a Cloudflare R2 bucket through its S3-compatible API.
+          Same client, different endpoint.
+        </li>
       </ul>
 
       <h2>The <code>Store</code> interface</h2>
