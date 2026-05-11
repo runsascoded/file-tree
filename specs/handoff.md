@@ -24,16 +24,18 @@ f40f527  @rdub/file-tree v0.0.1: initial scaffold
 | `HttpStore` (browser → server proxy) | Done, validated against both Crashes' and ctbk's workers + `site/worker/`. |
 | `MockStore` (in-memory) | Done. Powers tests + `site/` demo. |
 | `MultiStore` (composite of N child stores) | Done. First path segment routes to a child; root list synthesizes a dir per child. Used by `site/worker/` to expose ctbk + crashes side-by-side. |
+| `S3Store` (S3-compatible API; AWS / R2-via-S3 / MinIO) | Done. SigV4 via `aws4fetch` (small, fetch + `crypto.subtle`; no AWS SDK). Browser-direct or server-proxy (drop-in for `R2Store` in any `createHandlers` callsite). Public (unsigned) and credentialed paths both work. Conformance harness runs via a fake-S3 `fetch` impl backed by `MockStore`. |
 | Server handlers (`src/server/`) | Done. `createHandlers(store, { basePath?, corsOrigin? })` exposes `/list` + `/get`. CORS preflight handled by `site/worker/`. |
 | React UI (`src/react/`) | `<FileTree>`, `<DirListing>` (auto-cursor-follow), `<TextViewer>` (Range head-fetch + load-all), `<Breadcrumb>`, `parsePath`, `makeMatcher` (substring/glob filter) |
 | Conformance harness (`src/test/conformance.ts`) | Done. 9 tests; pluggable into any new Store impl. |
-| Vitest tests | 35 passing across `test/{mock,multi,r2}-store.test.ts`. MultiStore goes through full conformance via a single-child view. |
+| Vitest tests | 52 passing across `test/{mock,multi,r2,s3}-store.test.ts`. MultiStore + S3Store both go through full conformance via wrapper / fake-fetch backends. |
 | Demo site (`site/`) | Vite app on port 8731. Home + MockDemo + HttpDemo all wired up. |
 | `site/worker/` (CFW for HttpDemo) | Done. `wrangler dev` (per-binding `remote = true`) on port 8732. `MultiStore({ demo, ctbk, crashes })` over R2 bindings; same prefix scopes as the consumer apps. |
 | `file-tree-demo` R2 bucket | Done. Worker-only access. Populated with 44-file synthetic Hive-partitioned fixture via `site/worker/scripts/populate-demo-bucket.mjs`. Frozen / re-runnable. |
 | Playwright e2e | Done (chromium-only). 14 tests across `e2e/{mock,http}-demo.spec.ts`. `pnpm e2e` boots both site dev + worker via `webServer[]`. |
-| Static-bucket Stores | **TODO** v2 — public-bucket browsing without a server, listing manifest pre-built |
-| `S3Store`, `GitHubStore`, `GitLabStore`, `DiskTreeStore` | **TODO** — design intent in README roadmap table |
+| `examples/s3-proxy-worker/` | Copy-pasteable CFW template for downstream consumers. Wraps `S3Store` + `createHandlers`, secrets-driven, supports R2-via-S3 endpoint override. |
+| Static-bucket Stores | "Just use a native Store as a static SPA" works today (S3Store/HttpStore/etc. all browser-direct-capable). Manifest-based variant (pre-built JSON of all keys, for backends without public listing) — **TODO** v2. |
+| `GitHubStore`, `GitLabStore`, `DiskTreeStore` | **TODO** — `GitHubStore` is the natural next, mirrors `S3Store` pattern (Bearer-token auth for private repos). |
 | Zip-entry preview | **TODO** — original Crashes raw browser had this; not lifted yet |
 | `ParquetTable` view | **TODO** — deferred from v1 since it brings hyparquet + its own filter/dtype state |
 | GitHub repo / npm publish | **TODO** — paused per user's "let it stabilize first" |
@@ -176,17 +178,23 @@ ahead and commit them too" — they may have done so by the time you read this.
 
 ## Suggested next steps (in priority order)
 
-1. **Commit consumer integrations** in Crashes/ctbk if the user hasn't.
-2. **`site/worker/` deploy** — currently dev-only (`wrangler dev`, per-
-   binding `remote = true`). Push to a `*.workers.dev` URL and update
-   `HttpDemo.tsx` env default.
-3. **GitHub Pages deploy of `site/`** — pairs with #2; gives a public
-   "see it" link.
-4. **Add `S3Store`** (sister to R2Store, but via signed `fetch` against the
-   S3 list-objects-v2 XML API). Will pay for itself when ELvis comes online
-   as a third consumer.
-5. **Zip-entry preview** — port from Crashes' raw browser
+1. **`<StoreAuthForm>` + LocalStorage keys** — small React component that
+   collects access keys / Bearer tokens from a user, persists to LS,
+   constructs a Store. Unlocks "browse a private S3 / R2 / GH bucket
+   from a static-deployed site." Demoable: a `/s3` route in `site/` that
+   accepts AWS keys + bucket, mounts `<FileTree>` over `S3Store`.
+2. **`GitHubStore`** — mirrors `S3Store`'s pattern (Bearer-token auth
+   for private; unsigned for public). Browse any GH repo as a tree via
+   the content API. Same `<StoreAuthForm>` works for it.
+3. **Commit consumer integrations** in Crashes/ctbk if the user hasn't.
+   ctbk can now also use `S3Store` (via the proxy worker template) for
+   browsing their `s3://ctbk-data/...` snapshots alongside R2.
+4. **Zip-entry preview** — port from Crashes' raw browser
    (`cells-api/src/raw.ts` has the central-directory parser).
+5. **Manifest-based static Store** — `ManifestStore({ url })` fetches a
+   JSON of all keys at startup, slices it for `list()`. Useful when the
+   backend doesn't expose public listing (e.g. GH Pages serving a tree
+   without an index). v2.
 6. **Cross-browser e2e** — Playwright currently runs chromium only. Add
    firefox + webkit projects in `playwright.config.ts` once the suite
    stabilizes.
@@ -205,6 +213,19 @@ ahead and commit them too" — they may have done so by the time you read this.
 - **Auth**: HttpStore takes optional headers, but no opinion on token
   rotation, cookie-based auth, etc. Add an example / pattern doc when the
   first authenticated consumer comes online.
+
+### Where does auth live in the lib?
+
+Decision (taken when planning S3Store): credentials live as ctor args on
+each Store (`S3Store({ accessKeyId, secretAccessKey, ... })`). UI for
+collecting them goes in a separate `<StoreAuthForm>` (TBD), keeping the
+storage layer free of UI concerns. LocalStorage persistence is the UI's
+job, not the Store's.
+
+OAuth is deferred until a concrete consumer needs it. Bearer-token /
+access-key paste flows cover ~90% of intended use cases (browse my own
+S3 buckets / GH repos), and GitHub fine-grained PATs already work as
+Bearer tokens — same code path as the more-formal OAuth would use.
 
 ## Running this locally
 
