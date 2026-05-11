@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Entry, Store } from '../types'
 import { fmtSize } from './fmt'
@@ -17,9 +17,12 @@ export interface DirListingProps {
    *  is rendered. */
   q?: string
   setQ?: (q: string) => void
+  /** When set + a `README.md` (case-insensitive) is in the listing, the
+   *  README is fetched and rendered below the table via this fn. */
+  markdownRenderer?: (source: string) => ReactNode
 }
 
-export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal }: DirListingProps) {
+export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, markdownRenderer }: DirListingProps) {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
@@ -152,6 +155,46 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
       {cursor && (
         <button onClick={loadMore} style={{ marginTop: '0.5em' }}>load more</button>
       )}
+      {markdownRenderer && (
+        <DefaultReadme store={store} entries={entries} markdownRenderer={markdownRenderer} />
+      )}
     </>
+  )
+}
+
+/** Find the directory's `README.md` (case-insensitive basename match) and
+ *  render it below the listing. Renders nothing when no README is present
+ *  or the fetch fails (404/network), so the dir UI stays clean. */
+function DefaultReadme({ store, entries, markdownRenderer }: { store: Store; entries: Entry[]; markdownRenderer: (source: string) => ReactNode }) {
+  const readme = entries.find(e => !e.isDir && /^README\.md$/i.test(basename(e.key)))
+  const [text, setText] = useState<string | null>(null)
+  useEffect(() => {
+    setText(null)
+    if (!readme) return
+    let cancelled = false
+    store.get(readme.key).then(r => {
+      if (cancelled) return
+      setText(new TextDecoder().decode(r.bytes))
+    }).catch(() => { /* swallow — README is best-effort */ })
+    return () => { cancelled = true }
+  }, [store, readme?.key])
+  if (!readme || text == null) return null
+  return (
+    <div
+      className="rdub-file-tree-default-readme"
+      data-readme-key={readme.key}
+      style={{
+        marginTop: '1.5em',
+        padding: '0.8em 1em',
+        border: '1px solid rgba(127,127,127,0.25)',
+        borderRadius: 6,
+        background: 'rgba(127,127,127,0.04)',
+      }}
+    >
+      <div style={{ fontSize: '0.8em', opacity: 0.6, fontFamily: 'ui-monospace, monospace', marginBottom: '0.5em' }}>
+        {basename(readme.key)}
+      </div>
+      {markdownRenderer(text)}
+    </div>
   )
 }

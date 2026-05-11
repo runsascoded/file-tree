@@ -11,7 +11,7 @@ test.describe('HttpDemo', () => {
   test('virtual root lists demo/, ctbk/, and crashes/', async ({ page }) => {
     await page.goto('/http')
 
-    await expect(page.getByRole('heading', { name: 'HttpStore demo' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'R2 browser' })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*demo\/$/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*ctbk\/$/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*crashes\/$/ })).toBeVisible()
@@ -36,14 +36,27 @@ test.describe('HttpDemo', () => {
     await expect(page.getByText('8 entries')).toBeVisible()
   })
 
-  test('opens demo/README.md as a text view', async ({ page }) => {
+  test('opens demo/README.md as rendered markdown', async ({ page }) => {
     await page.goto('/http/demo/')
     await page.getByRole('link', { name: 'README.md', exact: true }).click()
     await expect(page).toHaveURL(/\/http\/demo\/README\.md$/)
 
-    const pre = page.locator('pre').first()
-    await expect(pre).toContainText('file-tree-demo')
-    await expect(pre).toContainText('Hive-partitioned')
+    // Rendered as real DOM, not `<pre>` plaintext.
+    await expect(page.getByRole('heading', { name: 'file-tree-demo' })).toBeVisible()
+    await expect(page.getByText('Hive-partitioned')).toBeVisible()
+  })
+
+  test('renders demo/README.md inline below the demo/ listing', async ({ page }) => {
+    await page.goto('/http/demo/')
+    const readmePanel = page.locator('.rdub-file-tree-default-readme')
+    await expect(readmePanel).toBeVisible()
+    await expect(readmePanel.getByRole('heading', { name: 'file-tree-demo' })).toBeVisible()
+  })
+
+  test('virtual-root copy explains the bucket layout', async ({ page }) => {
+    await page.goto('/http')
+    // Aside-only on virtual root; explains the multi-bucket setup.
+    await expect(page.getByText('Each top-level entry above is a separate R2 bucket')).toBeVisible()
   })
 
   test('navigates into a deep Hive partition', async ({ page }) => {

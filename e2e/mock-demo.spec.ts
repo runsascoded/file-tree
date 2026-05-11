@@ -48,14 +48,23 @@ test.describe('MockDemo', () => {
     await expect(page.getByRole('link', { name: 'README.md', exact: true })).toBeVisible()
   })
 
-  test('opens a text file', async ({ page }) => {
+  test('opens README.md as rendered markdown', async ({ page }) => {
     await page.goto('/mock')
     await page.getByRole('link', { name: 'README.md', exact: true }).click()
     await expect(page).toHaveURL(/\/mock\/README\.md$/)
 
-    const pre = page.locator('pre').first()
-    await expect(pre).toContainText('@rdub/file-tree demo')
-    await expect(pre).toContainText('MockStore`-backed file browser')
+    // markdownRenderer (react-markdown) turns the README into real
+    // headings + inline code, not a `<pre>` plaintext blob.
+    await expect(page.getByRole('heading', { name: '@rdub/file-tree demo' })).toBeVisible()
+    await expect(page.locator('code').filter({ hasText: 'MockStore' }).first()).toBeVisible()
+  })
+
+  test('renders a README.md inline below the directory listing', async ({ page }) => {
+    await page.goto('/mock')
+    // README is in the root listing AND rendered as a panel below.
+    const readmePanel = page.locator('.rdub-file-tree-default-readme')
+    await expect(readmePanel).toBeVisible()
+    await expect(readmePanel.getByRole('heading', { name: '@rdub/file-tree demo' })).toBeVisible()
   })
 
   test('shows error for non-existent path', async ({ page }) => {

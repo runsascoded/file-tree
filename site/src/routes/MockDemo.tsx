@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { FileTree } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import { DEMO_FIXTURE } from '../fixtures/demo'
+import { renderMarkdown } from '../Markdown'
 
 export function MockDemo() {
   const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100 }), [])
@@ -11,6 +12,7 @@ export function MockDemo() {
         store={store}
         routeBase="/mock"
         title="MockStore demo"
+        markdownRenderer={renderMarkdown}
       />
       <details style={{ marginTop: '2em', fontSize: '0.9em', opacity: 0.85 }}>
         <summary>How this works</summary>

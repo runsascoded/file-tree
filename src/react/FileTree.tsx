@@ -9,13 +9,21 @@
  *     <FileTree store={store} routeBase="/files" />
  *   } />
  */
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Store } from '../types'
 import { Breadcrumb, type Crumb } from './Breadcrumb'
 import { DirListing } from './DirListing'
 import { TextViewer } from './TextViewer'
-import { type Parsed, parsePath, basename, keyToSplat } from './parsePath'
+import { type Parsed, parsePath, basename, keyToSplat, extOf } from './parsePath'
+
+/** Optional renderer that converts a markdown source string into a
+ *  React node. Pluggable so the lib doesn't bundle a markdown library;
+ *  consumers wire `react-markdown` (or any equivalent). When provided,
+ *  `<TextViewer>` uses it for `.md`/`.markdown` files and
+ *  `<DirListing>` uses it for default-README rendering below the
+ *  directory table. */
+export type MarkdownRenderer = (source: string) => ReactNode
 
 export interface FileTreeProps {
   store: Store
@@ -32,9 +40,13 @@ export interface FileTreeProps {
   className?: string
   /** Optional inline style for the outer wrapper. */
   style?: React.CSSProperties
+  /** Optional markdown renderer (see `MarkdownRenderer`). When set, `.md`
+   *  files render as rich markdown (instead of plaintext `<pre>`) and
+   *  any `README.md` in a directory is rendered below the listing. */
+  markdownRenderer?: MarkdownRenderer
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style }: FileTreeProps) {
+export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer }: FileTreeProps) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -45,17 +57,20 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer }) {
   switch (parsed.kind) {
     case 'dir':
-      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} />
-    case 'text':
-      return <TextViewer store={store} path={parsed.path} />
+      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
+    case 'text': {
+      const ext = extOf(parsed.path)
+      const isMd = ext === 'md' || ext === 'markdown'
+      return <TextViewer store={store} path={parsed.path} markdownRenderer={isMd ? markdownRenderer : undefined} />
+    }
     case 'zip':
     case 'zipEntry':
       return <UnsupportedView label="Zip preview" />

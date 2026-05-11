@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from './fmt'
 
@@ -7,9 +7,13 @@ const HEAD_BYTES = 64 * 1024  // 64 KB head fetch — enough for most config / r
 export interface TextViewerProps {
   store: Store
   path: string
+  /** When provided, render the bytes as rich markdown via this fn
+   *  instead of plaintext `<pre>`. Caller decides which extensions
+   *  qualify (typically `.md`/`.markdown`). */
+  markdownRenderer?: (source: string) => ReactNode
 }
 
-export function TextViewer({ store, path }: TextViewerProps) {
+export function TextViewer({ store, path, markdownRenderer }: TextViewerProps) {
   const [text, setText] = useState<string | null>(null)
   const [totalSize, setTotalSize] = useState<number | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
@@ -49,16 +53,22 @@ export function TextViewer({ store, path }: TextViewerProps) {
   const truncated = totalSize != null && text.length < totalSize
   return (
     <>
-      <pre style={{
-        background: 'rgba(127,127,127,0.08)',
-        padding: '0.6em 0.8em',
-        borderRadius: 4,
-        overflow: 'auto',
-        maxHeight: '80vh',
-        fontSize: '0.85em',
-        fontFamily: 'ui-monospace, monospace',
-        whiteSpace: 'pre-wrap',
-      }}>{text}</pre>
+      {markdownRenderer ? (
+        <div className="rdub-file-tree-markdown" data-path={path}>
+          {markdownRenderer(text)}
+        </div>
+      ) : (
+        <pre style={{
+          background: 'rgba(127,127,127,0.08)',
+          padding: '0.6em 0.8em',
+          borderRadius: 4,
+          overflow: 'auto',
+          maxHeight: '80vh',
+          fontSize: '0.85em',
+          fontFamily: 'ui-monospace, monospace',
+          whiteSpace: 'pre-wrap',
+        }}>{text}</pre>
+      )}
       {truncated && (
         <div style={{ marginTop: '0.5em', fontSize: '0.85em', opacity: 0.7 }}>
           showing first {fmtSize(text.length)} of {fmtSize(totalSize)}{' '}
