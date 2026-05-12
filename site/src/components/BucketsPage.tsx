@@ -16,6 +16,14 @@ export interface BucketEntry extends S3DemoConfig {
   label?: string
   /** Short description shown next to the row. */
   description?: string
+  /** Override the row's target URL (otherwise defaults to
+   *  `${routeBase}/${bucket}/`). Use for seed rows that should route to
+   *  a different demo — e.g. `/r2` seeds linking to `/http/<bucket>/`
+   *  since R2's S3-compat API has no anonymous list. */
+  to?: string
+  /** Short trailing tag shown after the auth-mode label
+   *  (`public` / `signed`). Use for "via worker" etc. */
+  tag?: string
 }
 
 export interface BucketsPageProps {
@@ -125,7 +133,7 @@ function BucketTable({ entries, routeBase, onRemove }: { entries: BucketEntry[];
           return (
             <tr key={e.bucket} style={{ borderTop: '1px solid rgba(127,127,127,0.2)' }}>
               <td style={{ padding: '0.4em 0.6em 0.4em 0', fontFamily: 'ui-monospace, monospace' }}>
-                <Link to={`${routeBase}/${encodeURIComponent(e.bucket)}/`}>
+                <Link to={e.to ?? `${routeBase}/${encodeURIComponent(e.bucket)}/`}>
                   📁 {e.label ?? e.bucket}{e.label && e.label !== e.bucket ? <span style={{ opacity: 0.5 }}> ({e.bucket})</span> : null}
                 </Link>
               </td>
@@ -135,6 +143,7 @@ function BucketTable({ entries, routeBase, onRemove }: { entries: BucketEntry[];
               <td style={{ padding: '0.4em 0.6em', opacity: 0.6, fontSize: '0.85em', fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap' }}>
                 {isSigned ? 'signed' : 'public'}
                 {e.region ? <> · {e.region}</> : null}
+                {e.tag ? <> · {e.tag}</> : null}
               </td>
               <td style={{ padding: '0.4em 0', textAlign: 'right' }}>
                 {onRemove && (
