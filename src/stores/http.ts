@@ -54,5 +54,9 @@ export function HttpStore(apiBase: string, opts: HttpStoreOptions = {}): Store {
     },
 
     capabilities: { range: true },
+
+    getUrl(path: string): string {
+      return `${base}/get?path=${encodeURIComponent(path)}`
+    },
   }
 }

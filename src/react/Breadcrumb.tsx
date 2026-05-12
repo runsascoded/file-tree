@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 export interface Crumb {
@@ -5,8 +6,8 @@ export interface Crumb {
   to: string
 }
 
-export function Breadcrumb({ crumbs, separator = ' / ' }: { crumbs: Crumb[]; separator?: string }) {
-  if (crumbs.length === 0) return null
+export function Breadcrumb({ crumbs, separator = ' / ', rightSlot }: { crumbs: Crumb[]; separator?: string; rightSlot?: ReactNode }) {
+  if (crumbs.length === 0 && !rightSlot) return null
   return (
     <nav aria-label="Breadcrumb" style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.95em', marginBottom: '0.5em' }}>
       {crumbs.map((c, i) => (
@@ -17,6 +18,7 @@ export function Breadcrumb({ crumbs, separator = ' / ' }: { crumbs: Crumb[]; sep
             : <Link to={c.to}>{c.label}</Link>}
         </span>
       ))}
+      {rightSlot && <span style={{ marginLeft: '0.8em' }}>{rightSlot}</span>}
     </nav>
   )
 }

@@ -228,5 +228,12 @@ export function S3Store(opts: S3StoreOptions): Store {
     },
 
     capabilities: { range: true },
+
+    // Direct browser GET only works for unsigned (public) buckets;
+    // signed access requires SigV4 presigning, which aws4fetch doesn't
+    // surface as a query-string URL. Consumers of signed `S3Store` who
+    // want download links should proxy through `createHandlers()` and
+    // expose an `HttpStore` to the browser.
+    ...(signer ? {} : { getUrl: (p: string) => buildUrl(urlOpts, p) }),
   }
 }

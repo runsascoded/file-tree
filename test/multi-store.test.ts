@@ -119,4 +119,20 @@ describe('MultiStore (multi-child semantics)', () => {
     expect(() => MultiStore({ 'a/b': MockStore({}) })).toThrow(/invalid child name/)
     expect(() => MultiStore({ '': MockStore({}) })).toThrow(/invalid child name/)
   })
+
+  it('getUrl is exposed only when every child has it; delegates with prefix stripped', () => {
+    const withUrl: Store = {
+      list: async () => ({ entries: [] }),
+      get: async () => ({ bytes: new Uint8Array() }),
+      getUrl: (p) => `https://x/${p}`,
+    }
+    // One child without getUrl → composite omits it.
+    expect(MultiStore({ a: MockStore({}), b: withUrl }).getUrl).toBeUndefined()
+    // All children with getUrl → composite forwards.
+    const multi = MultiStore({ a: withUrl, b: withUrl })
+    expect(multi.getUrl).toBeTypeOf('function')
+    expect(multi.getUrl!('a/foo.txt')).toBe('https://x/foo.txt')
+    expect(multi.getUrl!('b/sub/bar')).toBe('https://x/sub/bar')
+    expect(() => multi.getUrl!('unknown/x')).toThrow(/no child for/)
+  })
 })

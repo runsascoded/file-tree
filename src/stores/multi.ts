@@ -72,5 +72,19 @@ export function MultiStore(children: MultiStoreInput): Store {
     capabilities: {
       range: names.length > 0 && names.every(n => children[n].capabilities?.range === true),
     },
+
+    // Only expose `getUrl` if *every* child can produce one — that way
+    // the UI's "is download supported here?" check is a simple
+    // `typeof store.getUrl === 'function'` instead of a per-path probe.
+    ...(names.length > 0 && names.every(n => typeof children[n].getUrl === 'function')
+      ? {
+          getUrl(path: string): string {
+            const s = split(path)
+            if (!s) throw new Error(`MultiStore.getUrl: no child for ${JSON.stringify(path)}`)
+            // Type-narrowing: the every() check above guarantees getUrl is defined.
+            return s.child.getUrl!(s.rest)
+          },
+        }
+      : {}),
   }
 }

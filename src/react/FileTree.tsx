@@ -66,11 +66,19 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
   const splat = location.pathname.replace(baseRe, '')
   const parsed = useMemo(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty])
   const crumbs = useMemo(() => buildCrumbs(parsed, routeBase, rootPrefix), [parsed, routeBase, rootPrefix])
+  // `zipEntry` would point `getUrl` at the wrapping zip — misleading.
+  // Suppress there; entry extraction is the consumer's concern.
+  const downloadable = parsed.kind !== 'dir' && parsed.kind !== 'zipEntry'
+  const downloadHref = downloadable && typeof store.getUrl === 'function' ? store.getUrl(parsed.path) : null
+  const downloadName = downloadable ? basename(parsed.path) : ''
 
   return (
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
-      <Breadcrumb crumbs={crumbs} />
+      <Breadcrumb
+        crumbs={crumbs}
+        rightSlot={downloadHref ? <DownloadIcon href={downloadHref} name={downloadName} /> : undefined}
+      />
       <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} />
     </div>
   )
@@ -102,6 +110,23 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
         </div>
       )
   }
+}
+
+/** Compact download affordance shown right of the breadcrumbs for any
+ *  non-dir view whose store exposes `getUrl(path)`. Anchor uses `download`
+ *  so the browser streams the response — safe for arbitrarily large files. */
+function DownloadIcon({ href, name }: { href: string; name: string }) {
+  return (
+    <a
+      href={href}
+      download={name}
+      title={`Download ${name}`}
+      aria-label={`Download ${name}`}
+      style={{ fontSize: '1.1em', textDecoration: 'none', lineHeight: 1 }}
+    >
+      ⬇
+    </a>
+  )
 }
 
 function UnsupportedView({ label }: { label: string }) {

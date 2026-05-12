@@ -59,6 +59,13 @@ export interface Store {
   /** Optional metadata. UI can use this to disable features the store
    *  doesn't support (e.g. zip preview when `range` is false). */
   capabilities?: StoreCapabilities
+
+  /** Direct downloadable URL for `path`, when the store can produce one.
+   *  The UI uses this to render a `<a href download>` link (browser
+   *  streams the bytes — no client buffering). Stores that can't expose a
+   *  GET-able URL (in-memory, CFW R2 binding, presigning-required) omit
+   *  this and the UI hides the download affordance. */
+  getUrl?(path: string): string
 }
 
 /** Sentinel error type stores throw for missing keys, so UI can render

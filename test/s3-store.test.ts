@@ -202,3 +202,28 @@ describe('S3Store (scoped-prefix virtual root)', () => {
     await expect(store.get('forbidden/file')).rejects.toThrow(/not under any allowed prefix/)
   })
 })
+
+describe('S3Store (getUrl)', () => {
+  it('exposes virtual-hosted-style URL for unsigned (public) buckets', () => {
+    const store = S3Store({ bucket: 'open-data', region: 'us-west-2' })
+    expect(store.getUrl).toBeTypeOf('function')
+    expect(store.getUrl!('data/2024/file.csv'))
+      .toBe('https://open-data.s3.us-west-2.amazonaws.com/data/2024/file.csv')
+  })
+
+  it('exposes path-style URL when endpoint is set', () => {
+    const store = S3Store({ bucket: 'r2-bkt', endpoint: 'https://acct.r2.cloudflarestorage.com' })
+    expect(store.getUrl!('a/b.txt')).toBe('https://acct.r2.cloudflarestorage.com/r2-bkt/a/b.txt')
+  })
+
+  it('encodes path segments', () => {
+    const store = S3Store({ bucket: 'b' })
+    expect(store.getUrl!('with space/and+plus.txt'))
+      .toBe('https://b.s3.us-east-1.amazonaws.com/with%20space/and%2Bplus.txt')
+  })
+
+  it('omits getUrl entirely when signed (no presigning support)', () => {
+    const store = S3Store({ bucket: 'b', accessKeyId: 'AKIA', secretAccessKey: 's' })
+    expect(store.getUrl).toBeUndefined()
+  })
+})
