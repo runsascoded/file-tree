@@ -14,6 +14,7 @@ import { useLocation } from 'react-router-dom'
 import type { Store } from '../types'
 import { Breadcrumb, type Crumb } from './Breadcrumb'
 import { DirListing } from './DirListing'
+import { MediaViewer } from './MediaViewer'
 import { TextViewer } from './TextViewer'
 import { type Parsed, parsePath, basename, keyToSplat, extOf } from './parsePath'
 
@@ -101,6 +102,10 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const Component = parquetRenderer
       return <Component store={store} path={parsed.path} />
     }
+    case 'image':
+      return <MediaViewer store={store} path={parsed.path} kind="image" />
+    case 'video':
+      return <MediaViewer store={store} path={parsed.path} kind="video" />
     case 'pdf':
       return <UnsupportedView label="PDF preview" />
     case 'binary':

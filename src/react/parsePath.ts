@@ -13,6 +13,8 @@
  */
 
 export const TEXTY = new Set(['txt', 'csv', 'tsv', 'json', 'md', 'log', 'yaml', 'yml', 'toml', 'ini', 'sql', 'sh', 'py', 'ts', 'tsx', 'js', 'jsx', 'html', 'css'])
+export const IMAGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico'])
+export const VIDEO = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv', 'ogg'])
 
 export type Parsed =
   | { kind: 'dir'; prefix: string }
@@ -21,6 +23,8 @@ export type Parsed =
   | { kind: 'text'; path: string }
   | { kind: 'parquet'; path: string }
   | { kind: 'pdf'; path: string }
+  | { kind: 'image'; path: string }
+  | { kind: 'video'; path: string }
   | { kind: 'binary'; path: string }
 
 export interface ParsePathOptions {
@@ -70,6 +74,8 @@ export function parsePath(splat: string, opts: ParsePathOptions = {}): Parsed {
   if (ext === 'zip') return { kind: 'zip', path: key }
   if (ext === 'pqt' || ext === 'parquet') return { kind: 'parquet', path: key }
   if (ext === 'pdf') return { kind: 'pdf', path: key }
+  if (IMAGE.has(ext)) return { kind: 'image', path: key }
+  if (VIDEO.has(ext)) return { kind: 'video', path: key }
   if (texty.has(ext)) return { kind: 'text', path: key }
 
   // No extension and no trailing slash: assume dir (users often type
