@@ -6,7 +6,13 @@
  * Usage:
  *   import { R2Store } from '@rdub/file-tree/stores/r2'
  *   const store = R2Store(env.R2, { prefixes: ['raw/'] })
+ *
+ * For presigned downloads (browser GETs go direct to R2, bypassing the
+ * worker data path), pass `presign: { endpoint, bucket, accessKeyId,
+ * secretAccessKey }`. Then `getDownloadUrl(path)` mints a short-lived
+ * SigV4 URL.
  */
+import { AwsV4Signer } from 'aws4fetch'
 import type { Entry, GetResult, ListOptions, ListResult, Range, Store } from '../types'
 import { NotFoundError } from '../types'
 
@@ -28,10 +34,30 @@ export interface R2Bucket {
   } | null>
 }
 
+export interface R2PresignOptions {
+  /** R2 S3-compatible endpoint, e.g. `https://<account>.r2.cloudflarestorage.com`. */
+  endpoint: string
+  /** Bucket name (used in the path-style URL the signer presigns). */
+  bucket: string
+  /** R2 access-key ID (S3-compat). */
+  accessKeyId: string
+  /** R2 secret access key (S3-compat). */
+  secretAccessKey: string
+  /** Default URL lifetime in seconds. Default `3600` (1h). Per-call
+   *  override via `getDownloadUrl(path, { expiresIn })`. */
+  expiresIn?: number
+  /** Region passed to SigV4. R2 ignores it; default `'auto'`. */
+  region?: string
+}
+
 export interface R2StoreOptions {
   /** Allow-list of key prefixes. Any list/get for paths outside these is
    *  rejected. Use `['']` to allow the whole bucket (escape-hatch). */
   prefixes?: string[]
+  /** S3-compatible credentials enabling `getDownloadUrl()` (presigned
+   *  GETs). When set, the worker can mint URLs the browser uses to
+   *  stream bytes directly from R2 — no proxying through `/get`. */
+  presign?: R2PresignOptions
 }
 
 export function R2Store(bucket: R2Bucket, opts: R2StoreOptions = {}): Store {
@@ -96,5 +122,40 @@ export function R2Store(bucket: R2Bucket, opts: R2StoreOptions = {}): Store {
     },
 
     capabilities: { range: true },
+
+    ...(opts.presign
+      ? {
+          async getDownloadUrl(path: string, dlOpts?: { expiresIn?: number }): Promise<string> {
+            checkPrefix(path, 'getDownloadUrl path')
+            return presignR2Url(opts.presign!, path, dlOpts?.expiresIn)
+          },
+        }
+      : {}),
   }
+}
+
+async function presignR2Url(presign: R2PresignOptions, path: string, expiresIn?: number): Promise<string> {
+  const endpoint = presign.endpoint.replace(/\/+$/, '')
+  const safeKey = path.split('/').map(encodeURIComponent).join('/')
+  const basename = path.split('/').pop() || path
+  // SigV4 quirk: `X-Amz-Expires` must be in the canonical query string,
+  // so we put it on the URL we hand to the signer. Same for
+  // `response-content-disposition` — having it presigned guarantees the
+  // R2 response carries the header without us round-tripping a HEAD.
+  const search = new URLSearchParams({
+    'X-Amz-Expires': String(expiresIn ?? presign.expiresIn ?? 3600),
+    'response-content-disposition': `attachment; filename="${basename.replace(/"/g, '\\"')}"`,
+  })
+  const url = `${endpoint}/${presign.bucket}/${safeKey}?${search}`
+  const signer = new AwsV4Signer({
+    method: 'GET',
+    url,
+    accessKeyId: presign.accessKeyId,
+    secretAccessKey: presign.secretAccessKey,
+    service: 's3',
+    region: presign.region ?? 'auto',
+    signQuery: true,
+  })
+  const signed = await signer.sign()
+  return signed.url.toString()
 }

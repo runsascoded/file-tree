@@ -9,7 +9,7 @@
  *     <FileTree store={store} routeBase="/files" />
  *   } />
  */
-import { useMemo, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Store } from '../types'
 import { Breadcrumb, type Crumb } from './Breadcrumb'
@@ -101,8 +101,8 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
   // `zipEntry` would point `getUrl` at the wrapping zip — misleading.
   // Suppress there; entry extraction is the consumer's concern.
   const downloadable = parsed.kind !== 'dir' && parsed.kind !== 'zipEntry'
-  const downloadHref = downloadable && typeof store.getUrl === 'function' ? store.getUrl(parsed.path) : null
   const downloadName = downloadable ? basename(parsed.path) : ''
+  const downloadHref = useDownloadHref(store, downloadable ? parsed.path : null)
   const ctx: ViewerActionCtx | null = parsed.kind === 'dir'
     ? null
     : {
@@ -184,6 +184,30 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
         </div>
       )
   }
+}
+
+/** Resolve a downloadable URL for `path`, preferring async `getDownloadUrl`
+ *  (presigning, redirects) over sync `getUrl` (static path). Returns `null`
+ *  while the async URL is pending or unavailable. */
+function useDownloadHref(store: Store, path: string | null): string | null {
+  const syncHref = path != null && typeof store.getUrl === 'function' ? store.getUrl(path) : null
+  const [asyncHref, setAsyncHref] = useState<string | null>(null)
+  useEffect(() => {
+    if (path == null || typeof store.getDownloadUrl !== 'function') {
+      setAsyncHref(null)
+      return
+    }
+    let cancelled = false
+    setAsyncHref(null)
+    store.getDownloadUrl(path).then(
+      url => { if (!cancelled) setAsyncHref(url) },
+      () => { if (!cancelled) setAsyncHref(null) },
+    )
+    return () => { cancelled = true }
+  }, [store, path])
+  if (path == null) return null
+  if (typeof store.getDownloadUrl === 'function') return asyncHref
+  return syncHref
 }
 
 /** Compact download affordance shown right of the breadcrumbs for any

@@ -120,6 +120,27 @@ describe('MultiStore (multi-child semantics)', () => {
     expect(() => MultiStore({ '': MockStore({}) })).toThrow(/invalid child name/)
   })
 
+  it('getDownloadUrl is exposed only when every child has it; delegates with prefix + opts', async () => {
+    const calls: Array<{ path: string; opts?: { expiresIn?: number } }> = []
+    const withDl: Store = {
+      list: async () => ({ entries: [] }),
+      get: async () => ({ bytes: new Uint8Array() }),
+      async getDownloadUrl(p, o) { calls.push({ path: p, ...(o ? { opts: o } : {}) }); return `signed://${p}` },
+    }
+    // One child without → composite omits it.
+    expect(MultiStore({ a: MockStore({}), b: withDl }).getDownloadUrl).toBeUndefined()
+    // All children with → composite forwards.
+    const multi = MultiStore({ a: withDl, b: withDl })
+    expect(multi.getDownloadUrl).toBeTypeOf('function')
+    expect(await multi.getDownloadUrl!('a/foo.txt')).toBe('signed://foo.txt')
+    expect(await multi.getDownloadUrl!('b/sub/bar', { expiresIn: 120 })).toBe('signed://sub/bar')
+    expect(calls).toEqual([
+      { path: 'foo.txt' },
+      { path: 'sub/bar', opts: { expiresIn: 120 } },
+    ])
+    await expect(multi.getDownloadUrl!('nope/x')).rejects.toThrow(/no child for/)
+  })
+
   it('getUrl is exposed only when every child has it; delegates with prefix stripped', () => {
     const withUrl: Store = {
       list: async () => ({ entries: [] }),

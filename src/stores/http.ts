@@ -14,6 +14,11 @@ export interface HttpStoreOptions {
   headers?: Record<string, string>
   /** Custom fetch impl, defaults to global. */
   fetch?: typeof globalThis.fetch
+  /** When `true`, expose `getDownloadUrl(path)` that calls `/presign` on
+   *  the backend. The server only mounts `/presign` when its underlying
+   *  store can mint signed URLs, so consumers must opt in deliberately
+   *  to avoid stalling the UI's download icon against a 404 endpoint. */
+  presign?: boolean
 }
 
 export function HttpStore(apiBase: string, opts: HttpStoreOptions = {}): Store {
@@ -58,5 +63,26 @@ export function HttpStore(apiBase: string, opts: HttpStoreOptions = {}): Store {
     getUrl(path: string): string {
       return `${base}/get?path=${encodeURIComponent(path)}`
     },
+
+    // Opt-in via `presign: true`. The server only mounts `/presign` when
+    // its store implements `getDownloadUrl`, so without the flag we'd be
+    // probing an endpoint that doesn't exist — and a failing async URL
+    // resolution causes `<FileTree>`'s download icon to render disabled
+    // instead of falling back to `getUrl`'s proxying `/get` route.
+    ...(opts.presign
+      ? {
+          async getDownloadUrl(path: string, dlOpts?: { expiresIn?: number }): Promise<string> {
+            const params = new URLSearchParams({ path })
+            if (dlOpts?.expiresIn != null) params.set('expires', String(dlOpts.expiresIn))
+            const res = await f(`${base}/presign?${params}`, { headers })
+            if (!res.ok) {
+              throw new Error(`presign ${path}: ${res.status} ${await res.text()}`)
+            }
+            const body = await res.json() as { url?: string }
+            if (typeof body.url !== 'string') throw new Error(`presign ${path}: malformed response`)
+            return body.url
+          },
+        }
+      : {}),
   }
 }

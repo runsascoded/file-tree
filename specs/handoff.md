@@ -19,17 +19,17 @@ f40f527  @rdub/file-tree v0.0.1: initial scaffold
 
 | Area | State |
 |------|-------|
-| Core `Store` interface (`src/types.ts`) | Done. `list`, `get`, optional `range` capability, `NotFoundError` |
-| `R2Store` (CFW R2Bucket binding) | Done, validated against ctbk's prod bucket. Scoped-`prefixes` empty-prefix list now synthesizes a virtual root (each allowed prefix as a dir) instead of erroring. |
-| `HttpStore` (browser → server proxy) | Done, validated against both Crashes' and ctbk's workers + `site/worker/`. |
+| Core `Store` interface (`src/types.ts`) | Done. `list`, `get`, optional `range` capability, `NotFoundError`. Optional sync `getUrl` (static URL) + async `getDownloadUrl` (presigning); UI prefers async when present. |
+| `R2Store` (CFW R2Bucket binding) | Done, validated against ctbk's prod bucket. Scoped-`prefixes` empty-prefix list now synthesizes a virtual root (each allowed prefix as a dir) instead of erroring. Optional `presign: { endpoint, bucket, accessKeyId, secretAccessKey, expiresIn? }` enables `getDownloadUrl` — browser GETs go direct to R2, no worker in the data path. |
+| `HttpStore` (browser → server proxy) | Done, validated against both Crashes' and ctbk's workers + `site/worker/`. Opt-in `presign: true` adds `getDownloadUrl` that calls `/presign` on the backend (404s without it; opt-in avoids stalling the UI). |
 | `MockStore` (in-memory) | Done. Powers tests + `site/` demo. |
 | `MultiStore` (composite of N child stores) | Done. First path segment routes to a child; root list synthesizes a dir per child. Used by `site/worker/` to expose ctbk + crashes side-by-side. |
 | `S3Store` (S3-compatible API; AWS / R2-via-S3 / MinIO) | Done. SigV4 via `aws4fetch` (small, fetch + `crypto.subtle`; no AWS SDK). Browser-direct or server-proxy (drop-in for `R2Store` in any `createHandlers` callsite). Public (unsigned) and credentialed paths both work. Conformance harness runs via a fake-S3 `fetch` impl backed by `MockStore`. |
-| Server handlers (`src/server/`) | Done. `createHandlers(store, { basePath?, corsOrigin? })` exposes `/list` + `/get`. CORS preflight handled by `site/worker/`. |
+| Server handlers (`src/server/`) | Done. `createHandlers(store, { basePath?, corsOrigin? })` exposes `/list` + `/get` + (conditionally) `/presign`. CORS preflight handled by `site/worker/`. |
 | React UI (`src/react/`) | `<FileTree>`, `<DirListing>` (auto-cursor-follow + default-`README.md` panel), `<TextViewer>` (Range head-fetch + load-all), `<Breadcrumb>`, `parsePath`, `makeMatcher` (substring/glob filter), `asyncBufferFromStore` (hyparquet adapter). Pluggable `markdownRenderer` + `parquetRenderer` slots; the lib doesn't bundle either dep — consumers wire their renderer of choice. |
 | `<ParquetViewer>` (site-side reference impl) | `site/src/ParquetViewer.tsx`. Hyparquet-backed paginated table, fed via `asyncBufferFromStore`. Wired into both MockDemo + HttpDemo via the `parquetRenderer` prop. Adapted from nj-crashes' existing `ParquetTable`. |
 | Conformance harness (`src/test/conformance.ts`) | Done. 9 tests; pluggable into any new Store impl. |
-| Vitest tests | 52 passing across `test/{mock,multi,r2,s3}-store.test.ts`. MultiStore + S3Store both go through full conformance via wrapper / fake-fetch backends. |
+| Vitest tests | 70 passing across `test/{mock,multi,r2,s3,http}-store.test.ts`. MultiStore + S3Store both go through full conformance via wrapper / fake-fetch backends. |
 | Demo site (`site/`) | Vite app on port 8731. Home + MockDemo + HttpDemo all wired up. |
 | `site/worker/` (CFW for HttpDemo) | Done. `wrangler dev` (per-binding `remote = true`) on port 8732. `MultiStore({ demo, ctbk, crashes })` over R2 bindings; same prefix scopes as the consumer apps. |
 | `file-tree-demo` R2 bucket | Done. Worker-only access. Populated with 44-file synthetic Hive-partitioned fixture via `site/worker/scripts/populate-demo-bucket.mjs`. Frozen / re-runnable. **Pending:** the script now also generates a `samples/metrics.parquet` (~5 KB, 1000 rows via `hyparquet-writer`) but it hasn't been uploaded yet — needs a re-run with `CLOUDFLARE_API_TOKEN` set or after `wrangler login`. |
@@ -192,8 +192,14 @@ ahead and commit them too" — they may have done so by the time you read this.
 3. **Commit consumer integrations** in Crashes/ctbk if the user hasn't.
    ctbk can now also use `S3Store` (via the proxy worker template) for
    browsing their `s3://ctbk-data/...` snapshots alongside R2.
-4. **Zip-entry preview** — port from Crashes' raw browser
-   (`cells-api/src/raw.ts` has the central-directory parser).
+4. **Wire R2 presign in `site/worker/`** — plumb `R2_S3_ENDPOINT` +
+   per-bucket `*_ACCESS_KEY_ID`/`*_SECRET_ACCESS_KEY` secrets into the
+   worker, pass `presign: { ... }` to each `R2Store` (or just the demo
+   one to start). Update `site/src/routes/HttpDemo.tsx` to use
+   `HttpStore(API_BASE, { presign: true })`. Verify in the network panel
+   that the download anchor points at `<account>.r2.cloudflarestorage.com`
+   and `/get` is no longer hit for downloads. CORS on the R2 bucket
+   needs `GET` allowed from the site origin — document in worker README.
 5. **Manifest-based static Store** — `ManifestStore({ url })` fetches a
    JSON of all keys at startup, slices it for `list()`. Useful when the
    backend doesn't expose public listing (e.g. GH Pages serving a tree

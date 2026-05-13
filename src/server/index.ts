@@ -6,6 +6,10 @@
  * Endpoints (all GET):
  *   /list?prefix=<p>&cursor=<c>&limit=<n>     → ListResult JSON
  *   /get?path=<p>                              → object bytes (Range honored)
+ *   /presign?path=<p>&expires=<s>              → { url } JSON
+ *     Only mounted when the underlying store implements `getDownloadUrl`.
+ *     `expires` is forwarded to the store (caller hint); stores that
+ *     ignore it use their built-in default.
  */
 import type { Store } from '../types'
 
@@ -44,6 +48,22 @@ export function createHandlers(store: Store, opts: CreateHandlersOptions = {}): 
           const opts = cursor !== undefined || limit !== undefined ? { cursor, limit } : undefined
           const result = await store.list(prefix, opts)
           return jsonResponse(result, 200, corsHeaders)
+        } catch (e) {
+          return errorResponse(e, corsHeaders)
+        }
+      }
+
+      if (path === '/presign') {
+        if (typeof store.getDownloadUrl !== 'function') {
+          return jsonResponse({ error: 'presign not supported by this store' }, 404, corsHeaders)
+        }
+        const p = url.searchParams.get('path')
+        if (!p) return jsonResponse({ error: 'path required' }, 400, corsHeaders)
+        const expStr = url.searchParams.get('expires')
+        const opts = expStr ? { expiresIn: parseInt(expStr, 10) } : undefined
+        try {
+          const signed = await store.getDownloadUrl(p, opts)
+          return jsonResponse({ url: signed }, 200, corsHeaders)
         } catch (e) {
           return errorResponse(e, corsHeaders)
         }

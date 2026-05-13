@@ -97,3 +97,50 @@ describe('R2Store scoped-prefix virtual root', () => {
     expect(dirs).toEqual(['avail/', 'gbfs/', 'private/'])
   })
 })
+
+describe('R2Store getDownloadUrl (presign)', () => {
+  const bucket = fakeBucket([])
+  const presign = {
+    endpoint: 'https://acct.r2.cloudflarestorage.com',
+    bucket: 'my-bkt',
+    accessKeyId: 'AKIA_TEST',
+    secretAccessKey: 'SECRET_TEST',
+  }
+
+  it('omits getDownloadUrl when presign opts not provided', () => {
+    const store = R2Store(bucket, { prefixes: ['raw/'] })
+    expect(store.getDownloadUrl).toBeUndefined()
+  })
+
+  it('signs path-style URL with attachment disposition and default expiry', async () => {
+    const store = R2Store(bucket, { prefixes: ['raw/'], presign })
+    expect(store.getDownloadUrl).toBeTypeOf('function')
+    const url = new URL(await store.getDownloadUrl!('raw/2024/data.csv'))
+    expect(url.origin).toBe('https://acct.r2.cloudflarestorage.com')
+    expect(url.pathname).toBe('/my-bkt/raw/2024/data.csv')
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('3600')
+    expect(url.searchParams.get('X-Amz-Algorithm')).toBe('AWS4-HMAC-SHA256')
+    expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[a-f0-9]{64}$/)
+    expect(url.searchParams.get('response-content-disposition')).toBe('attachment; filename="data.csv"')
+    expect(url.searchParams.get('X-Amz-Credential')).toMatch(/^AKIA_TEST\//)
+  })
+
+  it('honors per-call expiresIn override', async () => {
+    const store = R2Store(bucket, { presign: { ...presign, expiresIn: 60 } })
+    const def = new URL(await store.getDownloadUrl!('raw/x.txt'))
+    const overridden = new URL(await store.getDownloadUrl!('raw/x.txt', { expiresIn: 7200 }))
+    expect(def.searchParams.get('X-Amz-Expires')).toBe('60')
+    expect(overridden.searchParams.get('X-Amz-Expires')).toBe('7200')
+  })
+
+  it('enforces prefix allow-list before signing', async () => {
+    const store = R2Store(bucket, { prefixes: ['raw/'], presign })
+    await expect(store.getDownloadUrl!('private/secret')).rejects.toThrow(/not under any allowed prefix/)
+  })
+
+  it('quotes filename with embedded double-quote', async () => {
+    const store = R2Store(bucket, { presign })
+    const url = new URL(await store.getDownloadUrl!('weird"name.txt'))
+    expect(url.searchParams.get('response-content-disposition')).toBe('attachment; filename="weird\\"name.txt"')
+  })
+})
