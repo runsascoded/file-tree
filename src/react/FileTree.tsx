@@ -16,7 +16,7 @@ import { Breadcrumb, type Crumb } from './Breadcrumb'
 import { DirListing } from './DirListing'
 import { MediaViewer } from './MediaViewer'
 import { TextViewer } from './TextViewer'
-import { type Parsed, parsePath, basename, keyToSplat, extOf } from './parsePath'
+import { type Parsed, parsePath, basename, keyToSplat, extOf, CODE_LANG } from './parsePath'
 
 /** Optional renderer that converts a markdown source string into a
  *  React node. Pluggable so the lib doesn't bundle a markdown library;
@@ -62,9 +62,22 @@ export interface FileTreeProps {
   /** Optional JSON renderer. When set, `.json` files render via this fn
    *  (typically a collapsible tree) instead of plaintext `<pre>`. */
   jsonRenderer?: (source: string) => ReactNode
+  /** Optional CSV/TSV renderer. When set, `.csv` and `.tsv` paths
+   *  render via this component (typically a range-paginated sticky-
+   *  header table) instead of plaintext `<pre>`. */
+  csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string }>
+  /** Optional notebook renderer. When set, `.ipynb` paths render via
+   *  this component (typically a cell-by-cell view with rendered
+   *  markdown cells + code outputs). */
+  notebookRenderer?: ComponentType<{ store: Store; path: string }>
+  /** Optional code-highlighting renderer. When set, TEXTY paths whose
+   *  extension maps to a language in `CODE_LANG` (e.g. `.ts`, `.py`,
+   *  `.go`) render via this fn (`(source, lang) => ReactNode`) instead
+   *  of plaintext `<pre>`. */
+  codeRenderer?: (source: string, lang: string) => ReactNode
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer }: FileTreeProps) {
+export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }: FileTreeProps) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -83,12 +96,12 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
         crumbs={crumbs}
         rightSlot={downloadHref ? <DownloadIcon href={downloadHref} name={downloadName} /> : undefined}
       />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string) => ReactNode }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string }>; notebookRenderer?: ComponentType<{ store: Store; path: string }>; codeRenderer?: (s: string, lang: string) => ReactNode }) {
   switch (parsed.kind) {
     case 'dir':
       return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
@@ -96,12 +109,20 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const ext = extOf(parsed.path)
       const isMd = ext === 'md' || ext === 'markdown'
       const isJson = ext === 'json'
+      const isCsv = ext === 'csv' || ext === 'tsv'
+      const lang = CODE_LANG[ext]
+      if (isCsv && csvRenderer) {
+        const Component = csvRenderer
+        return <Component store={store} path={parsed.path} delimiter={ext === 'tsv' ? '\t' : ','} />
+      }
       return (
         <TextViewer
           store={store}
           path={parsed.path}
           markdownRenderer={isMd ? markdownRenderer : undefined}
           jsonRenderer={isJson ? jsonRenderer : undefined}
+          codeRenderer={!isMd && !isJson && lang ? codeRenderer : undefined}
+          codeLang={lang}
         />
       )
     }
@@ -113,10 +134,17 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const Component = parquetRenderer
       return <Component store={store} path={parsed.path} />
     }
+    case 'notebook': {
+      if (!notebookRenderer) return <UnsupportedView label="Notebook preview" />
+      const Component = notebookRenderer
+      return <Component store={store} path={parsed.path} />
+    }
     case 'image':
       return <MediaViewer store={store} path={parsed.path} kind="image" />
     case 'video':
       return <MediaViewer store={store} path={parsed.path} kind="video" />
+    case 'audio':
+      return <MediaViewer store={store} path={parsed.path} kind="audio" />
     case 'pdf':
       return <UnsupportedView label="PDF preview" />
     case 'binary':

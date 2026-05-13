@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react'
 import type { Store } from '../types'
 
-export type MediaKind = 'image' | 'video'
+export type MediaKind = 'image' | 'video' | 'audio'
 
 export interface MediaViewerProps {
   store: Store
@@ -54,6 +54,16 @@ export function MediaViewer({ store, path, kind }: MediaViewerProps) {
         src={src}
         alt={path}
         style={{ maxWidth: '100%', maxHeight: '80vh', display: 'block', borderRadius: 4 }}
+      />
+    )
+  }
+  if (kind === 'audio') {
+    return (
+      <audio
+        src={src}
+        controls
+        preload="metadata"
+        style={{ display: 'block', width: '100%', maxWidth: 600 }}
       />
     )
   }

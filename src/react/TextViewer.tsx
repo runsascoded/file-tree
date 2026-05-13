@@ -15,17 +15,23 @@ export interface TextViewerProps {
    *  instead of plaintext `<pre>`. Caller decides which extensions
    *  qualify (typically `.json`). */
   jsonRenderer?: (source: string) => ReactNode
+  /** When provided, render the bytes as syntax-highlighted code via
+   *  this fn (`(source, lang) => ReactNode`). Caller decides which
+   *  extensions qualify + supplies the `lang` hint. */
+  codeRenderer?: (source: string, lang: string) => ReactNode
+  /** Language hint passed to `codeRenderer`. */
+  codeLang?: string
 }
 
-export function TextViewer({ store, path, markdownRenderer, jsonRenderer }: TextViewerProps) {
+export function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang }: TextViewerProps) {
   const [text, setText] = useState<string | null>(null)
   const [totalSize, setTotalSize] = useState<number | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
-  // Markdown + JSON renderers want the whole document (partial input
-  // breaks parsers); plain `<pre>` is fine with a head-only fetch +
-  // "load all" button.
-  const fetchFull = !!markdownRenderer || !!jsonRenderer
+  // Custom renderers (markdown / json / code) want the whole document;
+  // partial input breaks parsers + highlighters. Plain `<pre>` is fine
+  // with a head-only fetch + "load all" button.
+  const fetchFull = !!markdownRenderer || !!jsonRenderer || !!codeRenderer
 
   useEffect(() => {
     let cancelled = false
@@ -68,6 +74,10 @@ export function TextViewer({ store, path, markdownRenderer, jsonRenderer }: Text
       ) : jsonRenderer ? (
         <div className="rdub-file-tree-json" data-path={path}>
           {jsonRenderer(text)}
+        </div>
+      ) : codeRenderer ? (
+        <div className="rdub-file-tree-code" data-path={path} data-lang={codeLang}>
+          {codeRenderer(text, codeLang ?? '')}
         </div>
       ) : (
         <pre style={{
