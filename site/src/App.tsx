@@ -4,6 +4,7 @@ import { MockDemo } from './routes/MockDemo'
 import { HttpDemo } from './routes/HttpDemo'
 import { S3Demo } from './routes/S3Demo'
 import { R2Demo } from './routes/R2Demo'
+import { SqlStub } from './routes/SqlStub'
 
 export function App() {
   return (
@@ -29,6 +30,7 @@ export function App() {
           <Route path="/s3/:slug/*" element={<S3Demo />} />
           <Route path="/r2" element={<R2Demo />} />
           <Route path="/r2/:slug/*" element={<R2Demo />} />
+          <Route path="/sql" element={<SqlStub />} />
         </Routes>
       </main>
     </>

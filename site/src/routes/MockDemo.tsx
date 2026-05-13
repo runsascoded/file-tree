@@ -8,6 +8,7 @@ import { renderJsonTree } from '../JsonTree'
 import { CsvViewer } from '../CsvViewer'
 import { NotebookViewer } from '../NotebookViewer'
 import { renderCode } from '../CodeHighlight'
+import { renderViewerActions } from '../viewerActions'
 
 export function MockDemo() {
   const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100 }), [])
@@ -23,6 +24,7 @@ export function MockDemo() {
         csvRenderer={CsvViewer}
         notebookRenderer={NotebookViewer}
         codeRenderer={renderCode}
+        viewerActions={renderViewerActions}
       />
       <details style={{ marginTop: '2em', fontSize: '0.9em', opacity: 0.85 }}>
         <summary>How this works</summary>

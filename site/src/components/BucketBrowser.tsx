@@ -15,6 +15,7 @@ import { renderJsonTree } from '../JsonTree'
 import { CsvViewer } from '../CsvViewer'
 import { NotebookViewer } from '../NotebookViewer'
 import { renderCode } from '../CodeHighlight'
+import { renderViewerActions } from '../viewerActions'
 import type { BucketEntry } from './BucketsPage'
 
 export interface BucketBrowserProps {
@@ -94,6 +95,7 @@ export function BucketBrowser({ seeds, lsKey, routeBase, buildStore }: BucketBro
         csvRenderer={CsvViewer}
         notebookRenderer={NotebookViewer}
         codeRenderer={renderCode}
+        viewerActions={renderViewerActions}
       />
     </div>
   )
