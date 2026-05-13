@@ -12,6 +12,9 @@ import type { Store } from '@rdub/file-tree'
 import { renderMarkdown } from '../Markdown'
 import { ParquetViewer } from '../ParquetViewer'
 import { renderJsonTree } from '../JsonTree'
+import { CsvViewer } from '../CsvViewer'
+import { NotebookViewer } from '../NotebookViewer'
+import { renderCode } from '../CodeHighlight'
 import type { BucketEntry } from './BucketsPage'
 
 export interface BucketBrowserProps {
@@ -88,6 +91,9 @@ export function BucketBrowser({ seeds, lsKey, routeBase, buildStore }: BucketBro
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
         jsonRenderer={renderJsonTree}
+        csvRenderer={CsvViewer}
+        notebookRenderer={NotebookViewer}
+        codeRenderer={renderCode}
       />
     </div>
   )

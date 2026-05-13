@@ -5,6 +5,9 @@ import { HttpStore } from '@rdub/file-tree/stores/http'
 import { renderMarkdown } from '../Markdown'
 import { ParquetViewer } from '../ParquetViewer'
 import { renderJsonTree } from '../JsonTree'
+import { CsvViewer } from '../CsvViewer'
+import { NotebookViewer } from '../NotebookViewer'
+import { renderCode } from '../CodeHighlight'
 
 // Default points at the deployed demo worker (CFW, multi-bucket).
 // Override via `VITE_HTTP_DEMO_BASE` (e.g. `http://localhost:8732/v1/files`
@@ -25,6 +28,9 @@ export function HttpDemo() {
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
         jsonRenderer={renderJsonTree}
+        csvRenderer={CsvViewer}
+        notebookRenderer={NotebookViewer}
+        codeRenderer={renderCode}
       />
       {atVirtualRoot && (
         <aside style={{ marginTop: '1em', fontSize: '0.9em', opacity: 0.85 }}>
