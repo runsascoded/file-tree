@@ -216,9 +216,15 @@ export function S3Store(opts: S3StoreOptions): Store {
         throw new Error(`S3 get ${path}: ${res.status} ${await res.text()}`)
       }
       const cr = res.headers.get('Content-Range')
+      // 206 + no `Content-Range` (common: AWS S3 default CORS strips
+      // it) means we can't know the total size from this response —
+      // `Content-Length` is the partial length, not the full file's.
+      // Only trust `Content-Length` for 200 responses.
       const totalSize = cr
         ? parseInt(cr.split('/')[1], 10)
-        : parseInt(res.headers.get('Content-Length') ?? '', 10)
+        : res.status === 200
+          ? parseInt(res.headers.get('Content-Length') ?? '', 10)
+          : NaN
       const bytes = new Uint8Array(await res.arrayBuffer())
       const out: GetResult = { bytes }
       if (Number.isFinite(totalSize)) out.totalSize = totalSize

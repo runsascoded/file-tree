@@ -18,10 +18,28 @@ export interface AsyncBuffer {
 }
 
 export async function asyncBufferFromStore(store: Store, path: string): Promise<AsyncBuffer> {
-  // Need `byteLength` upfront. A 1-byte range read returns `totalSize`
-  // from Content-Range (cheaper than fetching the whole object).
-  const head = await store.get(path, { offset: 0, length: 1 })
-  const byteLength = head.totalSize ?? head.bytes.byteLength
+  // Prefer an HTTP HEAD via `store.getUrl(path)` when available. AWS S3
+  // (and many other backends) strip `Content-Range` from CORS responses
+  // by default, which makes the 1-byte range trick fall back to a
+  // partial `Content-Length` of 1 — wrong, and hyparquet later trips
+  // `RangeError: Offset is outside the bounds of the DataView`.
+  // HEAD returns a 200 whose `Content-Length` is the full object size.
+  let byteLength: number | undefined
+  if (typeof store.getUrl === 'function') {
+    try {
+      const r = await fetch(store.getUrl(path), { method: 'HEAD' })
+      if (r.ok) {
+        const cl = parseInt(r.headers.get('Content-Length') ?? '', 10)
+        if (Number.isFinite(cl) && cl > 0) byteLength = cl
+      }
+    } catch { /* HEAD blocked / unsupported — fall through */ }
+  }
+  if (byteLength === undefined) {
+    // Fallback: 1-byte range read. Works for native bindings (R2Store)
+    // and HTTP proxies that expose `Content-Range`.
+    const head = await store.get(path, { offset: 0, length: 1 })
+    byteLength = head.totalSize ?? head.bytes.byteLength
+  }
   return {
     byteLength,
     async slice(start: number, end?: number): Promise<ArrayBuffer> {
