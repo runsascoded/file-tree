@@ -59,6 +59,11 @@ export function createHandlers(store: Store, opts: CreateHandlersOptions = {}): 
           const headers = new Headers(corsHeaders)
           if (result.contentType) headers.set('Content-Type', result.contentType)
           headers.set('Content-Length', String(result.bytes.byteLength))
+          // Suggest the object basename to user agents — browsers ignore the
+          // `download` attribute on cross-origin anchors, so without this
+          // header the saved file is named after the URL path (e.g. `get`).
+          const basename = p.split('/').pop() || p
+          headers.set('Content-Disposition', `attachment; filename="${basename.replace(/"/g, '\\"')}"`)
           if (range && result.totalSize != null) {
             headers.set('Content-Range', `bytes ${range.offset}-${range.offset + result.bytes.byteLength - 1}/${result.totalSize}`)
             return new Response(result.bytes as BodyInit, { status: 206, headers })
