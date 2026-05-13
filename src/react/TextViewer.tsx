@@ -11,18 +11,26 @@ export interface TextViewerProps {
    *  instead of plaintext `<pre>`. Caller decides which extensions
    *  qualify (typically `.md`/`.markdown`). */
   markdownRenderer?: (source: string) => ReactNode
+  /** When provided, render the bytes as a JSON tree via this fn
+   *  instead of plaintext `<pre>`. Caller decides which extensions
+   *  qualify (typically `.json`). */
+  jsonRenderer?: (source: string) => ReactNode
 }
 
-export function TextViewer({ store, path, markdownRenderer }: TextViewerProps) {
+export function TextViewer({ store, path, markdownRenderer, jsonRenderer }: TextViewerProps) {
   const [text, setText] = useState<string | null>(null)
   const [totalSize, setTotalSize] = useState<number | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
+  // Markdown + JSON renderers want the whole document (partial input
+  // breaks parsers); plain `<pre>` is fine with a head-only fetch +
+  // "load all" button.
+  const fetchFull = !!markdownRenderer || !!jsonRenderer
 
   useEffect(() => {
     let cancelled = false
     setText(null); setError(null); setTotalSize(undefined)
-    const range = store.capabilities?.range ? { offset: 0, length: HEAD_BYTES } : undefined
+    const range = !fetchFull && store.capabilities?.range ? { offset: 0, length: HEAD_BYTES } : undefined
     store.get(path, range).then(r => {
       if (cancelled) return
       setText(new TextDecoder().decode(r.bytes))
@@ -32,7 +40,7 @@ export function TextViewer({ store, path, markdownRenderer }: TextViewerProps) {
       setError(String(e))
     })
     return () => { cancelled = true }
-  }, [store, path])
+  }, [store, path, fetchFull])
 
   async function loadAll() {
     if (totalSize == null) return
@@ -56,6 +64,10 @@ export function TextViewer({ store, path, markdownRenderer }: TextViewerProps) {
       {markdownRenderer ? (
         <div className="rdub-file-tree-markdown" data-path={path}>
           {markdownRenderer(text)}
+        </div>
+      ) : jsonRenderer ? (
+        <div className="rdub-file-tree-json" data-path={path}>
+          {jsonRenderer(text)}
         </div>
       ) : (
         <pre style={{

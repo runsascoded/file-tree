@@ -11,6 +11,7 @@ import { FileTree } from '@rdub/file-tree/react'
 import type { Store } from '@rdub/file-tree'
 import { renderMarkdown } from '../Markdown'
 import { ParquetViewer } from '../ParquetViewer'
+import { renderJsonTree } from '../JsonTree'
 import type { BucketEntry } from './BucketsPage'
 
 export interface BucketBrowserProps {
@@ -86,6 +87,7 @@ export function BucketBrowser({ seeds, lsKey, routeBase, buildStore }: BucketBro
         title={entry.label ?? entry.bucket}
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
+        jsonRenderer={renderJsonTree}
       />
     </div>
   )

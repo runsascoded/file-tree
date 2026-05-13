@@ -4,6 +4,7 @@ import { FileTree } from '@rdub/file-tree/react'
 import { HttpStore } from '@rdub/file-tree/stores/http'
 import { renderMarkdown } from '../Markdown'
 import { ParquetViewer } from '../ParquetViewer'
+import { renderJsonTree } from '../JsonTree'
 
 // Default points at the deployed demo worker (CFW, multi-bucket).
 // Override via `VITE_HTTP_DEMO_BASE` (e.g. `http://localhost:8732/v1/files`
@@ -23,6 +24,7 @@ export function HttpDemo() {
         title="R2 browser"
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
+        jsonRenderer={renderJsonTree}
       />
       {atVirtualRoot && (
         <aside style={{ marginTop: '1em', fontSize: '0.9em', opacity: 0.85 }}>

@@ -59,9 +59,12 @@ export interface FileTreeProps {
    *  `.parquet`/`.pqt` paths render via this component (typically a
    *  hyparquet-backed table). */
   parquetRenderer?: ParquetRenderer
+  /** Optional JSON renderer. When set, `.json` files render via this fn
+   *  (typically a collapsible tree) instead of plaintext `<pre>`. */
+  jsonRenderer?: (source: string) => ReactNode
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer }: FileTreeProps) {
+export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer }: FileTreeProps) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -80,19 +83,27 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
         crumbs={crumbs}
         rightSlot={downloadHref ? <DownloadIcon href={downloadHref} name={downloadName} /> : undefined}
       />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string) => ReactNode }) {
   switch (parsed.kind) {
     case 'dir':
       return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
     case 'text': {
       const ext = extOf(parsed.path)
       const isMd = ext === 'md' || ext === 'markdown'
-      return <TextViewer store={store} path={parsed.path} markdownRenderer={isMd ? markdownRenderer : undefined} />
+      const isJson = ext === 'json'
+      return (
+        <TextViewer
+          store={store}
+          path={parsed.path}
+          markdownRenderer={isMd ? markdownRenderer : undefined}
+          jsonRenderer={isJson ? jsonRenderer : undefined}
+        />
+      )
     }
     case 'zip':
     case 'zipEntry':

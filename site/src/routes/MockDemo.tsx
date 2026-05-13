@@ -4,6 +4,7 @@ import { MockStore } from '@rdub/file-tree/stores/mock'
 import { DEMO_FIXTURE } from '../fixtures/demo'
 import { renderMarkdown } from '../Markdown'
 import { ParquetViewer } from '../ParquetViewer'
+import { renderJsonTree } from '../JsonTree'
 
 export function MockDemo() {
   const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100 }), [])
@@ -15,6 +16,7 @@ export function MockDemo() {
         title="MockStore demo"
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
+        jsonRenderer={renderJsonTree}
       />
       <details style={{ marginTop: '2em', fontSize: '0.9em', opacity: 0.85 }}>
         <summary>How this works</summary>
