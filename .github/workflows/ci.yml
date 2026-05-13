@@ -84,12 +84,13 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main'
     uses: runsascoded/npm-dist/.github/workflows/build-dist.yml@v1
-    with:
-      # tsup writes a directory tree to `dist/`; the source `package.json`
-      # exports already point at `./dist/...`. `preserve_dirs: dist` keeps
-      # `dist/` intact on the dist branch (no flattening), so the exports
-      # work as-is without an `exports_map`.
-      preserve_dirs: dist
+    # Default flattening mode: npm-dist copies `dist/`'s contents to the
+    # dist-branch root and rewrites the `./dist/...` paths in `exports`
+    # to `./...` to match. We previously used `preserve_dirs: dist` to
+    # keep paths intact, but v1's merge step transforms paths
+    # unconditionally on subsequent runs, leaving exports pointing at
+    # `./index.js` while files still lived under `./dist/index.js` →
+    # validator failure. Default mode keeps both in sync.
 
   deploy-worker:
     needs: test
