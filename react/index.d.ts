@@ -47,8 +47,28 @@ interface FileTreeProps {
     /** Optional JSON renderer. When set, `.json` files render via this fn
      *  (typically a collapsible tree) instead of plaintext `<pre>`. */
     jsonRenderer?: (source: string) => ReactNode;
+    /** Optional CSV/TSV renderer. When set, `.csv` and `.tsv` paths
+     *  render via this component (typically a range-paginated sticky-
+     *  header table) instead of plaintext `<pre>`. */
+    csvRenderer?: ComponentType<{
+        store: Store;
+        path: string;
+        delimiter: string;
+    }>;
+    /** Optional notebook renderer. When set, `.ipynb` paths render via
+     *  this component (typically a cell-by-cell view with rendered
+     *  markdown cells + code outputs). */
+    notebookRenderer?: ComponentType<{
+        store: Store;
+        path: string;
+    }>;
+    /** Optional code-highlighting renderer. When set, TEXTY paths whose
+     *  extension maps to a language in `CODE_LANG` (e.g. `.ts`, `.py`,
+     *  `.go`) render via this fn (`(source, lang) => ReactNode`) instead
+     *  of plaintext `<pre>`. */
+    codeRenderer?: (source: string, lang: string) => ReactNode;
 }
-declare function FileTree({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer }: FileTreeProps): react_jsx_runtime.JSX.Element;
+declare function FileTree({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }: FileTreeProps): react_jsx_runtime.JSX.Element;
 
 /** Adapter from `Store` to hyparquet's `AsyncBuffer` shape
  *  (`{ byteLength: number; slice(start, end?): Promise<ArrayBuffer> }`).
@@ -108,10 +128,16 @@ interface TextViewerProps {
      *  instead of plaintext `<pre>`. Caller decides which extensions
      *  qualify (typically `.json`). */
     jsonRenderer?: (source: string) => ReactNode;
+    /** When provided, render the bytes as syntax-highlighted code via
+     *  this fn (`(source, lang) => ReactNode`). Caller decides which
+     *  extensions qualify + supplies the `lang` hint. */
+    codeRenderer?: (source: string, lang: string) => ReactNode;
+    /** Language hint passed to `codeRenderer`. */
+    codeLang?: string;
 }
-declare function TextViewer({ store, path, markdownRenderer, jsonRenderer }: TextViewerProps): react_jsx_runtime.JSX.Element;
+declare function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang }: TextViewerProps): react_jsx_runtime.JSX.Element;
 
-type MediaKind = 'image' | 'video';
+type MediaKind = 'image' | 'video' | 'audio';
 interface MediaViewerProps {
     store: Store;
     path: string;
@@ -133,8 +159,12 @@ declare function MediaViewer({ store, path, kind }: MediaViewerProps): react_jsx
  * [1]: https://docs.gradle.org/current/userguide/declaring_repositories.html#zip_uri
  */
 declare const TEXTY: Set<string>;
+/** Map file extension → highlight.js / shiki language id. Subset of
+ *  TEXTY; extensions not in this map fall through to plaintext. */
+declare const CODE_LANG: Record<string, string>;
 declare const IMAGE: Set<string>;
 declare const VIDEO: Set<string>;
+declare const AUDIO: Set<string>;
 type Parsed = {
     kind: 'dir';
     prefix: string;
@@ -152,6 +182,9 @@ type Parsed = {
     kind: 'parquet';
     path: string;
 } | {
+    kind: 'notebook';
+    path: string;
+} | {
     kind: 'pdf';
     path: string;
 } | {
@@ -159,6 +192,9 @@ type Parsed = {
     path: string;
 } | {
     kind: 'video';
+    path: string;
+} | {
+    kind: 'audio';
     path: string;
 } | {
     kind: 'binary';
@@ -187,4 +223,4 @@ declare function fmtSize(n: number | undefined): string;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { type AsyncBuffer, Breadcrumb, type Crumb, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, TEXTY, TextViewer, type TextViewerProps, VIDEO, asyncBufferFromStore, basename, extOf, fmtSize, keyToSplat, makeMatcher, parsePath };
+export { AUDIO, type AsyncBuffer, Breadcrumb, CODE_LANG, type Crumb, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, TEXTY, TextViewer, type TextViewerProps, VIDEO, asyncBufferFromStore, basename, extOf, fmtSize, keyToSplat, makeMatcher, parsePath };

@@ -43,8 +43,36 @@ function makeMatcher(q) {
 
 // src/react/parsePath.ts
 var TEXTY = /* @__PURE__ */ new Set(["txt", "csv", "tsv", "json", "md", "log", "yaml", "yml", "toml", "ini", "sql", "sh", "py", "ts", "tsx", "js", "jsx", "html", "css"]);
+var CODE_LANG = {
+  ts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  jsx: "jsx",
+  mjs: "javascript",
+  cjs: "javascript",
+  py: "python",
+  sh: "bash",
+  bash: "bash",
+  sql: "sql",
+  html: "html",
+  css: "css",
+  scss: "scss",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  ini: "ini",
+  go: "go",
+  rs: "rust",
+  rb: "ruby",
+  java: "java",
+  c: "c",
+  cpp: "cpp",
+  h: "c",
+  hpp: "cpp"
+};
 var IMAGE = /* @__PURE__ */ new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"]);
-var VIDEO = /* @__PURE__ */ new Set(["mp4", "webm", "mov", "m4v", "ogv", "ogg"]);
+var VIDEO = /* @__PURE__ */ new Set(["mp4", "webm", "mov", "m4v", "ogv"]);
+var AUDIO = /* @__PURE__ */ new Set(["mp3", "wav", "flac", "ogg", "opus", "m4a", "aac"]);
 function extOf(name) {
   const m = name.toLowerCase().match(/\.([a-z0-9]+)$/);
   return m ? m[1] : "";
@@ -73,9 +101,11 @@ function parsePath(splat, opts = {}) {
   const ext = extOf(key);
   if (ext === "zip") return { kind: "zip", path: key };
   if (ext === "pqt" || ext === "parquet") return { kind: "parquet", path: key };
+  if (ext === "ipynb") return { kind: "notebook", path: key };
   if (ext === "pdf") return { kind: "pdf", path: key };
   if (IMAGE.has(ext)) return { kind: "image", path: key };
   if (VIDEO.has(ext)) return { kind: "video", path: key };
+  if (AUDIO.has(ext)) return { kind: "audio", path: key };
   if (texty.has(ext)) return { kind: "text", path: key };
   if (!ext) return { kind: "dir", prefix: key + "/" };
   return { kind: "binary", path: key };
@@ -303,6 +333,17 @@ function MediaViewer({ store, path, kind }) {
       }
     );
   }
+  if (kind === "audio") {
+    return /* @__PURE__ */ jsx3(
+      "audio",
+      {
+        src,
+        controls: true,
+        preload: "metadata",
+        style: { display: "block", width: "100%", maxWidth: 600 }
+      }
+    );
+  }
   return /* @__PURE__ */ jsx3(
     "video",
     {
@@ -318,12 +359,12 @@ function MediaViewer({ store, path, kind }) {
 import { useEffect as useEffect3, useState as useState3 } from "react";
 import { Fragment as Fragment2, jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 var HEAD_BYTES = 64 * 1024;
-function TextViewer({ store, path, markdownRenderer, jsonRenderer }) {
+function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang }) {
   const [text, setText] = useState3(null);
   const [totalSize, setTotalSize] = useState3(void 0);
   const [error, setError] = useState3(null);
   const [loadingMore, setLoadingMore] = useState3(false);
-  const fetchFull = !!markdownRenderer || !!jsonRenderer;
+  const fetchFull = !!markdownRenderer || !!jsonRenderer || !!codeRenderer;
   useEffect3(() => {
     let cancelled = false;
     setText(null);
@@ -365,7 +406,7 @@ function TextViewer({ store, path, markdownRenderer, jsonRenderer }) {
   ] });
   const truncated = totalSize != null && text.length < totalSize;
   return /* @__PURE__ */ jsxs4(Fragment2, { children: [
-    markdownRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-markdown", "data-path": path, children: markdownRenderer(text) }) : jsonRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-json", "data-path": path, children: jsonRenderer(text) }) : /* @__PURE__ */ jsx4("pre", { style: {
+    markdownRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-markdown", "data-path": path, children: markdownRenderer(text) }) : jsonRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-json", "data-path": path, children: jsonRenderer(text) }) : codeRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-code", "data-path": path, "data-lang": codeLang, children: codeRenderer(text, codeLang ?? "") }) : /* @__PURE__ */ jsx4("pre", { style: {
       background: "rgba(127,127,127,0.08)",
       padding: "0.6em 0.8em",
       borderRadius: 4,
@@ -388,7 +429,7 @@ function TextViewer({ store, path, markdownRenderer, jsonRenderer }) {
 
 // src/react/FileTree.tsx
 import { jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer }) {
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }) {
   const location = useLocation();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
@@ -406,10 +447,10 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
         rightSlot: downloadHref ? /* @__PURE__ */ jsx5(DownloadIcon, { href: downloadHref, name: downloadName }) : void 0
       }
     ),
-    /* @__PURE__ */ jsx5(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer })
+    /* @__PURE__ */ jsx5(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer })
   ] });
 }
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }) {
   switch (parsed.kind) {
     case "dir":
       return /* @__PURE__ */ jsx5(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer });
@@ -417,13 +458,21 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const ext = extOf(parsed.path);
       const isMd = ext === "md" || ext === "markdown";
       const isJson = ext === "json";
+      const isCsv = ext === "csv" || ext === "tsv";
+      const lang = CODE_LANG[ext];
+      if (isCsv && csvRenderer) {
+        const Component = csvRenderer;
+        return /* @__PURE__ */ jsx5(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : "," });
+      }
       return /* @__PURE__ */ jsx5(
         TextViewer,
         {
           store,
           path: parsed.path,
           markdownRenderer: isMd ? markdownRenderer : void 0,
-          jsonRenderer: isJson ? jsonRenderer : void 0
+          jsonRenderer: isJson ? jsonRenderer : void 0,
+          codeRenderer: !isMd && !isJson && lang ? codeRenderer : void 0,
+          codeLang: lang
         }
       );
     }
@@ -435,10 +484,17 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const Component = parquetRenderer;
       return /* @__PURE__ */ jsx5(Component, { store, path: parsed.path });
     }
+    case "notebook": {
+      if (!notebookRenderer) return /* @__PURE__ */ jsx5(UnsupportedView, { label: "Notebook preview" });
+      const Component = notebookRenderer;
+      return /* @__PURE__ */ jsx5(Component, { store, path: parsed.path });
+    }
     case "image":
       return /* @__PURE__ */ jsx5(MediaViewer, { store, path: parsed.path, kind: "image" });
     case "video":
       return /* @__PURE__ */ jsx5(MediaViewer, { store, path: parsed.path, kind: "video" });
+    case "audio":
+      return /* @__PURE__ */ jsx5(MediaViewer, { store, path: parsed.path, kind: "audio" });
     case "pdf":
       return /* @__PURE__ */ jsx5(UnsupportedView, { label: "PDF preview" });
     case "binary":
@@ -513,7 +569,9 @@ async function asyncBufferFromStore(store, path) {
   };
 }
 export {
+  AUDIO,
   Breadcrumb,
+  CODE_LANG,
   DirListing,
   FileTree,
   IMAGE,
