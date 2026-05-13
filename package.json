@@ -1,53 +1,58 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.76284c9",
+  "version": "0.0.1-dist.24631c5",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "require": "./index.cjs"
     },
     "./react": {
-      "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js",
-      "require": "./dist/react/index.cjs"
+      "types": "./react/index.d.ts",
+      "import": "./react/index.js",
+      "require": "./react/index.cjs"
     },
     "./stores": {
-      "types": "./dist/stores/index.d.ts",
-      "import": "./dist/stores/index.js",
-      "require": "./dist/stores/index.cjs"
+      "types": "./stores/index.d.ts",
+      "import": "./stores/index.js",
+      "require": "./stores/index.cjs"
     },
     "./stores/r2": {
-      "types": "./dist/stores/r2.d.ts",
-      "import": "./dist/stores/r2.js",
-      "require": "./dist/stores/r2.cjs"
+      "types": "./stores/r2.d.ts",
+      "import": "./stores/r2.js",
+      "require": "./stores/r2.cjs"
     },
     "./stores/http": {
-      "types": "./dist/stores/http.d.ts",
-      "import": "./dist/stores/http.js",
-      "require": "./dist/stores/http.cjs"
+      "types": "./stores/http.d.ts",
+      "import": "./stores/http.js",
+      "require": "./stores/http.cjs"
     },
     "./stores/mock": {
-      "types": "./dist/stores/mock.d.ts",
-      "import": "./dist/stores/mock.js",
-      "require": "./dist/stores/mock.cjs"
+      "types": "./stores/mock.d.ts",
+      "import": "./stores/mock.js",
+      "require": "./stores/mock.cjs"
     },
     "./stores/multi": {
-      "types": "./dist/stores/multi.d.ts",
-      "import": "./dist/stores/multi.js",
-      "require": "./dist/stores/multi.cjs"
+      "types": "./stores/multi.d.ts",
+      "import": "./stores/multi.js",
+      "require": "./stores/multi.cjs"
     },
     "./test/conformance": {
-      "types": "./dist/test/conformance.d.ts",
-      "import": "./dist/test/conformance.js",
-      "require": "./dist/test/conformance.cjs"
+      "types": "./test/conformance.d.ts",
+      "import": "./test/conformance.js",
+      "require": "./test/conformance.cjs"
     },
     "./server": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js",
-      "require": "./dist/server/index.cjs"
+      "types": "./server/index.d.ts",
+      "import": "./server/index.js",
+      "require": "./server/index.cjs"
+    },
+    "./stores/s3": {
+      "types": "./stores/s3.d.ts",
+      "import": "./stores/s3.js",
+      "require": "./stores/s3.cjs"
     }
   },
   "keywords": [
@@ -81,5 +86,8 @@
     "react-router-dom": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
   }
 }
