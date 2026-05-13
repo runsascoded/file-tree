@@ -66,6 +66,43 @@ export interface Store {
    *  GET-able URL (in-memory, CFW R2 binding, presigning-required) omit
    *  this and the UI hides the download affordance. */
   getUrl?(path: string): string
+
+  /** Optional zip-aware shortcut: return the central-directory listing
+   *  for a zip at `path`. When defined, `<FileTree>`'s default zip view
+   *  delegates here (e.g. a server-side inflate worker). When undefined,
+   *  the lib parses the central directory client-side via range reads
+   *  on `get(path, range)`. Implement only if you have an existing
+   *  server-side path; the client default works for any store. */
+  getZipEntries?(path: string): Promise<ZipEntriesResult>
+
+  /** Optional zip-aware shortcut: return the raw uncompressed bytes for
+   *  one entry inside a zip at `path`. Same delegation rules as
+   *  `getZipEntries`. Stores omitting this fall back to client-side
+   *  inflate via `DecompressionStream('deflate-raw')`. */
+  getZipEntry?(path: string, entry: string, opts?: { max?: number }): Promise<GetResult>
+}
+
+export interface ZipEntry {
+  /** Entry name (path inside the zip). */
+  name: string
+  /** Uncompressed size in bytes. */
+  size: number
+  /** Compressed size in bytes. */
+  compressedSize: number
+  /** zip compression method: `0` = stored, `8` = DEFLATE. */
+  method: number
+  /** Byte offset of the entry's local file header within the zip. */
+  localHeaderOffset: number
+  /** Last-modified timestamp (DOS time), ISO-8601 when known. */
+  lastModified?: string
+}
+
+export interface ZipEntriesResult {
+  entries: ZipEntry[]
+  /** Sum of `size` across all entries. */
+  totalSize: number
+  /** Sum of `compressedSize` across all entries. */
+  totalCompressed: number
 }
 
 /** Sentinel error type stores throw for missing keys, so UI can render

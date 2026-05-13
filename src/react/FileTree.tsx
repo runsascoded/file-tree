@@ -16,6 +16,8 @@ import { Breadcrumb, type Crumb } from './Breadcrumb'
 import { DirListing } from './DirListing'
 import { MediaViewer } from './MediaViewer'
 import { TextViewer } from './TextViewer'
+import { ZipEntryList } from './ZipEntryList'
+import { ZipEntryPreview } from './ZipEntryPreview'
 import { type Parsed, parsePath, basename, keyToSplat, extOf, CODE_LANG } from './parsePath'
 
 /** Optional renderer that converts a markdown source string into a
@@ -75,9 +77,22 @@ export interface FileTreeProps {
    *  `.go`) render via this fn (`(source, lang) => ReactNode`) instead
    *  of plaintext `<pre>`. */
   codeRenderer?: (source: string, lang: string) => ReactNode
+  /** Optional per-viewer action factory. Called for every non-`dir`
+   *  view; the returned node renders next to the download icon in the
+   *  breadcrumb row. Use this for "open in SQL", "view raw", "share",
+   *  etc. — actions specific to a consumer's surrounding app. */
+  viewerActions?: (ctx: ViewerActionCtx) => ReactNode
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }: FileTreeProps) {
+export interface ViewerActionCtx {
+  store: Store
+  path: string
+  kind: Parsed['kind']
+  /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
+  entry?: string
+}
+
+export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions }: FileTreeProps) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -88,14 +103,28 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
   const downloadable = parsed.kind !== 'dir' && parsed.kind !== 'zipEntry'
   const downloadHref = downloadable && typeof store.getUrl === 'function' ? store.getUrl(parsed.path) : null
   const downloadName = downloadable ? basename(parsed.path) : ''
+  const ctx: ViewerActionCtx | null = parsed.kind === 'dir'
+    ? null
+    : {
+        store,
+        path: parsed.path,
+        kind: parsed.kind,
+        ...(parsed.kind === 'zipEntry' ? { entry: parsed.entry } : {}),
+      }
+  const actionsNode = ctx && viewerActions ? viewerActions(ctx) : null
+  const right = (downloadHref || actionsNode)
+    ? (
+      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.6em' }}>
+        {actionsNode}
+        {downloadHref && <DownloadIcon href={downloadHref} name={downloadName} />}
+      </span>
+    )
+    : undefined
 
   return (
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
-      <Breadcrumb
-        crumbs={crumbs}
-        rightSlot={downloadHref ? <DownloadIcon href={downloadHref} name={downloadName} /> : undefined}
-      />
+      <Breadcrumb crumbs={crumbs} rightSlot={right} />
       <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} />
     </div>
   )
@@ -127,8 +156,9 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       )
     }
     case 'zip':
+      return <ZipEntryList store={store} path={parsed.path} routeBase={routeBase} rootPrefix={rootPrefix} />
     case 'zipEntry':
-      return <UnsupportedView label="Zip preview" />
+      return <ZipEntryPreview store={store} path={parsed.path} entry={parsed.entry} markdownRenderer={markdownRenderer} />
     case 'parquet': {
       if (!parquetRenderer) return <UnsupportedView label="Parquet preview" />
       const Component = parquetRenderer
