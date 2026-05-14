@@ -39,7 +39,7 @@
  *     secretAccessKey: env.R2_SECRET_ACCESS_KEY,
  *   })
  */
-import { AwsClient } from 'aws4fetch'
+import { AwsClient, AwsV4Signer } from 'aws4fetch'
 import type { Entry, GetResult, ListOptions, ListResult, Range, Store } from '../types'
 import { NotFoundError } from '../types'
 
@@ -64,6 +64,10 @@ export interface S3StoreOptions {
   prefixes?: string[]
   /** Custom `fetch` impl. Defaults to global. */
   fetch?: typeof globalThis.fetch
+  /** Default presigned-URL lifetime in seconds (for `getDownloadUrl`).
+   *  Defaults to `3600` (1h). Per-call override via the `expiresIn` arg.
+   *  Ignored for unsigned (public) stores, which return static URLs. */
+  presignExpiresIn?: number
 }
 
 /** Build the request URL for a given S3 path under this store.
@@ -235,11 +239,38 @@ export function S3Store(opts: S3StoreOptions): Store {
 
     capabilities: { range: true },
 
-    // Direct browser GET only works for unsigned (public) buckets;
-    // signed access requires SigV4 presigning, which aws4fetch doesn't
-    // surface as a query-string URL. Consumers of signed `S3Store` who
-    // want download links should proxy through `createHandlers()` and
-    // expose an `HttpStore` to the browser.
+    // Static URL works for unsigned (public) buckets only — signed
+    // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
     ...(signer ? {} : { getUrl: (p: string) => buildUrl(urlOpts, p) }),
+
+    // SigV4 presigned download URL, for signed buckets. Browser-side use
+    // case: a user pastes their own access keys at `/s3` or `/r2` to
+    // browse a private bucket — `<FileTree>` calls this when the user
+    // clicks the download icon, getting a short-lived URL the browser
+    // GETs directly. Mirrors `R2Store`'s presign path.
+    ...(opts.accessKeyId && opts.secretAccessKey
+      ? {
+          async getDownloadUrl(path: string, dlOpts?: { expiresIn?: number }): Promise<string> {
+            checkPrefix(path, 'getDownloadUrl path')
+            const basename = path.split('/').pop() || path
+            const search = new URLSearchParams({
+              'X-Amz-Expires': String(dlOpts?.expiresIn ?? opts.presignExpiresIn ?? 3600),
+              'response-content-disposition': `attachment; filename="${basename.replace(/"/g, '\\"')}"`,
+            })
+            const signer = new AwsV4Signer({
+              method: 'GET',
+              url: buildUrl(urlOpts, path, search.toString()),
+              accessKeyId: opts.accessKeyId!,
+              secretAccessKey: opts.secretAccessKey!,
+              ...(opts.sessionToken ? { sessionToken: opts.sessionToken } : {}),
+              service: 's3',
+              region,
+              signQuery: true,
+            })
+            const signed = await signer.sign()
+            return signed.url.toString()
+          },
+        }
+      : {}),
   }
 }

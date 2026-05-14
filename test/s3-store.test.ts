@@ -222,8 +222,53 @@ describe('S3Store (getUrl)', () => {
       .toBe('https://b.s3.us-east-1.amazonaws.com/with%20space/and%2Bplus.txt')
   })
 
-  it('omits getUrl entirely when signed (no presigning support)', () => {
+  it('omits getUrl when signed (downloads use getDownloadUrl instead)', () => {
     const store = S3Store({ bucket: 'b', accessKeyId: 'AKIA', secretAccessKey: 's' })
     expect(store.getUrl).toBeUndefined()
+  })
+})
+
+describe('S3Store (getDownloadUrl — SigV4 presign)', () => {
+  it('omits getDownloadUrl for unsigned (public) buckets', () => {
+    const store = S3Store({ bucket: 'open-data' })
+    expect(store.getDownloadUrl).toBeUndefined()
+  })
+
+  it('signs virtual-hosted-style URL with attachment disposition and default expiry', async () => {
+    const store = S3Store({ bucket: 'priv', region: 'us-west-2', accessKeyId: 'AKIA', secretAccessKey: 'SEC' })
+    expect(store.getDownloadUrl).toBeTypeOf('function')
+    const url = new URL(await store.getDownloadUrl!('data/2024/x.csv'))
+    expect(url.origin).toBe('https://priv.s3.us-west-2.amazonaws.com')
+    expect(url.pathname).toBe('/data/2024/x.csv')
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('3600')
+    expect(url.searchParams.get('X-Amz-Algorithm')).toBe('AWS4-HMAC-SHA256')
+    expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[a-f0-9]{64}$/)
+    expect(url.searchParams.get('response-content-disposition')).toBe('attachment; filename="x.csv"')
+  })
+
+  it('signs path-style URL when endpoint is set', async () => {
+    const store = S3Store({
+      bucket: 'r2-bkt',
+      endpoint: 'https://acct.r2.cloudflarestorage.com',
+      region: 'auto',
+      accessKeyId: 'AKIA',
+      secretAccessKey: 'SEC',
+    })
+    const url = new URL(await store.getDownloadUrl!('a/b.txt'))
+    expect(url.origin).toBe('https://acct.r2.cloudflarestorage.com')
+    expect(url.pathname).toBe('/r2-bkt/a/b.txt')
+  })
+
+  it('honors per-call expiresIn override over store default', async () => {
+    const store = S3Store({ bucket: 'b', accessKeyId: 'AKIA', secretAccessKey: 'SEC', presignExpiresIn: 60 })
+    const def = new URL(await store.getDownloadUrl!('x.txt'))
+    const overridden = new URL(await store.getDownloadUrl!('x.txt', { expiresIn: 7200 }))
+    expect(def.searchParams.get('X-Amz-Expires')).toBe('60')
+    expect(overridden.searchParams.get('X-Amz-Expires')).toBe('7200')
+  })
+
+  it('enforces prefix allow-list before signing', async () => {
+    const store = S3Store({ bucket: 'b', prefixes: ['data/'], accessKeyId: 'AKIA', secretAccessKey: 'SEC' })
+    await expect(store.getDownloadUrl!('secret/key')).rejects.toThrow(/not under any allowed prefix/)
   })
 })

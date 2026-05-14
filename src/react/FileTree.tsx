@@ -114,7 +114,7 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
   const actionsNode = ctx && viewerActions ? viewerActions(ctx) : null
   const right = (downloadHref || actionsNode)
     ? (
-      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.6em' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6em' }}>
         {actionsNode}
         {downloadHref && <DownloadIcon href={downloadHref} name={downloadName} />}
       </span>
@@ -211,8 +211,10 @@ function useDownloadHref(store: Store, path: string | null): string | null {
 }
 
 /** Compact download affordance shown right of the breadcrumbs for any
- *  non-dir view whose store exposes `getUrl(path)`. Anchor uses `download`
- *  so the browser streams the response — safe for arbitrarily large files. */
+ *  non-dir view whose store exposes a download URL. Anchor uses `download`
+ *  so the browser streams the response — safe for arbitrarily large files.
+ *  Inline SVG (Heroicons `arrow-down-tray`) — universally recognizable,
+ *  uses `currentColor` so it inherits theme/link color. */
 function DownloadIcon({ href, name }: { href: string; name: string }) {
   return (
     <a
@@ -220,9 +222,23 @@ function DownloadIcon({ href, name }: { href: string; name: string }) {
       download={name}
       title={`Download ${name}`}
       aria-label={`Download ${name}`}
-      style={{ fontSize: '1.1em', textDecoration: 'none', lineHeight: 1 }}
+      style={{ textDecoration: 'none', display: 'inline-block', lineHeight: 1, verticalAlign: 'middle' }}
     >
-      ⬇
+      <svg
+        viewBox="0 0 24 24"
+        width="1.15em"
+        height="1.15em"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" />
+        <path d="M16.5 12 12 16.5 7.5 12" />
+        <path d="M12 3v13.5" />
+      </svg>
     </a>
   )
 }
