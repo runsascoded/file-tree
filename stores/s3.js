@@ -1,5 +1,5 @@
 // src/stores/s3.ts
-import { AwsClient } from "aws4fetch";
+import { AwsClient, AwsV4Signer } from "aws4fetch";
 
 // src/types.ts
 var NotFoundError = class extends Error {
@@ -130,12 +130,36 @@ function S3Store(opts) {
       return out;
     },
     capabilities: { range: true },
-    // Direct browser GET only works for unsigned (public) buckets;
-    // signed access requires SigV4 presigning, which aws4fetch doesn't
-    // surface as a query-string URL. Consumers of signed `S3Store` who
-    // want download links should proxy through `createHandlers()` and
-    // expose an `HttpStore` to the browser.
-    ...signer ? {} : { getUrl: (p) => buildUrl(urlOpts, p) }
+    // Static URL works for unsigned (public) buckets only — signed
+    // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
+    ...signer ? {} : { getUrl: (p) => buildUrl(urlOpts, p) },
+    // SigV4 presigned download URL, for signed buckets. Browser-side use
+    // case: a user pastes their own access keys at `/s3` or `/r2` to
+    // browse a private bucket — `<FileTree>` calls this when the user
+    // clicks the download icon, getting a short-lived URL the browser
+    // GETs directly. Mirrors `R2Store`'s presign path.
+    ...opts.accessKeyId && opts.secretAccessKey ? {
+      async getDownloadUrl(path, dlOpts) {
+        checkPrefix(path, "getDownloadUrl path");
+        const basename = path.split("/").pop() || path;
+        const search = new URLSearchParams({
+          "X-Amz-Expires": String(dlOpts?.expiresIn ?? opts.presignExpiresIn ?? 3600),
+          "response-content-disposition": `attachment; filename="${basename.replace(/"/g, '\\"')}"`
+        });
+        const signer2 = new AwsV4Signer({
+          method: "GET",
+          url: buildUrl(urlOpts, path, search.toString()),
+          accessKeyId: opts.accessKeyId,
+          secretAccessKey: opts.secretAccessKey,
+          ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
+          service: "s3",
+          region,
+          signQuery: true
+        });
+        const signed = await signer2.sign();
+        return signed.url.toString();
+      }
+    } : {}
   };
 }
 export {

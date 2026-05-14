@@ -70,7 +70,25 @@ function HttpStore(apiBase, opts = {}) {
     capabilities: { range: true },
     getUrl(path) {
       return `${base}/get?path=${encodeURIComponent(path)}`;
-    }
+    },
+    // Opt-in via `presign: true`. The server only mounts `/presign` when
+    // its store implements `getDownloadUrl`, so without the flag we'd be
+    // probing an endpoint that doesn't exist — and a failing async URL
+    // resolution causes `<FileTree>`'s download icon to render disabled
+    // instead of falling back to `getUrl`'s proxying `/get` route.
+    ...opts.presign ? {
+      async getDownloadUrl(path, dlOpts) {
+        const params = new URLSearchParams({ path });
+        if (dlOpts?.expiresIn != null) params.set("expires", String(dlOpts.expiresIn));
+        const res = await f(`${base}/presign?${params}`, { headers });
+        if (!res.ok) {
+          throw new Error(`presign ${path}: ${res.status} ${await res.text()}`);
+        }
+        const body = await res.json();
+        if (typeof body.url !== "string") throw new Error(`presign ${path}: malformed response`);
+        return body.url;
+      }
+    } : {}
   };
 }
 // Annotate the CommonJS export names for ESM import in node:

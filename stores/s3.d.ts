@@ -21,6 +21,10 @@ interface S3StoreOptions {
     prefixes?: string[];
     /** Custom `fetch` impl. Defaults to global. */
     fetch?: typeof globalThis.fetch;
+    /** Default presigned-URL lifetime in seconds (for `getDownloadUrl`).
+     *  Defaults to `3600` (1h). Per-call override via the `expiresIn` arg.
+     *  Ignored for unsigned (public) stores, which return static URLs. */
+    presignExpiresIn?: number;
 }
 declare function S3Store(opts: S3StoreOptions): Store;
 

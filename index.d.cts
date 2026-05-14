@@ -56,6 +56,21 @@ interface Store {
      *  GET-able URL (in-memory, CFW R2 binding, presigning-required) omit
      *  this and the UI hides the download affordance. */
     getUrl?(path: string): string;
+    /** Like `getUrl(path)` but async — for stores that mint URLs on demand
+     *  (SigV4 presigning, redirect lookups). The returned URL should point
+     *  directly at the underlying storage so the browser streams bytes
+     *  without the worker in the data path. Implementations should set a
+     *  `response-content-disposition` query param (or equivalent) so the
+     *  saved file is named after the object basename, regardless of origin.
+     *
+     *  Precedence: `<FileTree>` prefers `getDownloadUrl` when present,
+     *  falling back to `getUrl` for stores whose URL is static.
+     *
+     *  `opts.expiresIn` is a hint to stores that mint short-lived URLs
+     *  (presigning); ignored by stores that don't. */
+    getDownloadUrl?(path: string, opts?: {
+        expiresIn?: number;
+    }): Promise<string>;
     /** Optional zip-aware shortcut: return the central-directory listing
      *  for a zip at `path`. When defined, `<FileTree>`'s default zip view
      *  delegates here (e.g. a server-side inflate worker). When undefined,

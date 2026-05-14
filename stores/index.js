@@ -1,3 +1,6 @@
+// src/stores/r2.ts
+import { AwsV4Signer } from "aws4fetch";
+
 // src/types.ts
 var NotFoundError = class extends Error {
   constructor(path) {
@@ -58,8 +61,42 @@ function R2Store(bucket, opts = {}) {
       if (obj.httpMetadata?.contentType) out.contentType = obj.httpMetadata.contentType;
       return out;
     },
-    capabilities: { range: true }
+    capabilities: { range: true },
+    ...opts.publicBaseUrl ? {
+      getUrl(path) {
+        const base = opts.publicBaseUrl.replace(/\/+$/, "");
+        const safeKey = path.split("/").map(encodeURIComponent).join("/");
+        return `${base}/${safeKey}`;
+      }
+    } : {},
+    ...opts.presign ? {
+      async getDownloadUrl(path, dlOpts) {
+        checkPrefix(path, "getDownloadUrl path");
+        return presignR2Url(opts.presign, path, dlOpts?.expiresIn);
+      }
+    } : {}
   };
+}
+async function presignR2Url(presign, path, expiresIn) {
+  const endpoint = presign.endpoint.replace(/\/+$/, "");
+  const safeKey = path.split("/").map(encodeURIComponent).join("/");
+  const basename = path.split("/").pop() || path;
+  const search = new URLSearchParams({
+    "X-Amz-Expires": String(expiresIn ?? presign.expiresIn ?? 3600),
+    "response-content-disposition": `attachment; filename="${basename.replace(/"/g, '\\"')}"`
+  });
+  const url = `${endpoint}/${presign.bucket}/${safeKey}?${search}`;
+  const signer = new AwsV4Signer({
+    method: "GET",
+    url,
+    accessKeyId: presign.accessKeyId,
+    secretAccessKey: presign.secretAccessKey,
+    service: "s3",
+    region: presign.region ?? "auto",
+    signQuery: true
+  });
+  const signed = await signer.sign();
+  return signed.url.toString();
 }
 
 // src/stores/http.ts
@@ -100,7 +137,25 @@ function HttpStore(apiBase, opts = {}) {
     capabilities: { range: true },
     getUrl(path) {
       return `${base}/get?path=${encodeURIComponent(path)}`;
-    }
+    },
+    // Opt-in via `presign: true`. The server only mounts `/presign` when
+    // its store implements `getDownloadUrl`, so without the flag we'd be
+    // probing an endpoint that doesn't exist — and a failing async URL
+    // resolution causes `<FileTree>`'s download icon to render disabled
+    // instead of falling back to `getUrl`'s proxying `/get` route.
+    ...opts.presign ? {
+      async getDownloadUrl(path, dlOpts) {
+        const params = new URLSearchParams({ path });
+        if (dlOpts?.expiresIn != null) params.set("expires", String(dlOpts.expiresIn));
+        const res = await f(`${base}/presign?${params}`, { headers });
+        if (!res.ok) {
+          throw new Error(`presign ${path}: ${res.status} ${await res.text()}`);
+        }
+        const body = await res.json();
+        if (typeof body.url !== "string") throw new Error(`presign ${path}: malformed response`);
+        return body.url;
+      }
+    } : {}
   };
 }
 
@@ -219,12 +274,22 @@ function MultiStore(children) {
         if (!s) throw new Error(`MultiStore.getUrl: no child for ${JSON.stringify(path)}`);
         return s.child.getUrl(s.rest);
       }
+    } : {},
+    // Same all-or-nothing rule as `getUrl`: only expose if every child
+    // can mint a URL on demand. Async-presigning store + binding-only
+    // sibling would otherwise have to be a per-path probe at the UI.
+    ...names.length > 0 && names.every((n) => typeof children[n].getDownloadUrl === "function") ? {
+      async getDownloadUrl(path, opts) {
+        const s = split(path);
+        if (!s) throw new Error(`MultiStore.getDownloadUrl: no child for ${JSON.stringify(path)}`);
+        return s.child.getDownloadUrl(s.rest, opts);
+      }
     } : {}
   };
 }
 
 // src/stores/s3.ts
-import { AwsClient } from "aws4fetch";
+import { AwsClient, AwsV4Signer as AwsV4Signer2 } from "aws4fetch";
 function buildUrl(opts, key, search) {
   const trail = search ? `?${search}` : "";
   const safeKey = key.split("/").map(encodeURIComponent).join("/");
@@ -345,12 +410,36 @@ function S3Store(opts) {
       return out;
     },
     capabilities: { range: true },
-    // Direct browser GET only works for unsigned (public) buckets;
-    // signed access requires SigV4 presigning, which aws4fetch doesn't
-    // surface as a query-string URL. Consumers of signed `S3Store` who
-    // want download links should proxy through `createHandlers()` and
-    // expose an `HttpStore` to the browser.
-    ...signer ? {} : { getUrl: (p) => buildUrl(urlOpts, p) }
+    // Static URL works for unsigned (public) buckets only — signed
+    // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
+    ...signer ? {} : { getUrl: (p) => buildUrl(urlOpts, p) },
+    // SigV4 presigned download URL, for signed buckets. Browser-side use
+    // case: a user pastes their own access keys at `/s3` or `/r2` to
+    // browse a private bucket — `<FileTree>` calls this when the user
+    // clicks the download icon, getting a short-lived URL the browser
+    // GETs directly. Mirrors `R2Store`'s presign path.
+    ...opts.accessKeyId && opts.secretAccessKey ? {
+      async getDownloadUrl(path, dlOpts) {
+        checkPrefix(path, "getDownloadUrl path");
+        const basename = path.split("/").pop() || path;
+        const search = new URLSearchParams({
+          "X-Amz-Expires": String(dlOpts?.expiresIn ?? opts.presignExpiresIn ?? 3600),
+          "response-content-disposition": `attachment; filename="${basename.replace(/"/g, '\\"')}"`
+        });
+        const signer2 = new AwsV4Signer2({
+          method: "GET",
+          url: buildUrl(urlOpts, path, search.toString()),
+          accessKeyId: opts.accessKeyId,
+          secretAccessKey: opts.secretAccessKey,
+          ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
+          service: "s3",
+          region,
+          signQuery: true
+        });
+        const signed = await signer2.sign();
+        return signed.url.toString();
+      }
+    } : {}
   };
 }
 export {

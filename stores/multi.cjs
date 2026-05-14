@@ -85,6 +85,16 @@ function MultiStore(children) {
         if (!s) throw new Error(`MultiStore.getUrl: no child for ${JSON.stringify(path)}`);
         return s.child.getUrl(s.rest);
       }
+    } : {},
+    // Same all-or-nothing rule as `getUrl`: only expose if every child
+    // can mint a URL on demand. Async-presigning store + binding-only
+    // sibling would otherwise have to be a per-path probe at the UI.
+    ...names.length > 0 && names.every((n) => typeof children[n].getDownloadUrl === "function") ? {
+      async getDownloadUrl(path, opts) {
+        const s = split(path);
+        if (!s) throw new Error(`MultiStore.getDownloadUrl: no child for ${JSON.stringify(path)}`);
+        return s.child.getDownloadUrl(s.rest, opts);
+      }
     } : {}
   };
 }

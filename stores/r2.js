@@ -1,3 +1,6 @@
+// src/stores/r2.ts
+import { AwsV4Signer } from "aws4fetch";
+
 // src/types.ts
 var NotFoundError = class extends Error {
   constructor(path) {
@@ -58,8 +61,42 @@ function R2Store(bucket, opts = {}) {
       if (obj.httpMetadata?.contentType) out.contentType = obj.httpMetadata.contentType;
       return out;
     },
-    capabilities: { range: true }
+    capabilities: { range: true },
+    ...opts.publicBaseUrl ? {
+      getUrl(path) {
+        const base = opts.publicBaseUrl.replace(/\/+$/, "");
+        const safeKey = path.split("/").map(encodeURIComponent).join("/");
+        return `${base}/${safeKey}`;
+      }
+    } : {},
+    ...opts.presign ? {
+      async getDownloadUrl(path, dlOpts) {
+        checkPrefix(path, "getDownloadUrl path");
+        return presignR2Url(opts.presign, path, dlOpts?.expiresIn);
+      }
+    } : {}
   };
+}
+async function presignR2Url(presign, path, expiresIn) {
+  const endpoint = presign.endpoint.replace(/\/+$/, "");
+  const safeKey = path.split("/").map(encodeURIComponent).join("/");
+  const basename = path.split("/").pop() || path;
+  const search = new URLSearchParams({
+    "X-Amz-Expires": String(expiresIn ?? presign.expiresIn ?? 3600),
+    "response-content-disposition": `attachment; filename="${basename.replace(/"/g, '\\"')}"`
+  });
+  const url = `${endpoint}/${presign.bucket}/${safeKey}?${search}`;
+  const signer = new AwsV4Signer({
+    method: "GET",
+    url,
+    accessKeyId: presign.accessKeyId,
+    secretAccessKey: presign.secretAccessKey,
+    service: "s3",
+    region: presign.region ?? "auto",
+    signQuery: true
+  });
+  const signed = await signer.sign();
+  return signed.url.toString();
 }
 export {
   R2Store

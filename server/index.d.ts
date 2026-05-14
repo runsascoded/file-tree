@@ -8,6 +8,10 @@ import { Store } from '../index.js';
  * Endpoints (all GET):
  *   /list?prefix=<p>&cursor=<c>&limit=<n>     → ListResult JSON
  *   /get?path=<p>                              → object bytes (Range honored)
+ *   /presign?path=<p>&expires=<s>              → { url } JSON
+ *     Only mounted when the underlying store implements `getDownloadUrl`.
+ *     `expires` is forwarded to the store (caller hint); stores that
+ *     ignore it use their built-in default.
  */
 
 interface Handlers {

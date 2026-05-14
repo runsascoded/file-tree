@@ -14,6 +14,11 @@ interface HttpStoreOptions {
     headers?: Record<string, string>;
     /** Custom fetch impl, defaults to global. */
     fetch?: typeof globalThis.fetch;
+    /** When `true`, expose `getDownloadUrl(path)` that calls `/presign` on
+     *  the backend. The server only mounts `/presign` when its underlying
+     *  store can mint signed URLs, so consumers must opt in deliberately
+     *  to avoid stalling the UI's download icon against a 404 endpoint. */
+    presign?: boolean;
 }
 declare function HttpStore(apiBase: string, opts?: HttpStoreOptions): Store;
 

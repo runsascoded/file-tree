@@ -802,8 +802,8 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
   const parsed = (0, import_react6.useMemo)(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
   const crumbs = (0, import_react6.useMemo)(() => buildCrumbs(parsed, routeBase, rootPrefix), [parsed, routeBase, rootPrefix]);
   const downloadable = parsed.kind !== "dir" && parsed.kind !== "zipEntry";
-  const downloadHref = downloadable && typeof store.getUrl === "function" ? store.getUrl(parsed.path) : null;
   const downloadName = downloadable ? basename(parsed.path) : "";
+  const downloadHref = useDownloadHref(store, downloadable ? parsed.path : null);
   const ctx = parsed.kind === "dir" ? null : {
     store,
     path: parsed.path,
@@ -811,7 +811,7 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
     ...parsed.kind === "zipEntry" ? { entry: parsed.entry } : {}
   };
   const actionsNode = ctx && viewerActions ? viewerActions(ctx) : null;
-  const right = downloadHref || actionsNode ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { style: { display: "inline-flex", alignItems: "baseline", gap: "0.6em" }, children: [
+  const right = downloadHref || actionsNode ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.6em" }, children: [
     actionsNode,
     downloadHref && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(DownloadIcon, { href: downloadHref, name: downloadName })
   ] }) : void 0;
@@ -873,6 +873,32 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { opacity: 0.7 }, children: "Preview not supported for this file type." });
   }
 }
+function useDownloadHref(store, path) {
+  const syncHref = path != null && typeof store.getUrl === "function" ? store.getUrl(path) : null;
+  const [asyncHref, setAsyncHref] = (0, import_react6.useState)(null);
+  (0, import_react6.useEffect)(() => {
+    if (path == null || typeof store.getDownloadUrl !== "function") {
+      setAsyncHref(null);
+      return;
+    }
+    let cancelled = false;
+    setAsyncHref(null);
+    store.getDownloadUrl(path).then(
+      (url) => {
+        if (!cancelled) setAsyncHref(url);
+      },
+      () => {
+        if (!cancelled) setAsyncHref(null);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path]);
+  if (path == null) return null;
+  if (typeof store.getDownloadUrl === "function") return asyncHref;
+  return syncHref;
+}
 function DownloadIcon({ href, name }) {
   return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
     "a",
@@ -881,8 +907,26 @@ function DownloadIcon({ href, name }) {
       download: name,
       title: `Download ${name}`,
       "aria-label": `Download ${name}`,
-      style: { fontSize: "1.1em", textDecoration: "none", lineHeight: 1 },
-      children: "\u2B07"
+      style: { textDecoration: "none", display: "inline-block", lineHeight: 1, verticalAlign: "middle" },
+      children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+        "svg",
+        {
+          viewBox: "0 0 24 24",
+          width: "1.15em",
+          height: "1.15em",
+          fill: "none",
+          stroke: "currentColor",
+          strokeWidth: "2",
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          "aria-hidden": "true",
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("path", { d: "M16.5 12 12 16.5 7.5 12" }),
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("path", { d: "M12 3v13.5" })
+          ]
+        }
+      )
     }
   );
 }

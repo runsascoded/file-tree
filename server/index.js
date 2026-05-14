@@ -21,6 +21,21 @@ function createHandlers(store, opts = {}) {
           return errorResponse(e, corsHeaders);
         }
       }
+      if (path === "/presign") {
+        if (typeof store.getDownloadUrl !== "function") {
+          return jsonResponse({ error: "presign not supported by this store" }, 404, corsHeaders);
+        }
+        const p = url.searchParams.get("path");
+        if (!p) return jsonResponse({ error: "path required" }, 400, corsHeaders);
+        const expStr = url.searchParams.get("expires");
+        const opts2 = expStr ? { expiresIn: parseInt(expStr, 10) } : void 0;
+        try {
+          const signed = await store.getDownloadUrl(p, opts2);
+          return jsonResponse({ url: signed }, 200, corsHeaders);
+        } catch (e) {
+          return errorResponse(e, corsHeaders);
+        }
+      }
       if (path === "/get") {
         const p = url.searchParams.get("path");
         if (!p) return jsonResponse({ error: "path required" }, 400, corsHeaders);
@@ -31,6 +46,8 @@ function createHandlers(store, opts = {}) {
           const headers = new Headers(corsHeaders);
           if (result.contentType) headers.set("Content-Type", result.contentType);
           headers.set("Content-Length", String(result.bytes.byteLength));
+          const basename = p.split("/").pop() || p;
+          headers.set("Content-Disposition", `attachment; filename="${basename.replace(/"/g, '\\"')}"`);
           if (range && result.totalSize != null) {
             headers.set("Content-Range", `bytes ${range.offset}-${range.offset + result.bytes.byteLength - 1}/${result.totalSize}`);
             return new Response(result.bytes, { status: 206, headers });
