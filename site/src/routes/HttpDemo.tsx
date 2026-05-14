@@ -16,8 +16,15 @@ import { renderViewerActions } from '../viewerActions'
 const API_BASE = import.meta.env.VITE_HTTP_DEMO_BASE
   ?? 'https://file-tree-demo.ryan-0dc.workers.dev/v1/files'
 
+// Flip `VITE_HTTP_DEMO_PRESIGN=true` once the worker has R2 S3-compat
+// creds wired (see `site/worker/README.md`) to make the download icon
+// anchor go direct to R2 — bytes skip the worker. While the env var is
+// unset (or `false`), downloads stay on the proxying `/get` path so the
+// live demo isn't broken during cred rollout.
+const PRESIGN = (import.meta.env.VITE_HTTP_DEMO_PRESIGN ?? '').toLowerCase() === 'true'
+
 export function HttpDemo() {
-  const store = useMemo(() => HttpStore(API_BASE), [])
+  const store = useMemo(() => HttpStore(API_BASE, PRESIGN ? { presign: true } : {}), [])
   const { pathname } = useLocation()
   const atVirtualRoot = pathname === '/http' || pathname === '/http/'
   return (
