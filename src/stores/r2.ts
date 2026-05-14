@@ -54,6 +54,24 @@ export interface R2StoreOptions {
   /** Allow-list of key prefixes. Any list/get for paths outside these is
    *  rejected. Use `['']` to allow the whole bucket (escape-hatch). */
   prefixes?: string[]
+  /** Public base URL the bucket is reachable at — either an `r2.dev`
+   *  subdomain (dev/casual; CF rate-limits these) or a custom domain
+   *  attached to the bucket (production). When set, exposes a sync
+   *  `getUrl(path)` returning `${publicBaseUrl}/${key}`. Cheapest path:
+   *  no signing, no expiry, no token, browser GETs direct from R2.
+   *
+   *  Caveat: cross-origin `<a download>` only force-downloads when the
+   *  response carries `Content-Disposition: attachment`. R2 sets that
+   *  header iff each object's `httpMetadata.contentDisposition` was set
+   *  at upload time. Without it, the browser navigates to the file
+   *  (which is fine for text/image/video but may show garbage for raw
+   *  binary). For guaranteed force-download on already-public buckets,
+   *  configure object metadata or use `presign` instead.
+   *
+   *  Precedence: if both `publicBaseUrl` and `presign` are set, the
+   *  UI's async `getDownloadUrl` (presign) wins per `<FileTree>`'s
+   *  precedence rule. Usually you want one or the other. */
+  publicBaseUrl?: string
   /** S3-compatible credentials enabling `getDownloadUrl()` (presigned
    *  GETs). When set, the worker can mint URLs the browser uses to
    *  stream bytes directly from R2 — no proxying through `/get`. */
@@ -122,6 +140,16 @@ export function R2Store(bucket: R2Bucket, opts: R2StoreOptions = {}): Store {
     },
 
     capabilities: { range: true },
+
+    ...(opts.publicBaseUrl
+      ? {
+          getUrl(path: string): string {
+            const base = opts.publicBaseUrl!.replace(/\/+$/, '')
+            const safeKey = path.split('/').map(encodeURIComponent).join('/')
+            return `${base}/${safeKey}`
+          },
+        }
+      : {}),
 
     ...(opts.presign
       ? {

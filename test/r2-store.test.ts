@@ -98,6 +98,41 @@ describe('R2Store scoped-prefix virtual root', () => {
   })
 })
 
+describe('R2Store publicBaseUrl', () => {
+  const bucket = fakeBucket([])
+
+  it('omits getUrl when publicBaseUrl is unset', () => {
+    const store = R2Store(bucket)
+    expect(store.getUrl).toBeUndefined()
+  })
+
+  it('exposes sync getUrl concatenating publicBaseUrl + encoded key', () => {
+    const store = R2Store(bucket, { publicBaseUrl: 'https://data.example.com' })
+    expect(store.getUrl).toBeTypeOf('function')
+    expect(store.getUrl!('a/b.txt')).toBe('https://data.example.com/a/b.txt')
+  })
+
+  it('encodes path segments (preserves slashes)', () => {
+    const store = R2Store(bucket, { publicBaseUrl: 'https://pub-xyz.r2.dev' })
+    expect(store.getUrl!('with space/and+plus.csv'))
+      .toBe('https://pub-xyz.r2.dev/with%20space/and%2Bplus.csv')
+  })
+
+  it('strips trailing slashes from publicBaseUrl', () => {
+    const store = R2Store(bucket, { publicBaseUrl: 'https://data.example.com/' })
+    expect(store.getUrl!('foo.txt')).toBe('https://data.example.com/foo.txt')
+  })
+
+  it('does not enforce the prefix allow-list (URL minting is harmless)', () => {
+    // `getUrl` is a pure string op — the bucket itself enforces what's
+    // accessible. No reason to refuse to mint a URL the worker code
+    // wouldn't `get()`. (Compare with `getDownloadUrl`, which does
+    // enforce: signing a URL is a credential-using action.)
+    const store = R2Store(bucket, { prefixes: ['raw/'], publicBaseUrl: 'https://x.example' })
+    expect(store.getUrl!('secret/file')).toBe('https://x.example/secret/file')
+  })
+})
+
 describe('R2Store getDownloadUrl (presign)', () => {
   const bucket = fakeBucket([])
   const presign = {
