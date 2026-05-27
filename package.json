@@ -116,6 +116,7 @@
   "peerDependencies": {
     "highlight.js": "^11",
     "hyparquet": "^1",
+    "jq-web": "^0.6",
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19",
     "react-markdown": "^9 || ^10",
@@ -136,6 +137,9 @@
       "optional": true
     },
     "hyparquet": {
+      "optional": true
+    },
+    "jq-web": {
       "optional": true
     },
     "react-markdown": {

@@ -11,6 +11,9 @@ importers:
       aws4fetch:
         specifier: ^1.0.20
         version: 1.0.20
+      jq-web:
+        specifier: ^0.6
+        version: 0.6.2
       use-prms:
         specifier: ^0.4.1
         version: 0.4.1(react@18.3.1)
@@ -753,6 +756,9 @@ packages:
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
     engines: {node: '>=10'}
+
+  jq-web@0.6.2:
+    resolution: {integrity: sha512-+7XvjBYwTx4vP5PYkf6Q6orubO/v+UgMU6By1GritrmShr9QpT3UKa4ANzXWQfhdqtBnQYXsm7ZNbdIHT6tYpQ==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -1774,6 +1780,8 @@ snapshots:
   is-plain-obj@4.1.0: {}
 
   joycon@3.1.1: {}
+
+  jq-web@0.6.2: {}
 
   js-tokens@4.0.0: {}
 

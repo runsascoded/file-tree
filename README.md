@@ -238,7 +238,7 @@ import { ParquetViewer } from '@rdub/file-tree/renderers/parquet'     // hyparqu
 import { CsvViewer } from '@rdub/file-tree/renderers/csv'             // (no peer)
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'   // pulls react-markdown via markdown
 import { renderCode } from '@rdub/file-tree/renderers/code'           // highlight.js
-import { renderJsonTree } from '@rdub/file-tree/renderers/json'       // (no peer)
+import { renderJsonTree } from '@rdub/file-tree/renderers/json'       // search, expand-all, copy-path; jq filter via optional `jq-web`
 import { renderViewerActions } from './viewerActions'                 // ↗ SQL link, etc.
 
 <FileTree
@@ -261,9 +261,11 @@ import { renderViewerActions } from './viewerActions'                 // ↗ SQL
 | `CsvViewer` | `@rdub/file-tree/renderers/csv` | — |
 | `NotebookViewer` | `@rdub/file-tree/renderers/notebook` | `react-markdown` + `remark-gfm` (via `markdown`) |
 | `renderCode` | `@rdub/file-tree/renderers/code` | `highlight.js` |
-| `renderJsonTree` | `@rdub/file-tree/renderers/json` | — |
+| `renderJsonTree` | `@rdub/file-tree/renderers/json` | `jq-web` (optional, for jq filter only) |
 
 The peers are declared `optional` in `peerDependenciesMeta`, so installing only what you import is enough. Source lives at [`src/renderers/`](src/renderers/) — copy + tweak if you want different styling, paginate sizes, or language set.
+
+`jq-web` is an Emscripten WASM module that expects to fetch `jq.wasm` from the same URL as its `jq.js`. In Vite/webpack apps that's usually a copy step — easiest path is to copy `node_modules/jq-web/jq.wasm` to your `public/` dir (or use a `copy-files`/`copy-webpack-plugin` equivalent). Without that, typing in the `jq` input surfaces a `WebAssembly.instantiate()` error; the search / expand-all / copy-path features still work.
 
 Built-in kinds (no renderer needed): plain text (`<pre>`), image (`<img>`), video (`<video>`), audio (`<audio>`), zip (entry list + per-entry preview, with client-side `DecompressionStream` fallback if `Store.getZipEntries?` isn't provided).
 
@@ -294,7 +296,7 @@ Use for "open in SQL REPL", "view raw", "share", etc. — consumer-app-specific.
 | `@rdub/file-tree/renderers/csv` | `CsvViewer` (pure JS) |
 | `@rdub/file-tree/renderers/notebook` | `NotebookViewer` (peers via `markdown`) |
 | `@rdub/file-tree/renderers/code` | `renderCode` (peer: `highlight.js`) |
-| `@rdub/file-tree/renderers/json` | `renderJsonTree` (pure JS) |
+| `@rdub/file-tree/renderers/json` | `renderJsonTree` — search (`?json-q=`), jq filter (`?jq=`, optional `jq-web` peer), expand/collapse-all, copy-jq-path on key click |
 | `@rdub/file-tree/test/conformance` | `runStoreConformance(makeStore)` — vitest battery any new Store impl can opt into |
 
 ## Roadmap

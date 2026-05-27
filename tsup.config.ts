@@ -32,5 +32,6 @@ export default defineConfig({
     'react-markdown',
     'remark-gfm',
     'highlight.js',
+    'jq-web',
   ],
 })
