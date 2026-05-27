@@ -114,12 +114,12 @@
     "url": "https://github.com/runsascoded/file-tree"
   },
   "peerDependencies": {
-    "react": "^18 || ^19",
-    "react-dom": "^18 || ^19",
-    "react-router-dom": "^6 || ^7",
     "highlight.js": "^11",
     "hyparquet": "^1",
+    "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
     "react-markdown": "^9 || ^10",
+    "react-router-dom": "^6 || ^7",
     "remark-gfm": "^4"
   },
   "peerDependenciesMeta": {
@@ -161,6 +161,7 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "aws4fetch": "^1.0.20"
+    "aws4fetch": "^1.0.20",
+    "use-prms": "^0.4.1"
   }
 }

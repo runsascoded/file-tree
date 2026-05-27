@@ -6,6 +6,7 @@
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
 import { useEffect, useState, type ReactNode } from 'react'
 import { parquetMetadataAsync, parquetRead, parquetSchema } from 'hyparquet'
+import { useUrlState, intParam } from 'use-prms'
 import type { Store } from '../types'
 import { asyncBufferFromStore } from '../react/asyncBuffer'
 import { fmtSize } from '../react/fmt'
@@ -18,13 +19,16 @@ export function ParquetViewer({ store, path }: { store: Store; path: string }) {
   const [schema, setSchema] = useState<SchemaCol[] | null>(null)
   const [totalRows, setTotalRows] = useState<number | null>(null)
   const [byteSize, setByteSize] = useState<number | null>(null)
-  const [page, setPage] = useState(0)
+  // 0-indexed pagination via `?page=N` URL state. `page=0` omitted from
+  // URL (the default). Path change drops the param (Links don't carry
+  // query), so a new file lands on page 0 naturally.
+  const [page, setPage] = useUrlState('page', intParam(0))
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setSchema(null); setTotalRows(null); setByteSize(null); setPage(0); setRows(null); setError(null)
+    setSchema(null); setTotalRows(null); setByteSize(null); setRows(null); setError(null)
     ;(async () => {
       try {
         const file = await asyncBufferFromStore(store, path)

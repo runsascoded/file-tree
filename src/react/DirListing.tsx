@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useUrlState, defStringParam } from 'use-prms'
 import type { Entry, Store } from '../types'
 import { fmtSize } from './fmt'
 import { makeMatcher } from './match'
@@ -28,18 +29,13 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
-  const [qInternal, setQInternal] = useState('')
-  const q = qExternal ?? qInternal
-  const setQ = setQExternal ?? setQInternal
-
-  // Reset the internal filter when navigating to a new dir. Without
-  // this, typing "foo" → matching a folder → clicking into it lands on
-  // a "no entries match foo" message in the child dir (a confusing,
-  // empty-feeling result, since "foo" was scoped to the parent listing).
-  // External (controlled) callers manage their own reset semantics.
-  useEffect(() => {
-    if (qExternal === undefined) setQInternal('')
-  }, [prefix, qExternal])
+  // When uncontrolled, route filter through `?q=…` URL state so it's
+  // shareable + survives reload. Dir navigation clears the param
+  // implicitly: `<Link>`s build hrefs without a query, so the new URL
+  // drops `?q=`. (Controlled callers manage their own state.)
+  const [qUrl, setQUrl] = useUrlState('q', defStringParam(''))
+  const q = qExternal ?? qUrl
+  const setQ = setQExternal ?? setQUrl
 
   useEffect(() => {
     let cancelled = false
