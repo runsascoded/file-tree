@@ -30,12 +30,23 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   // When uncontrolled, route filter through `?q=…` URL state so it's
-  // shareable + survives reload. Dir navigation clears the param
-  // implicitly: `<Link>`s build hrefs without a query, so the new URL
-  // drops `?q=`. (Controlled callers manage their own state.)
+  // shareable + survives reload. (Controlled callers manage their
+  // own state.)
   const [qUrl, setQUrl] = useUrlState('q', defStringParam(''))
   const q = qExternal ?? qUrl
   const setQ = setQExternal ?? setQUrl
+
+  // Reset the filter on every dir-nav, regardless of router strategy.
+  // BrowserRouter consumers get this for free (Links carry no query, so
+  // the new URL drops `?q=`), but HashRouter consumers (e.g. tomat)
+  // navigate via `location.hash` only, so `?q=` in `location.search`
+  // survives — and they land in the new dir with "no entries match
+  // <stale-q>". The explicit reset covers both. (If `use-prms` later
+  // gains a HashRouter-aware query strategy, this can go.)
+  useEffect(() => {
+    setQ('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefix])
 
   useEffect(() => {
     let cancelled = false
