@@ -4,7 +4,7 @@
  *  Uses `hyparquet` (optional peer) for footer/metadata + row-range
  *  reads, fed via `asyncBufferFromStore` so it works against any
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { parquetMetadataAsync, parquetRead, parquetSchema } from 'hyparquet'
 import type { Store } from '../types'
 import { asyncBufferFromStore } from '../react/asyncBuffer'
@@ -153,8 +153,11 @@ function Pager({ page, pages, setPage, rowStart, rowEnd, totalRows }: {
   )
 }
 
-function fmtCell(v: unknown): string {
-  if (v === null || v === undefined) return ''
+function fmtCell(v: unknown): ReactNode {
+  // Render null/undefined as a faded `·` so an all-optional row reads
+  // as "missing values" rather than "broken row". Empty `<td>`s look
+  // identical to a truncated render.
+  if (v === null || v === undefined) return <span style={{ opacity: 0.3 }}>·</span>
   if (typeof v === 'bigint') return v.toString()
   if (v instanceof Date) return v.toISOString()
   if (typeof v === 'object') return JSON.stringify(v)
