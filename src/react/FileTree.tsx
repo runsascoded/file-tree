@@ -82,6 +82,10 @@ export interface FileTreeProps {
    *  breadcrumb row. Use this for "open in SQL", "view raw", "share",
    *  etc. — actions specific to a consumer's surrounding app. */
   viewerActions?: (ctx: ViewerActionCtx) => ReactNode
+  /** Placeholder for the directory-listing filter input. Default
+   *  `"filter"`. Consumers can supply something more specific
+   *  (e.g. `"filter (e.g. *.parquet)"` or project-specific nouns). */
+  filterPlaceholder?: string
 }
 
 export interface ViewerActionCtx {
@@ -92,7 +96,7 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions }: FileTreeProps) {
+export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder }: FileTreeProps) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -125,15 +129,15 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} rightSlot={right} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} filterPlaceholder={filterPlaceholder} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string }>; notebookRenderer?: ComponentType<{ store: Store; path: string }>; codeRenderer?: (s: string, lang: string) => ReactNode }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string }>; notebookRenderer?: ComponentType<{ store: Store; path: string }>; codeRenderer?: (s: string, lang: string) => ReactNode; filterPlaceholder?: string }) {
   switch (parsed.kind) {
     case 'dir':
-      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
+      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} filterPlaceholder={filterPlaceholder} />
     case 'text': {
       const ext = extOf(parsed.path)
       const isMd = ext === 'md' || ext === 'markdown'

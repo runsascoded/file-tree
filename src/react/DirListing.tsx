@@ -17,18 +17,29 @@ export interface DirListingProps {
    *  is rendered. */
   q?: string
   setQ?: (q: string) => void
+  /** Placeholder for the internal filter input. Default `"filter"`. */
+  filterPlaceholder?: string
   /** When set + a `README.md` (case-insensitive) is in the listing, the
    *  README is fetched and rendered below the table via this fn. */
   markdownRenderer?: (source: string) => ReactNode
 }
 
-export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, markdownRenderer }: DirListingProps) {
+export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', markdownRenderer }: DirListingProps) {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [qInternal, setQInternal] = useState('')
   const q = qExternal ?? qInternal
   const setQ = setQExternal ?? setQInternal
+
+  // Reset the internal filter when navigating to a new dir. Without
+  // this, typing "foo" → matching a folder → clicking into it lands on
+  // a "no entries match foo" message in the child dir (a confusing,
+  // empty-feeling result, since "foo" was scoped to the parent listing).
+  // External (controlled) callers manage their own reset semantics.
+  useEffect(() => {
+    if (qExternal === undefined) setQInternal('')
+  }, [prefix, qExternal])
 
   useEffect(() => {
     let cancelled = false
@@ -85,7 +96,7 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
         type="search"
         value={q}
         onChange={e => setQ(e.target.value)}
-        placeholder="filter (e.g. NewJersey* or pedestr)"
+        placeholder={filterPlaceholder}
         style={{
           padding: '0.3em 0.6em',
           borderRadius: 4,
