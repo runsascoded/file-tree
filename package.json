@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.ccec625",
+  "version": "0.0.1-dist.8005f43",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -53,6 +53,36 @@
       "types": "./stores/s3.d.ts",
       "import": "./stores/s3.js",
       "require": "./stores/s3.cjs"
+    },
+    "./renderers/parquet": {
+      "types": "./renderers/parquet.d.ts",
+      "import": "./renderers/parquet.js",
+      "require": "./renderers/parquet.cjs"
+    },
+    "./renderers/markdown": {
+      "types": "./renderers/markdown.d.ts",
+      "import": "./renderers/markdown.js",
+      "require": "./renderers/markdown.cjs"
+    },
+    "./renderers/csv": {
+      "types": "./renderers/csv.d.ts",
+      "import": "./renderers/csv.js",
+      "require": "./renderers/csv.cjs"
+    },
+    "./renderers/notebook": {
+      "types": "./renderers/notebook.d.ts",
+      "import": "./renderers/notebook.js",
+      "require": "./renderers/notebook.cjs"
+    },
+    "./renderers/code": {
+      "types": "./renderers/code.d.ts",
+      "import": "./renderers/code.js",
+      "require": "./renderers/code.cjs"
+    },
+    "./renderers/json": {
+      "types": "./renderers/json.d.ts",
+      "import": "./renderers/json.js",
+      "require": "./renderers/json.cjs"
     }
   },
   "keywords": [
@@ -74,7 +104,11 @@
   "peerDependencies": {
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19",
-    "react-router-dom": "^6 || ^7"
+    "react-router-dom": "^6 || ^7",
+    "highlight.js": "^11",
+    "hyparquet": "^1",
+    "react-markdown": "^9 || ^10",
+    "remark-gfm": "^4"
   },
   "peerDependenciesMeta": {
     "react": {
