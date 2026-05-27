@@ -1,6 +1,11 @@
-/** Syntax highlighting via highlight.js. Wired as
+/** Syntax highlighting via `highlight.js` (optional peer). Wire as
  *  `<FileTree codeRenderer={renderCode}>`. The lib calls this with
- *  `(source, lang)` where `lang` is the language id from `CODE_LANG`. */
+ *  `(source, lang)` where `lang` is the language id from `CODE_LANG`.
+ *
+ *  Bundles a curated set of common languages — adequate for the
+ *  default integration. Consumers who need a different set should copy
+ *  this file as a starting point rather than waiting for the lib to
+ *  grow per-language opt-ins. */
 import hljs from 'highlight.js/lib/core'
 import bash from 'highlight.js/lib/languages/bash'
 import c from 'highlight.js/lib/languages/c'
@@ -35,7 +40,7 @@ hljs.registerLanguage('ruby', ruby)
 hljs.registerLanguage('rust', rust)
 hljs.registerLanguage('scss', scss)
 hljs.registerLanguage('sql', sql)
-hljs.registerLanguage('toml', ini)  // close enough for highlighting
+hljs.registerLanguage('toml', ini)
 hljs.registerLanguage('typescript', typescript)
 hljs.registerLanguage('tsx', typescript)
 hljs.registerLanguage('yaml', yaml)

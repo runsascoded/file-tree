@@ -1,18 +1,14 @@
-/** Parquet viewer for the demo site. Plugged into `<FileTree
- *  parquetRenderer={ParquetViewer}>` so `.parquet`/`.pqt` paths render
- *  as a paginated table.
+/** Parquet viewer. Plug into `<FileTree parquetRenderer={ParquetViewer}>`
+ *  so `.parquet`/`.pqt` paths render as a paginated table.
  *
- *  Uses `hyparquet` for footer/metadata + row-range reads, fed via
- *  `asyncBufferFromStore` so it works against any `Store` (R2, S3,
- *  HTTP, …) without knowing the underlying URL.
- *
- *  Adapted from the existing `ParquetTable` in `nj-crashes`; lives in
- *  the site (not the lib) so the lib stays free of the `hyparquet`
- *  dependency. */
+ *  Uses `hyparquet` (optional peer) for footer/metadata + row-range
+ *  reads, fed via `asyncBufferFromStore` so it works against any
+ *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
 import { useEffect, useState } from 'react'
 import { parquetMetadataAsync, parquetRead, parquetSchema } from 'hyparquet'
-import { asyncBufferFromStore, fmtSize } from '@rdub/file-tree/react'
-import type { Store } from '@rdub/file-tree'
+import type { Store } from '../types'
+import { asyncBufferFromStore } from '../react/asyncBuffer'
+import { fmtSize } from '../react/fmt'
 
 const ROWS_PER_PAGE = 200
 

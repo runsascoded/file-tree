@@ -3,13 +3,13 @@
  *  `Store`. Drops the partial first/last line on each page to avoid
  *  splitting rows across chunk boundaries.
  *
- *  Wired as `<FileTree csvRenderer={CsvViewer}>`. Doesn't handle multi-
+ *  Wire as `<FileTree csvRenderer={CsvViewer}>`. Doesn't handle multi-
  *  line quoted fields (a quote opening on one line and closing on the
  *  next) — those would need a streaming parser since byte-paginated
  *  chunks can split mid-row. */
 import { useEffect, useState } from 'react'
-import type { Store } from '@rdub/file-tree'
-import { fmtSize } from '@rdub/file-tree/react'
+import type { Store } from '../types'
+import { fmtSize } from '../react/fmt'
 
 const PAGE_BYTES = 256 * 1024
 const HEADER_PROBE_BYTES = 32 * 1024
@@ -50,9 +50,7 @@ export function CsvViewer({ store, path, delimiter }: { store: Store; path: stri
       if (cancelled) return
       const text = new TextDecoder().decode(r.bytes)
       let lines = text.split('\n')
-      // Page 0: drop header line. Subsequent pages: drop partial first line.
       lines = lines.slice(1)
-      // Drop partial last line unless we're at EOF.
       const atEof = offset + length >= total
       if (!atEof && lines.length > 0) lines = lines.slice(0, -1)
       while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()

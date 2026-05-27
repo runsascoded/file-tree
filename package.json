@@ -56,6 +56,36 @@
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js",
       "require": "./dist/server/index.cjs"
+    },
+    "./renderers/parquet": {
+      "types": "./dist/renderers/parquet.d.ts",
+      "import": "./dist/renderers/parquet.js",
+      "require": "./dist/renderers/parquet.cjs"
+    },
+    "./renderers/markdown": {
+      "types": "./dist/renderers/markdown.d.ts",
+      "import": "./dist/renderers/markdown.js",
+      "require": "./dist/renderers/markdown.cjs"
+    },
+    "./renderers/csv": {
+      "types": "./dist/renderers/csv.d.ts",
+      "import": "./dist/renderers/csv.js",
+      "require": "./dist/renderers/csv.cjs"
+    },
+    "./renderers/notebook": {
+      "types": "./dist/renderers/notebook.d.ts",
+      "import": "./dist/renderers/notebook.js",
+      "require": "./dist/renderers/notebook.cjs"
+    },
+    "./renderers/code": {
+      "types": "./dist/renderers/code.d.ts",
+      "import": "./dist/renderers/code.js",
+      "require": "./dist/renderers/code.cjs"
+    },
+    "./renderers/json": {
+      "types": "./dist/renderers/json.d.ts",
+      "import": "./dist/renderers/json.js",
+      "require": "./dist/renderers/json.cjs"
     }
   },
   "scripts": {
@@ -86,7 +116,11 @@
   "peerDependencies": {
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19",
-    "react-router-dom": "^6 || ^7"
+    "react-router-dom": "^6 || ^7",
+    "highlight.js": "^11",
+    "hyparquet": "^1",
+    "react-markdown": "^9 || ^10",
+    "remark-gfm": "^4"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -97,15 +131,31 @@
     },
     "react-router-dom": {
       "optional": true
+    },
+    "highlight.js": {
+      "optional": true
+    },
+    "hyparquet": {
+      "optional": true
+    },
+    "react-markdown": {
+      "optional": true
+    },
+    "remark-gfm": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@types/react": "^18.3.27",
     "@types/react-dom": "^18.3.0",
+    "highlight.js": "^11.11.1",
+    "hyparquet": "^1.25.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.30.0",
+    "remark-gfm": "^4.0.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
     "vitest": "^2.1.8"

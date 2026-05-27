@@ -1,5 +1,5 @@
 /** Jupyter notebook (.ipynb) viewer. Fetches the whole notebook,
- *  parses cells, and renders markdown cells via the existing markdown
+ *  parses cells, and renders markdown cells via the bundled markdown
  *  renderer + code cells in a `<pre>` block. Outputs handled:
  *
  *    - `stream` (stdout/stderr): plain `<pre>`
@@ -8,10 +8,14 @@
  *    - `execute_result` / `display_data` `text/html`: rendered (raw HTML)
  *    - `error`: red traceback
  *
- *  Anything else falls through to a JSON dump of the output. */
+ *  Anything else falls through to a JSON dump of the output.
+ *
+ *  Pulls in `react-markdown` + `remark-gfm` (the markdown renderer's
+ *  optional peers) transitively. Notebooks are inherently markdown+code,
+ *  so a notebook viewer that can't render markdown isn't useful. */
 import { useEffect, useState } from 'react'
-import type { Store } from '@rdub/file-tree'
-import { renderMarkdown } from './Markdown'
+import type { Store } from '../types'
+import { renderMarkdown } from './markdown'
 
 type CellSource = string | string[]
 
@@ -136,7 +140,6 @@ function OutputView({ output }: { output: CellOutput }) {
   }
   if (output.output_type === 'error') {
     const e = output as ErrorOutput
-    // Strip ANSI escape codes from traceback for readability.
     const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
     return (
       <pre style={{ ...baseStyle, color: 'salmon' }}>{e.traceback.map(stripAnsi).join('\n')}</pre>
@@ -170,6 +173,5 @@ function OutputView({ output }: { output: CellOutput }) {
       return <pre style={baseStyle}>{asString(d.data['text/plain'])}</pre>
     }
   }
-  // Fallback: dump the keys we don't render.
   return null
 }

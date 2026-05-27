@@ -229,18 +229,17 @@ Endpoints (all GET):
 
 ## Viewer renderers (pluggable)
 
-`<FileTree>` doesn't bundle viewer deps. Pass renderer slots for what you want:
+`<FileTree>` doesn't bundle viewer deps. Reference renderers ship as their own sub-paths — import the ones you want and install their optional peer dep alongside:
 
 ```tsx
 import { FileTree } from '@rdub/file-tree/react'
-// Your renderers (any of these are optional):
-import { renderMarkdown } from './Markdown'        // react-markdown
-import { ParquetViewer } from './ParquetViewer'    // hyparquet
-import { renderJsonTree } from './JsonTree'        // collapsible tree
-import { CsvViewer } from './CsvViewer'            // range-paginated table
-import { NotebookViewer } from './NotebookViewer'  // .ipynb cells
-import { renderCode } from './CodeHighlight'       // highlight.js
-import { renderViewerActions } from './viewerActions'  // ↗ SQL link, etc.
+import { renderMarkdown } from '@rdub/file-tree/renderers/markdown'   // react-markdown + remark-gfm
+import { ParquetViewer } from '@rdub/file-tree/renderers/parquet'     // hyparquet
+import { CsvViewer } from '@rdub/file-tree/renderers/csv'             // (no peer)
+import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'   // pulls react-markdown via markdown
+import { renderCode } from '@rdub/file-tree/renderers/code'           // highlight.js
+import { renderJsonTree } from '@rdub/file-tree/renderers/json'       // (no peer)
+import { renderViewerActions } from './viewerActions'                 // ↗ SQL link, etc.
 
 <FileTree
   store={store}
@@ -255,7 +254,16 @@ import { renderViewerActions } from './viewerActions'  // ↗ SQL link, etc.
 />
 ```
 
-Reference implementations live under [`site/src/`](site/src/) — copy what you need.
+| Renderer | Sub-path | Optional peer |
+|---|---|---|
+| `ParquetViewer` | `@rdub/file-tree/renderers/parquet` | `hyparquet` |
+| `renderMarkdown` | `@rdub/file-tree/renderers/markdown` | `react-markdown`, `remark-gfm` |
+| `CsvViewer` | `@rdub/file-tree/renderers/csv` | — |
+| `NotebookViewer` | `@rdub/file-tree/renderers/notebook` | `react-markdown` + `remark-gfm` (via `markdown`) |
+| `renderCode` | `@rdub/file-tree/renderers/code` | `highlight.js` |
+| `renderJsonTree` | `@rdub/file-tree/renderers/json` | — |
+
+The peers are declared `optional` in `peerDependenciesMeta`, so installing only what you import is enough. Source lives at [`src/renderers/`](src/renderers/) — copy + tweak if you want different styling, paginate sizes, or language set.
 
 Built-in kinds (no renderer needed): plain text (`<pre>`), image (`<img>`), video (`<video>`), audio (`<audio>`), zip (entry list + per-entry preview, with client-side `DecompressionStream` fallback if `Store.getZipEntries?` isn't provided).
 
@@ -281,6 +289,12 @@ Use for "open in SQL REPL", "view raw", "share", etc. — consumer-app-specific.
 | `@rdub/file-tree/stores/multi` | `MultiStore` |
 | `@rdub/file-tree/stores/mock` | `MockStore` (in-memory) |
 | `@rdub/file-tree/server` | `createHandlers` (HTTP endpoints over any Store) |
+| `@rdub/file-tree/renderers/parquet` | `ParquetViewer` (peer: `hyparquet`) |
+| `@rdub/file-tree/renderers/markdown` | `renderMarkdown` (peers: `react-markdown`, `remark-gfm`) |
+| `@rdub/file-tree/renderers/csv` | `CsvViewer` (pure JS) |
+| `@rdub/file-tree/renderers/notebook` | `NotebookViewer` (peers via `markdown`) |
+| `@rdub/file-tree/renderers/code` | `renderCode` (peer: `highlight.js`) |
+| `@rdub/file-tree/renderers/json` | `renderJsonTree` (pure JS) |
 | `@rdub/file-tree/test/conformance` | `runStoreConformance(makeStore)` — vitest battery any new Store impl can opt into |
 
 ## Roadmap

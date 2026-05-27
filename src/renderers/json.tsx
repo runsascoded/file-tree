@@ -1,6 +1,7 @@
 /** Collapsible JSON tree. Parses the input; on parse failure falls back
  *  to a plain `<pre>` of the raw text so the user always sees something.
- *  Wired as `<FileTree jsonRenderer={renderJsonTree}>`. */
+ *  Wire as `<FileTree jsonRenderer={renderJsonTree}>`. Pure JS — no
+ *  optional peer deps. */
 import { useState } from 'react'
 
 const COLORS = {
