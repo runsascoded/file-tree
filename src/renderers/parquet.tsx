@@ -6,23 +6,24 @@
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
 import { useEffect, useState, type ReactNode } from 'react'
 import { parquetMetadataAsync, parquetRead, parquetSchema } from 'hyparquet'
-import { useUrlState, intParam } from 'use-prms'
 import type { Store } from '../types'
 import { asyncBufferFromStore } from '../react/asyncBuffer'
 import { fmtSize } from '../react/fmt'
+import { defaultUseState, type PersistedState } from '../react/persistedState'
 
 const ROWS_PER_PAGE = 200
 
 interface SchemaCol { name: string; type?: string }
 
-export function ParquetViewer({ store, path }: { store: Store; path: string }) {
+export function ParquetViewer({ store, path, usePersistedState }: { store: Store; path: string; usePersistedState?: PersistedState }) {
   const [schema, setSchema] = useState<SchemaCol[] | null>(null)
   const [totalRows, setTotalRows] = useState<number | null>(null)
   const [byteSize, setByteSize] = useState<number | null>(null)
-  // 0-indexed pagination via `?page=N` URL state. `page=0` omitted from
-  // URL (the default). Path change drops the param (Links don't carry
-  // query), so a new file lands on page 0 naturally.
-  const [page, setPage] = useUrlState('page', intParam(0))
+  // 0-indexed pagination. Default `useState` (in-memory); when
+  // `usePersistedState` is the URL hook, binds to `?page=N` with
+  // `page=0` omitted from URL.
+  const use = usePersistedState ?? defaultUseState
+  const [page, setPage] = use<number>('page', 0)
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 

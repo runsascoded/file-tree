@@ -269,6 +269,32 @@ The peers are declared `optional` in `peerDependenciesMeta`, so installing only 
 
 Built-in kinds (no renderer needed): plain text (`<pre>`), image (`<img>`), video (`<video>`), audio (`<audio>`), zip (entry list + per-entry preview, with client-side `DecompressionStream` fallback if `Store.getZipEntries?` isn't provided).
 
+## URL state — opt-in
+
+By default `<FileTree>` keeps the dir-listing filter, parquet pagination, and the JSON viewer's search/jq inputs in `useState` (in-memory, no URL writes). Opt in to shareable URL state by passing the bundled hook:
+
+```tsx
+import { FileTree } from '@rdub/file-tree/react'
+import { useUrlPersistedState } from '@rdub/file-tree/url-state'
+
+<FileTree
+  store={store}
+  routeBase="/files"
+  usePersistedState={useUrlPersistedState}
+/>
+```
+
+The shipped helper binds: `?q=…` (dir filter), `?page=N` (parquet), `?json-q=…` + `?jq=…` (JSON viewer). Defaults are omitted from the URL.
+
+`@rdub/file-tree/url-state` is the only path in the lib that imports `use-prms` — consumers who don't import it tree-shake the dep out. Bring-your-own (nuqs, your own `URLSearchParams` hook, etc.) by passing a function matching the `PersistedState` signature:
+
+```ts
+type PersistedState = <T extends string | number>(
+  key: string,
+  defaultValue: T,
+) => [T, (value: T) => void]
+```
+
 ## ViewerActions slot
 
 Per-file action buttons rendered next to the download icon. Signature:
@@ -296,7 +322,8 @@ Use for "open in SQL REPL", "view raw", "share", etc. — consumer-app-specific.
 | `@rdub/file-tree/renderers/csv` | `CsvViewer` (pure JS) |
 | `@rdub/file-tree/renderers/notebook` | `NotebookViewer` (peers via `markdown`) |
 | `@rdub/file-tree/renderers/code` | `renderCode` (peer: `highlight.js`) |
-| `@rdub/file-tree/renderers/json` | `renderJsonTree` — search (`?json-q=`), jq filter (`?jq=`, optional `jq-web` peer), expand/collapse-all, copy-jq-path on key click |
+| `@rdub/file-tree/renderers/json` | `renderJsonTree` — search, jq filter (optional `jq-web` peer), expand/collapse-all, copy-jq-path on key click |
+| `@rdub/file-tree/url-state` | `useUrlPersistedState` — opt-in URL-state hook (binds `?q=`, `?page=`, `?json-q=`, `?jq=` via `use-prms`) |
 | `@rdub/file-tree/test/conformance` | `runStoreConformance(makeStore)` — vitest battery any new Store impl can opt into |
 
 ## Roadmap

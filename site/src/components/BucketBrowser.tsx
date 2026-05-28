@@ -15,6 +15,7 @@ import { renderJsonTree } from '@rdub/file-tree/renderers/json'
 import { CsvViewer } from '@rdub/file-tree/renderers/csv'
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
+import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
 import type { BucketEntry } from './BucketsPage'
 
@@ -96,6 +97,7 @@ export function BucketBrowser({ seeds, lsKey, routeBase, buildStore }: BucketBro
         notebookRenderer={NotebookViewer}
         codeRenderer={renderCode}
         viewerActions={renderViewerActions}
+        usePersistedState={useUrlPersistedState}
       />
     </div>
   )

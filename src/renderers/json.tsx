@@ -11,7 +11,7 @@
  *  On parse failure falls back to a plain `<pre>` of the raw text so
  *  the user always sees something. */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useUrlState, defStringParam } from 'use-prms'
+import { defaultUseState, type PersistedState } from '../react/persistedState'
 
 const COLORS = {
   key: 'rgb(180, 200, 240)',
@@ -27,13 +27,18 @@ const COLORS = {
 const FONT = 'ui-monospace, monospace'
 const INDENT = '1.4em'
 
-export function renderJsonTree(source: string) {
-  return <JsonViewer source={source} />
+/** Accepts an optional `usePersistedState` hook; the default
+ *  `renderJsonTree` (no second arg) wires plain `useState`. Consumers
+ *  who want URL state pass `useUrlPersistedState` via `<FileTree>`'s
+ *  `jsonRenderer` and forward it. */
+export function renderJsonTree(source: string, usePersistedState?: PersistedState) {
+  return <JsonViewer source={source} usePersistedState={usePersistedState} />
 }
 
-function JsonViewer({ source }: { source: string }) {
-  const [q, setQ] = useUrlState('json-q', defStringParam(''))
-  const [jq, setJq] = useUrlState('jq', defStringParam(''))
+function JsonViewer({ source, usePersistedState }: { source: string; usePersistedState?: PersistedState }) {
+  const use = usePersistedState ?? defaultUseState
+  const [q, setQ] = use<string>('json-q', '')
+  const [jq, setJq] = use<string>('jq', '')
   // Bumped when "expand all" / "collapse all" is clicked. Each `Node`
   // tracks the last version it acted on; when the version changes,
   // re-derive its `open` state from `forceOpen`.

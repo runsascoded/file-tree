@@ -8,6 +8,7 @@ import { renderJsonTree } from '@rdub/file-tree/renderers/json'
 import { CsvViewer } from '@rdub/file-tree/renderers/csv'
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
+import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
 
 export function MockDemo() {
@@ -25,6 +26,7 @@ export function MockDemo() {
         notebookRenderer={NotebookViewer}
         codeRenderer={renderCode}
         viewerActions={renderViewerActions}
+        usePersistedState={useUrlPersistedState}
       />
       <details style={{ marginTop: '2em', fontSize: '0.9em', opacity: 0.85 }}>
         <summary>How this works</summary>

@@ -19,6 +19,9 @@ import { TextViewer } from './TextViewer'
 import { ZipEntryList } from './ZipEntryList'
 import { ZipEntryPreview } from './ZipEntryPreview'
 import { type Parsed, parsePath, basename, keyToSplat, extOf, CODE_LANG } from './parsePath'
+import { type PersistedState } from './persistedState'
+
+export type { PersistedState } from './persistedState'
 
 /** Optional renderer that converts a markdown source string into a
  *  React node. Pluggable so the lib doesn't bundle a markdown library;
@@ -35,8 +38,13 @@ export type MarkdownRenderer = (source: string) => ReactNode
  *
  *  Recommended implementation: use `asyncBufferFromStore(store, path)`
  *  (exported from this module) to feed `hyparquet`'s `parquetMetadataAsync`
- *  + `parquetRead`. See `site/src/ParquetViewer.tsx` for a reference impl. */
-export type ParquetRenderer = ComponentType<{ store: Store; path: string }>
+ *  + `parquetRead`. See `src/renderers/parquet.tsx` for a reference impl.
+ *
+ *  `usePersistedState` is injected by `<FileTree>` and threads its
+ *  `usePersistedState` prop down — use it for any state the renderer
+ *  wants to persist (e.g. `?page=N`). Renderers that don't care
+ *  ignore the prop. */
+export type ParquetRenderer = ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>
 
 export interface FileTreeProps {
   store: Store
@@ -62,16 +70,19 @@ export interface FileTreeProps {
    *  hyparquet-backed table). */
   parquetRenderer?: ParquetRenderer
   /** Optional JSON renderer. When set, `.json` files render via this fn
-   *  (typically a collapsible tree) instead of plaintext `<pre>`. */
-  jsonRenderer?: (source: string) => ReactNode
+   *  (typically a collapsible tree) instead of plaintext `<pre>`. The
+   *  second arg is the resolved `usePersistedState` hook (forward it
+   *  if you want URL-state for the JSON viewer's search / jq inputs;
+   *  otherwise ignore). */
+  jsonRenderer?: (source: string, usePersistedState?: PersistedState) => ReactNode
   /** Optional CSV/TSV renderer. When set, `.csv` and `.tsv` paths
    *  render via this component (typically a range-paginated sticky-
    *  header table) instead of plaintext `<pre>`. */
-  csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string }>
+  csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>
   /** Optional notebook renderer. When set, `.ipynb` paths render via
    *  this component (typically a cell-by-cell view with rendered
    *  markdown cells + code outputs). */
-  notebookRenderer?: ComponentType<{ store: Store; path: string }>
+  notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>
   /** Optional code-highlighting renderer. When set, TEXTY paths whose
    *  extension maps to a language in `CODE_LANG` (e.g. `.ts`, `.py`,
    *  `.go`) render via this fn (`(source, lang) => ReactNode`) instead
@@ -86,6 +97,14 @@ export interface FileTreeProps {
    *  `"filter"`. Consumers can supply something more specific
    *  (e.g. `"filter (e.g. *.parquet)"` or project-specific nouns). */
   filterPlaceholder?: string
+  /** Persisted-state hook. Default is in-memory `useState` (no URL
+   *  state, lib's main entry doesn't import `use-prms`). Pass
+   *  `useUrlPersistedState` from `@rdub/file-tree/url-state` to bind
+   *  the dir-listing filter, parquet pagination, and JSON viewer
+   *  search/jq inputs to URL query params. Bring-your-own (nuqs,
+   *  custom `URLSearchParams` hook, etc.) by passing a function that
+   *  matches the `PersistedState` signature. */
+  usePersistedState?: PersistedState
 }
 
 export interface ViewerActionCtx {
@@ -96,7 +115,7 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder }: FileTreeProps) {
+export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder, usePersistedState }: FileTreeProps) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -129,15 +148,15 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} rightSlot={right} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} filterPlaceholder={filterPlaceholder} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string }>; notebookRenderer?: ComponentType<{ store: Store; path: string }>; codeRenderer?: (s: string, lang: string) => ReactNode; filterPlaceholder?: string }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder, usePersistedState }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; filterPlaceholder?: string; usePersistedState?: PersistedState }) {
   switch (parsed.kind) {
     case 'dir':
-      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} filterPlaceholder={filterPlaceholder} />
+      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
     case 'text': {
       const ext = extOf(parsed.path)
       const isMd = ext === 'md' || ext === 'markdown'
@@ -146,7 +165,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const lang = CODE_LANG[ext]
       if (isCsv && csvRenderer) {
         const Component = csvRenderer
-        return <Component store={store} path={parsed.path} delimiter={ext === 'tsv' ? '\t' : ','} />
+        return <Component store={store} path={parsed.path} delimiter={ext === 'tsv' ? '\t' : ','} usePersistedState={usePersistedState} />
       }
       return (
         <TextViewer
@@ -156,6 +175,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
           jsonRenderer={isJson ? jsonRenderer : undefined}
           codeRenderer={!isMd && !isJson && lang ? codeRenderer : undefined}
           codeLang={lang}
+          usePersistedState={usePersistedState}
         />
       )
     }
@@ -166,12 +186,12 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
     case 'parquet': {
       if (!parquetRenderer) return <UnsupportedView label="Parquet preview" />
       const Component = parquetRenderer
-      return <Component store={store} path={parsed.path} />
+      return <Component store={store} path={parsed.path} usePersistedState={usePersistedState} />
     }
     case 'notebook': {
       if (!notebookRenderer) return <UnsupportedView label="Notebook preview" />
       const Component = notebookRenderer
-      return <Component store={store} path={parsed.path} />
+      return <Component store={store} path={parsed.path} usePersistedState={usePersistedState} />
     }
     case 'image':
       return <MediaViewer store={store} path={parsed.path} kind="image" />

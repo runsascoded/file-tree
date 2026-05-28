@@ -8,6 +8,7 @@ import { renderJsonTree } from '@rdub/file-tree/renderers/json'
 import { CsvViewer } from '@rdub/file-tree/renderers/csv'
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
+import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
 
 // Default points at the deployed demo worker (CFW, multi-bucket).
@@ -40,6 +41,7 @@ export function HttpDemo() {
         notebookRenderer={NotebookViewer}
         codeRenderer={renderCode}
         viewerActions={renderViewerActions}
+        usePersistedState={useUrlPersistedState}
       />
       {atVirtualRoot && (
         <aside style={{ marginTop: '1em', fontSize: '0.9em', opacity: 0.85 }}>

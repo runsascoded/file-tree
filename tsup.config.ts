@@ -18,6 +18,7 @@ export default defineConfig({
     'src/renderers/notebook.tsx',
     'src/renderers/code.tsx',
     'src/renderers/json.tsx',
+    'src/url-state/index.ts',
   ],
   format: ['esm', 'cjs'],
   dts: true,
@@ -33,5 +34,6 @@ export default defineConfig({
     'remark-gfm',
     'highlight.js',
     'jq-web',
+    'use-prms',
   ],
 })

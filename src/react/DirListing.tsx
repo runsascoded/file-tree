@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { useUrlState, defStringParam } from 'use-prms'
 import type { Entry, Store } from '../types'
 import { fmtSize } from './fmt'
 import { makeMatcher } from './match'
 import { basename, keyToSplat } from './parsePath'
+import { defaultUseState, type PersistedState } from './persistedState'
 
 export interface DirListingProps {
   store: Store
@@ -20,21 +20,28 @@ export interface DirListingProps {
   setQ?: (q: string) => void
   /** Placeholder for the internal filter input. Default `"filter"`. */
   filterPlaceholder?: string
+  /** Persisted-state hook for the internal filter `q`. Default is
+   *  `useState` (in-memory). Pass `useUrlPersistedState` (from
+   *  `@rdub/file-tree/url-state`) to bind `q` to `?q=…`. Ignored when
+   *  the caller controls `q`/`setQ` directly. */
+  usePersistedState?: PersistedState
   /** When set + a `README.md` (case-insensitive) is in the listing, the
    *  README is fetched and rendered below the table via this fn. */
   markdownRenderer?: (source: string) => ReactNode
 }
 
-export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', markdownRenderer }: DirListingProps) {
+export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', usePersistedState, markdownRenderer }: DirListingProps) {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
-  // When uncontrolled, route filter through `?q=…` URL state so it's
-  // shareable + survives reload. (Controlled callers manage their
-  // own state.)
-  const [qUrl, setQUrl] = useUrlState('q', defStringParam(''))
-  const q = qExternal ?? qUrl
-  const setQ = setQExternal ?? setQUrl
+  // When uncontrolled, `usePersistedState` decides how `q` is stored:
+  // default `useState` (in-memory), or `useUrlPersistedState` (URL)
+  // when the consumer opts in via `<FileTree>`. Controlled callers
+  // manage their own state.
+  const use = usePersistedState ?? defaultUseState
+  const [qInner, setQInner] = use<string>('q', '')
+  const q = qExternal ?? qInner
+  const setQ = setQExternal ?? setQInner
 
   // Reset the filter on every dir-nav, regardless of router strategy.
   // BrowserRouter consumers get this for free (Links carry no query, so

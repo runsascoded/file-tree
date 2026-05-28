@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from './fmt'
+import type { PersistedState } from './persistedState'
 
 const HEAD_BYTES = 64 * 1024  // 64 KB head fetch — enough for most config / readme files.
 
@@ -13,17 +14,22 @@ export interface TextViewerProps {
   markdownRenderer?: (source: string) => ReactNode
   /** When provided, render the bytes as a JSON tree via this fn
    *  instead of plaintext `<pre>`. Caller decides which extensions
-   *  qualify (typically `.json`). */
-  jsonRenderer?: (source: string) => ReactNode
+   *  qualify (typically `.json`). The second arg is the resolved
+   *  `usePersistedState` hook — forward it to enable URL-state for
+   *  the JSON viewer's search / jq inputs. */
+  jsonRenderer?: (source: string, usePersistedState?: PersistedState) => ReactNode
   /** When provided, render the bytes as syntax-highlighted code via
    *  this fn (`(source, lang) => ReactNode`). Caller decides which
    *  extensions qualify + supplies the `lang` hint. */
   codeRenderer?: (source: string, lang: string) => ReactNode
   /** Language hint passed to `codeRenderer`. */
   codeLang?: string
+  /** Persisted-state hook threaded down from `<FileTree>` (forwarded
+   *  to `jsonRenderer` for URL-state binding). */
+  usePersistedState?: PersistedState
 }
 
-export function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang }: TextViewerProps) {
+export function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang, usePersistedState }: TextViewerProps) {
   const [text, setText] = useState<string | null>(null)
   const [totalSize, setTotalSize] = useState<number | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
@@ -73,7 +79,7 @@ export function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRe
         </div>
       ) : jsonRenderer ? (
         <div className="rdub-file-tree-json" data-path={path}>
-          {jsonRenderer(text)}
+          {jsonRenderer(text, usePersistedState)}
         </div>
       ) : codeRenderer ? (
         <div className="rdub-file-tree-code" data-path={path} data-lang={codeLang}>

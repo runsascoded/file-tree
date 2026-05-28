@@ -86,6 +86,11 @@
       "types": "./dist/renderers/json.d.ts",
       "import": "./dist/renderers/json.js",
       "require": "./dist/renderers/json.cjs"
+    },
+    "./url-state": {
+      "types": "./dist/url-state/index.d.ts",
+      "import": "./dist/url-state/index.js",
+      "require": "./dist/url-state/index.cjs"
     }
   },
   "scripts": {
@@ -121,7 +126,8 @@
     "react-dom": "^18 || ^19",
     "react-markdown": "^9 || ^10",
     "react-router-dom": "^6 || ^7",
-    "remark-gfm": "^4"
+    "remark-gfm": "^4",
+    "use-prms": "^0.4"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -147,6 +153,9 @@
     },
     "remark-gfm": {
       "optional": true
+    },
+    "use-prms": {
+      "optional": true
     }
   },
   "devDependencies": {
@@ -162,10 +171,10 @@
     "remark-gfm": "^4.0.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
+    "use-prms": "^0.4.1",
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "aws4fetch": "^1.0.20",
-    "use-prms": "^0.4.1"
+    "aws4fetch": "^1.0.20"
   }
 }

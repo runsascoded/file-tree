@@ -1,5 +1,23 @@
 # Spec: make URL state opt-in (drop `use-prms` from default bundle)
 
+> Status: **done** (2026-05-27). Landed in one commit. `use-prms`
+> moved out of `dependencies` and into `devDependencies` +
+> `peerDependenciesMeta` (optional). New sub-path
+> `@rdub/file-tree/url-state` exports `useUrlPersistedState`. Lib's
+> main entry, renderers, and DirListing all consume the new
+> `PersistedState` interface; default is `useState` (in-memory). Site
+> demo opts into URL state via the new `usePersistedState={useUrlPersistedState}`
+> prop, so the demo's existing `?q=`, `?page=`, `?json-q=`, `?jq=`
+> behavior keeps working.
+>
+> Distribution mechanism diverged from the initial draft: switched
+> from React context to prop-drilling. Each sub-path bundles its own
+> copy of relative imports, so a `Context` created in `react/index.js`
+> is a different instance from one bundled into `renderers/parquet.js`
+> (same root cause as the `instanceof NotFoundError` cross-bundle
+> issue per CLAUDE.md). Renderer signatures gained an optional
+> `usePersistedState?: PersistedState` prop instead.
+
 ## Problem
 
 `491d436` ("URL state for dir filter + parquet pagination via `use-prms`")
@@ -83,29 +101,24 @@ The internal `as` casts are the unavoidable cost of bridging a
 `typeof`-dispatched implementation to a generic interface — confined
 to this file; call-site UX stays clean.
 
-### Distribution mechanism
+### Distribution mechanism — prop drilling (not context)
 
-`<FileTree>` resolves the active hook once, threads via React context:
+Initial draft of this spec proposed React context. **Doesn't work**:
+each sub-path bundle (`react/index.js`, `renderers/parquet.js`,
+`renderers/json.js`) gets its own copy of any relative `./persistedState`
+import, so `createContext()` produces a distinct instance per bundle.
+Same root cause as the `instanceof NotFoundError` cross-bundle issue
+called out in CLAUDE.md.
 
-```ts
-const PersistedStateContext = createContext<PersistedState>(defaultUseState)
+Use prop drilling instead. `<FileTree>` resolves the active hook
+once and passes it to:
+- `<DirListing>` directly (same bundle).
+- Renderer components (`ParquetViewer`, `JsonViewer`) via their props.
 
-// in FileTree.tsx:
-const resolved = usePersistedState ?? defaultUseState
-return (
-  <PersistedStateContext.Provider value={resolved}>
-    {/* ... */}
-  </PersistedStateContext.Provider>
-)
-
-// in DirListing / parquet / json:
-const use = useContext(PersistedStateContext)
-const [q, setQ] = use('q', '')
-```
-
-Renderers (`ParquetViewer`, `JsonViewer`) read from the same context
-even though they're imported separately by consumers — context bridges
-the gap without per-renderer prop drilling.
+Renderer signatures gain an optional `usePersistedState?: PersistedState`
+prop. Existing copy-pasted ref impls (pre-`8005f43`) continue to
+work — they just ignore the new prop and fall back to `useState`,
+which is the desired no-URL-state behavior.
 
 ## Call sites to change
 
