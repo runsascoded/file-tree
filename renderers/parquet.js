@@ -1,5 +1,5 @@
 // src/renderers/parquet.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState as useState2 } from "react";
 import { parquetMetadataAsync, parquetRead, parquetSchema } from "hyparquet";
 
 // src/react/asyncBuffer.ts
@@ -43,22 +43,26 @@ function fmtSize(n) {
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
 }
 
+// src/react/persistedState.ts
+import { useState } from "react";
+var defaultUseState = (_key, defaultValue) => useState(defaultValue);
+
 // src/renderers/parquet.tsx
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 var ROWS_PER_PAGE = 200;
-function ParquetViewer({ store, path }) {
-  const [schema, setSchema] = useState(null);
-  const [totalRows, setTotalRows] = useState(null);
-  const [byteSize, setByteSize] = useState(null);
-  const [page, setPage] = useState(0);
-  const [rows, setRows] = useState(null);
-  const [error, setError] = useState(null);
+function ParquetViewer({ store, path, usePersistedState }) {
+  const [schema, setSchema] = useState2(null);
+  const [totalRows, setTotalRows] = useState2(null);
+  const [byteSize, setByteSize] = useState2(null);
+  const use = usePersistedState ?? defaultUseState;
+  const [page, setPage] = use("page", 0);
+  const [rows, setRows] = useState2(null);
+  const [error, setError] = useState2(null);
   useEffect(() => {
     let cancelled = false;
     setSchema(null);
     setTotalRows(null);
     setByteSize(null);
-    setPage(0);
     setRows(null);
     setError(null);
     (async () => {
@@ -163,7 +167,7 @@ function Pager({ page, pages, setPage, rowStart, rowEnd, totalRows }) {
   ] });
 }
 function fmtCell(v) {
-  if (v === null || v === void 0) return "";
+  if (v === null || v === void 0) return /* @__PURE__ */ jsx("span", { style: { opacity: 0.3 }, children: "\xB7" });
   if (typeof v === "bigint") return v.toString();
   if (v instanceof Date) return v.toISOString();
   if (typeof v === "object") return JSON.stringify(v);

@@ -1,5 +1,5 @@
 // src/react/FileTree.tsx
-import { useEffect as useEffect6, useMemo as useMemo3, useState as useState6 } from "react";
+import { useEffect as useEffect6, useMemo as useMemo3, useState as useState7 } from "react";
 import { useLocation } from "react-router-dom";
 
 // src/react/Breadcrumb.tsx
@@ -17,7 +17,7 @@ function Breadcrumb({ crumbs, separator = " / ", rightSlot }) {
 }
 
 // src/react/DirListing.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState as useState2 } from "react";
 import { Link as Link2 } from "react-router-dom";
 
 // src/react/fmt.ts
@@ -119,15 +119,23 @@ function basename(key) {
   return i < 0 ? trimmed : trimmed.slice(i + 1);
 }
 
+// src/react/persistedState.ts
+import { useState } from "react";
+var defaultUseState = (_key, defaultValue) => useState(defaultValue);
+
 // src/react/DirListing.tsx
 import { Fragment, jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
-function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, markdownRenderer }) {
-  const [entries, setEntries] = useState(null);
-  const [error, setError] = useState(null);
-  const [cursor, setCursor] = useState(void 0);
-  const [qInternal, setQInternal] = useState("");
-  const q = qExternal ?? qInternal;
-  const setQ = setQExternal ?? setQInternal;
+function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, filterPlaceholder = "filter", usePersistedState, markdownRenderer }) {
+  const [entries, setEntries] = useState2(null);
+  const [error, setError] = useState2(null);
+  const [cursor, setCursor] = useState2(void 0);
+  const use = usePersistedState ?? defaultUseState;
+  const [qInner, setQInner] = use("q", "");
+  const q = qExternal ?? qInner;
+  const setQ = setQExternal ?? setQInner;
+  useEffect(() => {
+    setQ("");
+  }, [prefix]);
   useEffect(() => {
     let cancelled = false;
     setEntries(null);
@@ -188,7 +196,7 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
         type: "search",
         value: q,
         onChange: (e) => setQ(e.target.value),
-        placeholder: "filter (e.g. NewJersey* or pedestr)",
+        placeholder: filterPlaceholder,
         style: {
           padding: "0.3em 0.6em",
           borderRadius: 4,
@@ -252,7 +260,7 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
 }
 function DefaultReadme({ store, entries, markdownRenderer }) {
   const readme = entries.find((e) => !e.isDir && /^README\.md$/i.test(basename(e.key)));
-  const [text, setText] = useState(null);
+  const [text, setText] = useState2(null);
   useEffect(() => {
     setText(null);
     if (!readme) return;
@@ -288,12 +296,12 @@ function DefaultReadme({ store, entries, markdownRenderer }) {
 }
 
 // src/react/MediaViewer.tsx
-import { useEffect as useEffect2, useState as useState2 } from "react";
+import { useEffect as useEffect2, useState as useState3 } from "react";
 import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 function MediaViewer({ store, path, kind }) {
   const direct = typeof store.getUrl === "function" ? store.getUrl(path) : null;
-  const [blobUrl, setBlobUrl] = useState2(null);
-  const [error, setError] = useState2(null);
+  const [blobUrl, setBlobUrl] = useState3(null);
+  const [error, setError] = useState3(null);
   useEffect2(() => {
     if (direct) return;
     let cancelled = false;
@@ -356,14 +364,14 @@ function MediaViewer({ store, path, kind }) {
 }
 
 // src/react/TextViewer.tsx
-import { useEffect as useEffect3, useState as useState3 } from "react";
+import { useEffect as useEffect3, useState as useState4 } from "react";
 import { Fragment as Fragment2, jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 var HEAD_BYTES = 64 * 1024;
-function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang }) {
-  const [text, setText] = useState3(null);
-  const [totalSize, setTotalSize] = useState3(void 0);
-  const [error, setError] = useState3(null);
-  const [loadingMore, setLoadingMore] = useState3(false);
+function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang, usePersistedState }) {
+  const [text, setText] = useState4(null);
+  const [totalSize, setTotalSize] = useState4(void 0);
+  const [error, setError] = useState4(null);
+  const [loadingMore, setLoadingMore] = useState4(false);
   const fetchFull = !!markdownRenderer || !!jsonRenderer || !!codeRenderer;
   useEffect3(() => {
     let cancelled = false;
@@ -406,7 +414,7 @@ function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer,
   ] });
   const truncated = totalSize != null && text.length < totalSize;
   return /* @__PURE__ */ jsxs4(Fragment2, { children: [
-    markdownRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-markdown", "data-path": path, children: markdownRenderer(text) }) : jsonRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-json", "data-path": path, children: jsonRenderer(text) }) : codeRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-code", "data-path": path, "data-lang": codeLang, children: codeRenderer(text, codeLang ?? "") }) : /* @__PURE__ */ jsx4("pre", { style: {
+    markdownRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-markdown", "data-path": path, children: markdownRenderer(text) }) : jsonRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-json", "data-path": path, children: jsonRenderer(text, usePersistedState) }) : codeRenderer ? /* @__PURE__ */ jsx4("div", { className: "rdub-file-tree-code", "data-path": path, "data-lang": codeLang, children: codeRenderer(text, codeLang ?? "") }) : /* @__PURE__ */ jsx4("pre", { style: {
       background: "rgba(127,127,127,0.08)",
       padding: "0.6em 0.8em",
       borderRadius: 4,
@@ -428,7 +436,7 @@ function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer,
 }
 
 // src/react/ZipEntryList.tsx
-import { useEffect as useEffect4, useState as useState4 } from "react";
+import { useEffect as useEffect4, useState as useState5 } from "react";
 import { Link as Link3 } from "react-router-dom";
 
 // src/react/zip.ts
@@ -587,8 +595,8 @@ async function inflateDeflateRaw(input, max) {
 // src/react/ZipEntryList.tsx
 import { Fragment as Fragment3, jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 function ZipEntryList({ store, path, routeBase, rootPrefix = "" }) {
-  const [resp, setResp] = useState4(null);
-  const [error, setError] = useState4(null);
+  const [resp, setResp] = useState5(null);
+  const [error, setError] = useState5(null);
   useEffect4(() => {
     let cancelled = false;
     setResp(null);
@@ -646,14 +654,14 @@ function ZipEntryList({ store, path, routeBase, rootPrefix = "" }) {
 }
 
 // src/react/ZipEntryPreview.tsx
-import { useEffect as useEffect5, useMemo as useMemo2, useState as useState5 } from "react";
+import { useEffect as useEffect5, useMemo as useMemo2, useState as useState6 } from "react";
 import { Fragment as Fragment4, jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
 var STREAMING_PREVIEW_BYTES = 256 * 1024;
 var FULL_FETCH_THRESHOLD = 4 * 1024 * 1024;
 function ZipEntryPreview({ store, path, entry, markdownRenderer }) {
-  const [bytes, setBytes] = useState5(null);
-  const [totalSize, setTotalSize] = useState5(void 0);
-  const [error, setError] = useState5(null);
+  const [bytes, setBytes] = useState6(null);
+  const [totalSize, setTotalSize] = useState6(void 0);
+  const [error, setError] = useState6(null);
   const ext = useMemo2(() => extOf(entry), [entry]);
   useEffect5(() => {
     let cancelled = false;
@@ -749,7 +757,7 @@ function TruncationBanner({ shown, total }) {
 
 // src/react/FileTree.tsx
 import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions }) {
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder, usePersistedState }) {
   const location = useLocation();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
@@ -772,13 +780,13 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
   return /* @__PURE__ */ jsxs7("div", { className, style, children: [
     title && /* @__PURE__ */ jsx7("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
     /* @__PURE__ */ jsx7(Breadcrumb, { crumbs, rightSlot: right }),
-    /* @__PURE__ */ jsx7(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer })
+    /* @__PURE__ */ jsx7(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder, usePersistedState })
   ] });
 }
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder, usePersistedState }) {
   switch (parsed.kind) {
     case "dir":
-      return /* @__PURE__ */ jsx7(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer });
+      return /* @__PURE__ */ jsx7(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, filterPlaceholder, usePersistedState });
     case "text": {
       const ext = extOf(parsed.path);
       const isMd = ext === "md" || ext === "markdown";
@@ -787,7 +795,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const lang = CODE_LANG[ext];
       if (isCsv && csvRenderer) {
         const Component = csvRenderer;
-        return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : "," });
+        return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
       }
       return /* @__PURE__ */ jsx7(
         TextViewer,
@@ -797,7 +805,8 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
           markdownRenderer: isMd ? markdownRenderer : void 0,
           jsonRenderer: isJson ? jsonRenderer : void 0,
           codeRenderer: !isMd && !isJson && lang ? codeRenderer : void 0,
-          codeLang: lang
+          codeLang: lang,
+          usePersistedState
         }
       );
     }
@@ -808,12 +817,12 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
     case "parquet": {
       if (!parquetRenderer) return /* @__PURE__ */ jsx7(UnsupportedView, { label: "Parquet preview" });
       const Component = parquetRenderer;
-      return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path });
+      return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path, usePersistedState });
     }
     case "notebook": {
       if (!notebookRenderer) return /* @__PURE__ */ jsx7(UnsupportedView, { label: "Notebook preview" });
       const Component = notebookRenderer;
-      return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path });
+      return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path, usePersistedState });
     }
     case "image":
       return /* @__PURE__ */ jsx7(MediaViewer, { store, path: parsed.path, kind: "image" });
@@ -829,7 +838,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
 }
 function useDownloadHref(store, path) {
   const syncHref = path != null && typeof store.getUrl === "function" ? store.getUrl(path) : null;
-  const [asyncHref, setAsyncHref] = useState6(null);
+  const [asyncHref, setAsyncHref] = useState7(null);
   useEffect6(() => {
     if (path == null || typeof store.getDownloadUrl !== "function") {
       setAsyncHref(null);

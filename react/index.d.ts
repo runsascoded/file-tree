@@ -1,6 +1,7 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode, ComponentType } from 'react';
 import { Store, ZipEntriesResult, GetResult } from '../index.js';
+import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
 
 /** Parse a URL path-suffix into a renderable view kind + store key.
  *
@@ -88,10 +89,16 @@ type MarkdownRenderer = (source: string) => ReactNode;
  *
  *  Recommended implementation: use `asyncBufferFromStore(store, path)`
  *  (exported from this module) to feed `hyparquet`'s `parquetMetadataAsync`
- *  + `parquetRead`. See `site/src/ParquetViewer.tsx` for a reference impl. */
+ *  + `parquetRead`. See `src/renderers/parquet.tsx` for a reference impl.
+ *
+ *  `usePersistedState` is injected by `<FileTree>` and threads its
+ *  `usePersistedState` prop down — use it for any state the renderer
+ *  wants to persist (e.g. `?page=N`). Renderers that don't care
+ *  ignore the prop. */
 type ParquetRenderer = ComponentType<{
     store: Store;
     path: string;
+    usePersistedState?: PersistedState;
 }>;
 interface FileTreeProps {
     store: Store;
@@ -117,8 +124,11 @@ interface FileTreeProps {
      *  hyparquet-backed table). */
     parquetRenderer?: ParquetRenderer;
     /** Optional JSON renderer. When set, `.json` files render via this fn
-     *  (typically a collapsible tree) instead of plaintext `<pre>`. */
-    jsonRenderer?: (source: string) => ReactNode;
+     *  (typically a collapsible tree) instead of plaintext `<pre>`. The
+     *  second arg is the resolved `usePersistedState` hook (forward it
+     *  if you want URL-state for the JSON viewer's search / jq inputs;
+     *  otherwise ignore). */
+    jsonRenderer?: (source: string, usePersistedState?: PersistedState) => ReactNode;
     /** Optional CSV/TSV renderer. When set, `.csv` and `.tsv` paths
      *  render via this component (typically a range-paginated sticky-
      *  header table) instead of plaintext `<pre>`. */
@@ -126,6 +136,7 @@ interface FileTreeProps {
         store: Store;
         path: string;
         delimiter: string;
+        usePersistedState?: PersistedState;
     }>;
     /** Optional notebook renderer. When set, `.ipynb` paths render via
      *  this component (typically a cell-by-cell view with rendered
@@ -133,6 +144,7 @@ interface FileTreeProps {
     notebookRenderer?: ComponentType<{
         store: Store;
         path: string;
+        usePersistedState?: PersistedState;
     }>;
     /** Optional code-highlighting renderer. When set, TEXTY paths whose
      *  extension maps to a language in `CODE_LANG` (e.g. `.ts`, `.py`,
@@ -144,6 +156,18 @@ interface FileTreeProps {
      *  breadcrumb row. Use this for "open in SQL", "view raw", "share",
      *  etc. — actions specific to a consumer's surrounding app. */
     viewerActions?: (ctx: ViewerActionCtx) => ReactNode;
+    /** Placeholder for the directory-listing filter input. Default
+     *  `"filter"`. Consumers can supply something more specific
+     *  (e.g. `"filter (e.g. *.parquet)"` or project-specific nouns). */
+    filterPlaceholder?: string;
+    /** Persisted-state hook. Default is in-memory `useState` (no URL
+     *  state, lib's main entry doesn't import `use-prms`). Pass
+     *  `useUrlPersistedState` from `@rdub/file-tree/url-state` to bind
+     *  the dir-listing filter, parquet pagination, and JSON viewer
+     *  search/jq inputs to URL query params. Bring-your-own (nuqs,
+     *  custom `URLSearchParams` hook, etc.) by passing a function that
+     *  matches the `PersistedState` signature. */
+    usePersistedState?: PersistedState;
 }
 interface ViewerActionCtx {
     store: Store;
@@ -152,7 +176,7 @@ interface ViewerActionCtx {
     /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
     entry?: string;
 }
-declare function FileTree({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions }: FileTreeProps): react_jsx_runtime.JSX.Element;
+declare function FileTree({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder, usePersistedState }: FileTreeProps): react_jsx_runtime.JSX.Element;
 
 /** Adapter from `Store` to hyparquet's `AsyncBuffer` shape
  *  (`{ byteLength: number; slice(start, end?): Promise<ArrayBuffer> }`).
@@ -195,11 +219,18 @@ interface DirListingProps {
      *  is rendered. */
     q?: string;
     setQ?: (q: string) => void;
+    /** Placeholder for the internal filter input. Default `"filter"`. */
+    filterPlaceholder?: string;
+    /** Persisted-state hook for the internal filter `q`. Default is
+     *  `useState` (in-memory). Pass `useUrlPersistedState` (from
+     *  `@rdub/file-tree/url-state`) to bind `q` to `?q=…`. Ignored when
+     *  the caller controls `q`/`setQ` directly. */
+    usePersistedState?: PersistedState;
     /** When set + a `README.md` (case-insensitive) is in the listing, the
      *  README is fetched and rendered below the table via this fn. */
     markdownRenderer?: (source: string) => ReactNode;
 }
-declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, markdownRenderer }: DirListingProps): react_jsx_runtime.JSX.Element;
+declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, filterPlaceholder, usePersistedState, markdownRenderer }: DirListingProps): react_jsx_runtime.JSX.Element;
 
 interface TextViewerProps {
     store: Store;
@@ -210,16 +241,21 @@ interface TextViewerProps {
     markdownRenderer?: (source: string) => ReactNode;
     /** When provided, render the bytes as a JSON tree via this fn
      *  instead of plaintext `<pre>`. Caller decides which extensions
-     *  qualify (typically `.json`). */
-    jsonRenderer?: (source: string) => ReactNode;
+     *  qualify (typically `.json`). The second arg is the resolved
+     *  `usePersistedState` hook — forward it to enable URL-state for
+     *  the JSON viewer's search / jq inputs. */
+    jsonRenderer?: (source: string, usePersistedState?: PersistedState) => ReactNode;
     /** When provided, render the bytes as syntax-highlighted code via
      *  this fn (`(source, lang) => ReactNode`). Caller decides which
      *  extensions qualify + supplies the `lang` hint. */
     codeRenderer?: (source: string, lang: string) => ReactNode;
     /** Language hint passed to `codeRenderer`. */
     codeLang?: string;
+    /** Persisted-state hook threaded down from `<FileTree>` (forwarded
+     *  to `jsonRenderer` for URL-state binding). */
+    usePersistedState?: PersistedState;
 }
-declare function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang }: TextViewerProps): react_jsx_runtime.JSX.Element;
+declare function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang, usePersistedState }: TextViewerProps): react_jsx_runtime.JSX.Element;
 
 interface ZipEntryListProps {
     store: Store;

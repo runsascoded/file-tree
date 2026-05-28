@@ -45,7 +45,7 @@ __export(react_exports, {
 module.exports = __toCommonJS(react_exports);
 
 // src/react/FileTree.tsx
-var import_react6 = require("react");
+var import_react7 = require("react");
 var import_react_router_dom4 = require("react-router-dom");
 
 // src/react/Breadcrumb.tsx
@@ -63,7 +63,7 @@ function Breadcrumb({ crumbs, separator = " / ", rightSlot }) {
 }
 
 // src/react/DirListing.tsx
-var import_react = require("react");
+var import_react2 = require("react");
 var import_react_router_dom2 = require("react-router-dom");
 
 // src/react/fmt.ts
@@ -165,16 +165,24 @@ function basename(key) {
   return i < 0 ? trimmed : trimmed.slice(i + 1);
 }
 
+// src/react/persistedState.ts
+var import_react = require("react");
+var defaultUseState = (_key, defaultValue) => (0, import_react.useState)(defaultValue);
+
 // src/react/DirListing.tsx
 var import_jsx_runtime2 = require("react/jsx-runtime");
-function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, markdownRenderer }) {
-  const [entries, setEntries] = (0, import_react.useState)(null);
-  const [error, setError] = (0, import_react.useState)(null);
-  const [cursor, setCursor] = (0, import_react.useState)(void 0);
-  const [qInternal, setQInternal] = (0, import_react.useState)("");
-  const q = qExternal ?? qInternal;
-  const setQ = setQExternal ?? setQInternal;
-  (0, import_react.useEffect)(() => {
+function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, filterPlaceholder = "filter", usePersistedState, markdownRenderer }) {
+  const [entries, setEntries] = (0, import_react2.useState)(null);
+  const [error, setError] = (0, import_react2.useState)(null);
+  const [cursor, setCursor] = (0, import_react2.useState)(void 0);
+  const use = usePersistedState ?? defaultUseState;
+  const [qInner, setQInner] = use("q", "");
+  const q = qExternal ?? qInner;
+  const setQ = setQExternal ?? setQInner;
+  (0, import_react2.useEffect)(() => {
+    setQ("");
+  }, [prefix]);
+  (0, import_react2.useEffect)(() => {
     let cancelled = false;
     setEntries(null);
     setError(null);
@@ -212,8 +220,8 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
     setEntries((prev) => [...prev ?? [], ...r.entries]);
     setCursor(r.cursor);
   }
-  const matcher = (0, import_react.useMemo)(() => makeMatcher(q), [q]);
-  const filtered = (0, import_react.useMemo)(() => {
+  const matcher = (0, import_react2.useMemo)(() => makeMatcher(q), [q]);
+  const filtered = (0, import_react2.useMemo)(() => {
     if (!entries) return null;
     if (!q) return entries;
     return entries.filter((e) => matcher(basename(e.key)));
@@ -234,7 +242,7 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
         type: "search",
         value: q,
         onChange: (e) => setQ(e.target.value),
-        placeholder: "filter (e.g. NewJersey* or pedestr)",
+        placeholder: filterPlaceholder,
         style: {
           padding: "0.3em 0.6em",
           borderRadius: 4,
@@ -298,8 +306,8 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
 }
 function DefaultReadme({ store, entries, markdownRenderer }) {
   const readme = entries.find((e) => !e.isDir && /^README\.md$/i.test(basename(e.key)));
-  const [text, setText] = (0, import_react.useState)(null);
-  (0, import_react.useEffect)(() => {
+  const [text, setText] = (0, import_react2.useState)(null);
+  (0, import_react2.useEffect)(() => {
     setText(null);
     if (!readme) return;
     let cancelled = false;
@@ -334,13 +342,13 @@ function DefaultReadme({ store, entries, markdownRenderer }) {
 }
 
 // src/react/MediaViewer.tsx
-var import_react2 = require("react");
+var import_react3 = require("react");
 var import_jsx_runtime3 = require("react/jsx-runtime");
 function MediaViewer({ store, path, kind }) {
   const direct = typeof store.getUrl === "function" ? store.getUrl(path) : null;
-  const [blobUrl, setBlobUrl] = (0, import_react2.useState)(null);
-  const [error, setError] = (0, import_react2.useState)(null);
-  (0, import_react2.useEffect)(() => {
+  const [blobUrl, setBlobUrl] = (0, import_react3.useState)(null);
+  const [error, setError] = (0, import_react3.useState)(null);
+  (0, import_react3.useEffect)(() => {
     if (direct) return;
     let cancelled = false;
     let createdUrl = null;
@@ -402,16 +410,16 @@ function MediaViewer({ store, path, kind }) {
 }
 
 // src/react/TextViewer.tsx
-var import_react3 = require("react");
+var import_react4 = require("react");
 var import_jsx_runtime4 = require("react/jsx-runtime");
 var HEAD_BYTES = 64 * 1024;
-function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang }) {
-  const [text, setText] = (0, import_react3.useState)(null);
-  const [totalSize, setTotalSize] = (0, import_react3.useState)(void 0);
-  const [error, setError] = (0, import_react3.useState)(null);
-  const [loadingMore, setLoadingMore] = (0, import_react3.useState)(false);
+function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang, usePersistedState }) {
+  const [text, setText] = (0, import_react4.useState)(null);
+  const [totalSize, setTotalSize] = (0, import_react4.useState)(void 0);
+  const [error, setError] = (0, import_react4.useState)(null);
+  const [loadingMore, setLoadingMore] = (0, import_react4.useState)(false);
   const fetchFull = !!markdownRenderer || !!jsonRenderer || !!codeRenderer;
-  (0, import_react3.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     let cancelled = false;
     setText(null);
     setError(null);
@@ -452,7 +460,7 @@ function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer,
   ] });
   const truncated = totalSize != null && text.length < totalSize;
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-    markdownRenderer ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "rdub-file-tree-markdown", "data-path": path, children: markdownRenderer(text) }) : jsonRenderer ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "rdub-file-tree-json", "data-path": path, children: jsonRenderer(text) }) : codeRenderer ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "rdub-file-tree-code", "data-path": path, "data-lang": codeLang, children: codeRenderer(text, codeLang ?? "") }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("pre", { style: {
+    markdownRenderer ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "rdub-file-tree-markdown", "data-path": path, children: markdownRenderer(text) }) : jsonRenderer ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "rdub-file-tree-json", "data-path": path, children: jsonRenderer(text, usePersistedState) }) : codeRenderer ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "rdub-file-tree-code", "data-path": path, "data-lang": codeLang, children: codeRenderer(text, codeLang ?? "") }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("pre", { style: {
       background: "rgba(127,127,127,0.08)",
       padding: "0.6em 0.8em",
       borderRadius: 4,
@@ -474,7 +482,7 @@ function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer,
 }
 
 // src/react/ZipEntryList.tsx
-var import_react4 = require("react");
+var import_react5 = require("react");
 var import_react_router_dom3 = require("react-router-dom");
 
 // src/react/zip.ts
@@ -633,9 +641,9 @@ async function inflateDeflateRaw(input, max) {
 // src/react/ZipEntryList.tsx
 var import_jsx_runtime5 = require("react/jsx-runtime");
 function ZipEntryList({ store, path, routeBase, rootPrefix = "" }) {
-  const [resp, setResp] = (0, import_react4.useState)(null);
-  const [error, setError] = (0, import_react4.useState)(null);
-  (0, import_react4.useEffect)(() => {
+  const [resp, setResp] = (0, import_react5.useState)(null);
+  const [error, setError] = (0, import_react5.useState)(null);
+  (0, import_react5.useEffect)(() => {
     let cancelled = false;
     setResp(null);
     setError(null);
@@ -692,16 +700,16 @@ function ZipEntryList({ store, path, routeBase, rootPrefix = "" }) {
 }
 
 // src/react/ZipEntryPreview.tsx
-var import_react5 = require("react");
+var import_react6 = require("react");
 var import_jsx_runtime6 = require("react/jsx-runtime");
 var STREAMING_PREVIEW_BYTES = 256 * 1024;
 var FULL_FETCH_THRESHOLD = 4 * 1024 * 1024;
 function ZipEntryPreview({ store, path, entry, markdownRenderer }) {
-  const [bytes, setBytes] = (0, import_react5.useState)(null);
-  const [totalSize, setTotalSize] = (0, import_react5.useState)(void 0);
-  const [error, setError] = (0, import_react5.useState)(null);
-  const ext = (0, import_react5.useMemo)(() => extOf(entry), [entry]);
-  (0, import_react5.useEffect)(() => {
+  const [bytes, setBytes] = (0, import_react6.useState)(null);
+  const [totalSize, setTotalSize] = (0, import_react6.useState)(void 0);
+  const [error, setError] = (0, import_react6.useState)(null);
+  const ext = (0, import_react6.useMemo)(() => extOf(entry), [entry]);
+  (0, import_react6.useEffect)(() => {
     let cancelled = false;
     setBytes(null);
     setError(null);
@@ -718,11 +726,11 @@ function ZipEntryPreview({ store, path, entry, markdownRenderer }) {
       cancelled = true;
     };
   }, [store, path, entry]);
-  const blobUrl = (0, import_react5.useMemo)(() => {
+  const blobUrl = (0, import_react6.useMemo)(() => {
     if (!bytes || !IMAGE.has(ext)) return null;
     return URL.createObjectURL(new Blob([bytes]));
   }, [bytes, ext]);
-  (0, import_react5.useEffect)(() => () => {
+  (0, import_react6.useEffect)(() => () => {
     if (blobUrl) URL.revokeObjectURL(blobUrl);
   }, [blobUrl]);
   if (error) return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { color: "salmon" }, children: [
@@ -795,12 +803,12 @@ function TruncationBanner({ shown, total }) {
 
 // src/react/FileTree.tsx
 var import_jsx_runtime7 = require("react/jsx-runtime");
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions }) {
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder, usePersistedState }) {
   const location = (0, import_react_router_dom4.useLocation)();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
-  const parsed = (0, import_react6.useMemo)(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
-  const crumbs = (0, import_react6.useMemo)(() => buildCrumbs(parsed, routeBase, rootPrefix), [parsed, routeBase, rootPrefix]);
+  const parsed = (0, import_react7.useMemo)(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
+  const crumbs = (0, import_react7.useMemo)(() => buildCrumbs(parsed, routeBase, rootPrefix), [parsed, routeBase, rootPrefix]);
   const downloadable = parsed.kind !== "dir" && parsed.kind !== "zipEntry";
   const downloadName = downloadable ? basename(parsed.path) : "";
   const downloadHref = useDownloadHref(store, downloadable ? parsed.path : null);
@@ -818,13 +826,13 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
   return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className, style, children: [
     title && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
     /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Breadcrumb, { crumbs, rightSlot: right }),
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer })
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder, usePersistedState })
   ] });
 }
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder, usePersistedState }) {
   switch (parsed.kind) {
     case "dir":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer });
+      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, filterPlaceholder, usePersistedState });
     case "text": {
       const ext = extOf(parsed.path);
       const isMd = ext === "md" || ext === "markdown";
@@ -833,7 +841,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const lang = CODE_LANG[ext];
       if (isCsv && csvRenderer) {
         const Component = csvRenderer;
-        return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : "," });
+        return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
       }
       return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
         TextViewer,
@@ -843,7 +851,8 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
           markdownRenderer: isMd ? markdownRenderer : void 0,
           jsonRenderer: isJson ? jsonRenderer : void 0,
           codeRenderer: !isMd && !isJson && lang ? codeRenderer : void 0,
-          codeLang: lang
+          codeLang: lang,
+          usePersistedState
         }
       );
     }
@@ -854,12 +863,12 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
     case "parquet": {
       if (!parquetRenderer) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(UnsupportedView, { label: "Parquet preview" });
       const Component = parquetRenderer;
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path });
+      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path, usePersistedState });
     }
     case "notebook": {
       if (!notebookRenderer) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(UnsupportedView, { label: "Notebook preview" });
       const Component = notebookRenderer;
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path });
+      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path, usePersistedState });
     }
     case "image":
       return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MediaViewer, { store, path: parsed.path, kind: "image" });
@@ -875,8 +884,8 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
 }
 function useDownloadHref(store, path) {
   const syncHref = path != null && typeof store.getUrl === "function" ? store.getUrl(path) : null;
-  const [asyncHref, setAsyncHref] = (0, import_react6.useState)(null);
-  (0, import_react6.useEffect)(() => {
+  const [asyncHref, setAsyncHref] = (0, import_react7.useState)(null);
+  (0, import_react7.useEffect)(() => {
     if (path == null || typeof store.getDownloadUrl !== "function") {
       setAsyncHref(null);
       return;

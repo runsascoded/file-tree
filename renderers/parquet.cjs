@@ -23,7 +23,7 @@ __export(parquet_exports, {
   ParquetViewer: () => ParquetViewer
 });
 module.exports = __toCommonJS(parquet_exports);
-var import_react = require("react");
+var import_react2 = require("react");
 var import_hyparquet = require("hyparquet");
 
 // src/react/asyncBuffer.ts
@@ -67,22 +67,26 @@ function fmtSize(n) {
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
 }
 
+// src/react/persistedState.ts
+var import_react = require("react");
+var defaultUseState = (_key, defaultValue) => (0, import_react.useState)(defaultValue);
+
 // src/renderers/parquet.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
 var ROWS_PER_PAGE = 200;
-function ParquetViewer({ store, path }) {
-  const [schema, setSchema] = (0, import_react.useState)(null);
-  const [totalRows, setTotalRows] = (0, import_react.useState)(null);
-  const [byteSize, setByteSize] = (0, import_react.useState)(null);
-  const [page, setPage] = (0, import_react.useState)(0);
-  const [rows, setRows] = (0, import_react.useState)(null);
-  const [error, setError] = (0, import_react.useState)(null);
-  (0, import_react.useEffect)(() => {
+function ParquetViewer({ store, path, usePersistedState }) {
+  const [schema, setSchema] = (0, import_react2.useState)(null);
+  const [totalRows, setTotalRows] = (0, import_react2.useState)(null);
+  const [byteSize, setByteSize] = (0, import_react2.useState)(null);
+  const use = usePersistedState ?? defaultUseState;
+  const [page, setPage] = use("page", 0);
+  const [rows, setRows] = (0, import_react2.useState)(null);
+  const [error, setError] = (0, import_react2.useState)(null);
+  (0, import_react2.useEffect)(() => {
     let cancelled = false;
     setSchema(null);
     setTotalRows(null);
     setByteSize(null);
-    setPage(0);
     setRows(null);
     setError(null);
     (async () => {
@@ -105,7 +109,7 @@ function ParquetViewer({ store, path }) {
       cancelled = true;
     };
   }, [store, path]);
-  (0, import_react.useEffect)(() => {
+  (0, import_react2.useEffect)(() => {
     if (totalRows === null) return;
     let cancelled = false;
     const rowStart2 = page * ROWS_PER_PAGE;
@@ -187,7 +191,7 @@ function Pager({ page, pages, setPage, rowStart, rowEnd, totalRows }) {
   ] });
 }
 function fmtCell(v) {
-  if (v === null || v === void 0) return "";
+  if (v === null || v === void 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { opacity: 0.3 }, children: "\xB7" });
   if (typeof v === "bigint") return v.toString();
   if (v instanceof Date) return v.toISOString();
   if (typeof v === "object") return JSON.stringify(v);
