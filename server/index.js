@@ -2,7 +2,15 @@
 function createHandlers(store, opts = {}) {
   const base = (opts.basePath ?? "").replace(/\/+$/, "");
   const cors = opts.corsOrigin === void 0 ? "*" : opts.corsOrigin;
-  const corsHeaders = cors ? { "Access-Control-Allow-Origin": cors } : {};
+  const corsHeaders = cors ? {
+    "Access-Control-Allow-Origin": cors,
+    // `Content-Range` is NOT CORS-safelisted: without exposing it,
+    // browser clients can't read the total size off a 206 — the
+    // `HttpStore` → `asyncBufferFromStore` chain then falls back to
+    // `bytes.byteLength` of a 1-byte probe and hyparquet trips
+    // `RangeError: Offset is outside the bounds of the DataView`.
+    "Access-Control-Expose-Headers": "Content-Range, Content-Length, Content-Type, Content-Disposition"
+  } : {};
   return {
     async handle(request) {
       const url = new URL(request.url);
@@ -39,6 +47,19 @@ function createHandlers(store, opts = {}) {
       if (path === "/get") {
         const p = url.searchParams.get("path");
         if (!p) return jsonResponse({ error: "path required" }, 400, corsHeaders);
+        if (request.method === "HEAD") {
+          try {
+            const probe = await store.get(p, { offset: 0, length: 1 });
+            const size = probe.totalSize ?? probe.bytes.byteLength;
+            const headers = new Headers(corsHeaders);
+            if (probe.contentType) headers.set("Content-Type", probe.contentType);
+            headers.set("Content-Length", String(size));
+            headers.set("Accept-Ranges", "bytes");
+            return new Response(null, { status: 200, headers });
+          } catch (e) {
+            return errorResponse(e, corsHeaders);
+          }
+        }
         const rangeHeader = request.headers.get("Range");
         const range = parseRange(rangeHeader);
         try {
