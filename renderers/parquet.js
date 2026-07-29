@@ -49,34 +49,41 @@ var defaultUseState = (_key, defaultValue) => useState(defaultValue);
 
 // src/renderers/parquet.tsx
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-var ROWS_PER_PAGE = 200;
 function ParquetViewer({ store, path, usePersistedState }) {
-  const [schema, setSchema] = useState2(null);
-  const [totalRows, setTotalRows] = useState2(null);
-  const [byteSize, setByteSize] = useState2(null);
+  const [meta, setMeta] = useState2(null);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
   const [rows, setRows] = useState2(null);
   const [error, setError] = useState2(null);
   useEffect(() => {
     let cancelled = false;
-    setSchema(null);
-    setTotalRows(null);
-    setByteSize(null);
+    setMeta(null);
     setRows(null);
     setError(null);
     (async () => {
       try {
         const file = await asyncBufferFromStore(store, path);
-        const meta = await parquetMetadataAsync(file);
+        const md = await parquetMetadataAsync(file);
         if (cancelled) return;
-        const sch = parquetSchema(meta).children.map((c) => ({
+        const schema2 = parquetSchema(md).children.map((c) => ({
           name: c.element.name,
           ...c.element.type ? { type: String(c.element.type) } : {}
         }));
-        setSchema(sch);
-        setTotalRows(Number(meta.num_rows));
-        setByteSize(file.byteLength);
+        const rowGroups2 = [];
+        let cum = 0;
+        md.row_groups.forEach((rg2, i) => {
+          const numRows = Number(rg2.num_rows);
+          rowGroups2.push({
+            index: i,
+            numRows,
+            rowStart: cum,
+            rowEnd: cum + numRows,
+            uncompressedBytes: Number(rg2.total_byte_size),
+            compressedBytes: rg2.total_compressed_size != null ? Number(rg2.total_compressed_size) : null
+          });
+          cum += numRows;
+        });
+        setMeta({ schema: schema2, totalRows: Number(md.num_rows), byteSize: file.byteLength, rowGroups: rowGroups2 });
       } catch (e) {
         if (!cancelled) setError(String(e));
       }
@@ -86,18 +93,21 @@ function ParquetViewer({ store, path, usePersistedState }) {
     };
   }, [store, path]);
   useEffect(() => {
-    if (totalRows === null) return;
+    if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0);
+  }, [meta, page, setPage]);
+  useEffect(() => {
+    if (!meta || meta.rowGroups.length === 0) return;
+    const rg2 = meta.rowGroups[Math.min(page, meta.rowGroups.length - 1)];
     let cancelled = false;
-    const rowStart2 = page * ROWS_PER_PAGE;
-    const rowEnd2 = Math.min(totalRows, rowStart2 + ROWS_PER_PAGE);
+    setRows(null);
     (async () => {
       try {
         const file = await asyncBufferFromStore(store, path);
         const out = [];
         await parquetRead({
           file,
-          rowStart: rowStart2,
-          rowEnd: rowEnd2,
+          rowStart: rg2.rowStart,
+          rowEnd: rg2.rowEnd,
           rowFormat: "object",
           onComplete: (data) => {
             if (Array.isArray(data)) for (const r of data) out.push(r);
@@ -111,25 +121,29 @@ function ParquetViewer({ store, path, usePersistedState }) {
     return () => {
       cancelled = true;
     };
-  }, [store, path, page, totalRows]);
+  }, [store, path, page, meta]);
   if (error) return /* @__PURE__ */ jsxs("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!schema || totalRows === null) return /* @__PURE__ */ jsx("div", { style: { opacity: 0.6 }, children: "reading parquet metadata\u2026" });
-  const pages = Math.max(1, Math.ceil(totalRows / ROWS_PER_PAGE));
-  const rowStart = page * ROWS_PER_PAGE;
-  const rowEnd = Math.min(totalRows, rowStart + ROWS_PER_PAGE);
+  if (!meta) return /* @__PURE__ */ jsx("div", { style: { opacity: 0.6 }, children: "reading parquet metadata\u2026" });
+  const { schema, totalRows, byteSize, rowGroups } = meta;
+  if (rowGroups.length === 0) {
+    return /* @__PURE__ */ jsx("div", { style: { opacity: 0.7 }, children: "parquet file has no row groups" });
+  }
+  const rgIndex = Math.min(Math.max(page, 0), rowGroups.length - 1);
+  const rg = rowGroups[rgIndex];
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     /* @__PURE__ */ jsxs("p", { style: { opacity: 0.7, fontSize: "0.95em" }, children: [
       /* @__PURE__ */ jsx("b", { children: totalRows.toLocaleString() }),
       " rows \xB7 ",
       /* @__PURE__ */ jsx("b", { children: schema.length }),
-      " columns",
-      byteSize ? /* @__PURE__ */ jsxs(Fragment, { children: [
-        " \xB7 ",
-        fmtSize(byteSize)
-      ] }) : null
+      " columns \xB7 ",
+      /* @__PURE__ */ jsx("b", { children: rowGroups.length }),
+      " row group",
+      rowGroups.length === 1 ? "" : "s",
+      " \xB7 ",
+      fmtSize(byteSize)
     ] }),
     /* @__PURE__ */ jsxs("details", { style: { marginBottom: "0.5em" }, children: [
       /* @__PURE__ */ jsx("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: "schema" }),
@@ -138,32 +152,60 @@ function ParquetViewer({ store, path, usePersistedState }) {
         /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0", opacity: 0.7 }, children: c.type ?? "?" })
       ] }, c.name)) }) })
     ] }),
-    /* @__PURE__ */ jsx(Pager, { page, pages, setPage, rowStart, rowEnd, totalRows }),
+    rowGroups.length > 1 && /* @__PURE__ */ jsxs("details", { style: { marginBottom: "0.5em" }, children: [
+      /* @__PURE__ */ jsxs("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: [
+        "row groups (",
+        rowGroups.length,
+        ")"
+      ] }),
+      /* @__PURE__ */ jsxs("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
+          /* @__PURE__ */ jsx("th", { style: { padding: "0.1em 0.6em 0.1em 0", fontWeight: 400 }, children: "#" }),
+          /* @__PURE__ */ jsx("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "rows" }),
+          /* @__PURE__ */ jsx("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "compressed" }),
+          /* @__PURE__ */ jsx("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "uncompressed" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: rowGroups.map((g) => /* @__PURE__ */ jsxs("tr", { style: { background: g.index === rgIndex ? "rgba(127,127,127,0.12)" : void 0, cursor: "pointer" }, onClick: () => setPage(g.index), children: [
+          /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: g.index }),
+          /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: g.numRows.toLocaleString() }),
+          /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.8 }, children: g.compressedBytes != null ? fmtSize(g.compressedBytes) : "\u2014" }),
+          /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6 }, children: fmtSize(g.uncompressedBytes) })
+        ] }, g.index)) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx(Pager, { rg, rgCount: rowGroups.length, setPage, totalRows }),
     /* @__PURE__ */ jsx("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ jsxs("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
       /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { style: { position: "sticky", top: 0, background: "rgba(127,127,127,0.15)" }, children: schema.map((c) => /* @__PURE__ */ jsx("th", { style: { padding: "0.3em 0.6em", textAlign: "left", borderBottom: "1px solid rgba(127,127,127,0.4)", fontWeight: 500 }, children: c.name }, c.name)) }) }),
-      /* @__PURE__ */ jsx("tbody", { children: rows === null ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading rows\u2026" }) }) : rows.map((r, i) => /* @__PURE__ */ jsx("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => /* @__PURE__ */ jsx("td", { style: { padding: "0.2em 0.6em", whiteSpace: "nowrap", maxWidth: "30em", overflow: "hidden", textOverflow: "ellipsis" }, children: fmtCell(r[c.name]) }, c.name)) }, i)) })
+      /* @__PURE__ */ jsx("tbody", { children: rows === null ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsxs("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
+        "loading row group ",
+        rgIndex,
+        "\u2026"
+      ] }) }) : rows.map((r, i) => /* @__PURE__ */ jsx("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => /* @__PURE__ */ jsx("td", { style: { padding: "0.2em 0.6em", whiteSpace: "nowrap", maxWidth: "30em", overflow: "hidden", textOverflow: "ellipsis" }, children: fmtCell(r[c.name]) }, c.name)) }, i)) })
     ] }) })
   ] });
 }
-function Pager({ page, pages, setPage, rowStart, rowEnd, totalRows }) {
-  if (pages <= 1) return null;
+function Pager({ rg, rgCount, setPage, totalRows }) {
+  if (rgCount <= 1) return null;
+  const sizeLabel = rg.compressedBytes != null ? fmtSize(rg.compressedBytes) : fmtSize(rg.uncompressedBytes);
   return /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em" }, children: [
-    /* @__PURE__ */ jsx("button", { disabled: page === 0, onClick: () => setPage(0), children: "\xAB" }),
-    /* @__PURE__ */ jsx("button", { disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039" }),
+    /* @__PURE__ */ jsx("button", { disabled: rg.index === 0, onClick: () => setPage(0), children: "\xAB" }),
+    /* @__PURE__ */ jsx("button", { disabled: rg.index === 0, onClick: () => setPage(rg.index - 1), children: "\u2039" }),
     /* @__PURE__ */ jsxs("span", { style: { opacity: 0.8 }, children: [
-      "page ",
-      /* @__PURE__ */ jsx("b", { children: page + 1 }),
+      "row group ",
+      /* @__PURE__ */ jsx("b", { children: rg.index + 1 }),
       " / ",
-      pages,
+      rgCount,
       " \xB7 rows ",
-      rowStart.toLocaleString(),
+      rg.rowStart.toLocaleString(),
       "\u2013",
-      rowEnd.toLocaleString(),
+      rg.rowEnd.toLocaleString(),
       " / ",
-      totalRows.toLocaleString()
+      totalRows.toLocaleString(),
+      " \xB7 ",
+      sizeLabel
     ] }),
-    /* @__PURE__ */ jsx("button", { disabled: page === pages - 1, onClick: () => setPage(page + 1), children: "\u203A" }),
-    /* @__PURE__ */ jsx("button", { disabled: page === pages - 1, onClick: () => setPage(pages - 1), children: "\xBB" })
+    /* @__PURE__ */ jsx("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rg.index + 1), children: "\u203A" }),
+    /* @__PURE__ */ jsx("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rgCount - 1), children: "\xBB" })
   ] });
 }
 function fmtCell(v) {
