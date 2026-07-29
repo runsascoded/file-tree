@@ -31,7 +31,17 @@ export interface CreateHandlersOptions {
 export function createHandlers(store: Store, opts: CreateHandlersOptions = {}): Handlers {
   const base = (opts.basePath ?? '').replace(/\/+$/, '')
   const cors = opts.corsOrigin === undefined ? '*' : opts.corsOrigin
-  const corsHeaders: Record<string, string> = cors ? { 'Access-Control-Allow-Origin': cors } : {}
+  const corsHeaders: Record<string, string> = cors
+    ? {
+        'Access-Control-Allow-Origin': cors,
+        // `Content-Range` is NOT CORS-safelisted: without exposing it,
+        // browser clients can't read the total size off a 206 — the
+        // `HttpStore` → `asyncBufferFromStore` chain then falls back to
+        // `bytes.byteLength` of a 1-byte probe and hyparquet trips
+        // `RangeError: Offset is outside the bounds of the DataView`.
+        'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Content-Type, Content-Disposition',
+      }
+    : {}
 
   return {
     async handle(request: Request): Promise<Response | null> {
@@ -72,6 +82,23 @@ export function createHandlers(store: Store, opts: CreateHandlersOptions = {}): 
       if (path === '/get') {
         const p = url.searchParams.get('path')
         if (!p) return jsonResponse({ error: 'path required' }, 400, corsHeaders)
+        if (request.method === 'HEAD') {
+          // Size probe (`asyncBufferFromStore` prefers HEAD): answer via a
+          // 1-byte ranged read — `Store` has no `head`, and falling through
+          // to a full-object GET both wastes bandwidth and can exceed
+          // worker limits on multi-hundred-MB objects.
+          try {
+            const probe = await store.get(p, { offset: 0, length: 1 })
+            const size = probe.totalSize ?? probe.bytes.byteLength
+            const headers = new Headers(corsHeaders)
+            if (probe.contentType) headers.set('Content-Type', probe.contentType)
+            headers.set('Content-Length', String(size))
+            headers.set('Accept-Ranges', 'bytes')
+            return new Response(null, { status: 200, headers })
+          } catch (e) {
+            return errorResponse(e, corsHeaders)
+          }
+        }
         const rangeHeader = request.headers.get('Range')
         const range = parseRange(rangeHeader)
         try {
