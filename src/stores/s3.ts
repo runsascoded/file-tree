@@ -40,8 +40,8 @@
  *   })
  */
 import { AwsClient, AwsV4Signer } from 'aws4fetch'
-import type { Entry, GetResult, ListOptions, ListResult, Range, Store } from '../types'
-import { NotFoundError } from '../types'
+import type { Store } from '../types'
+import { xmlObjectStore } from './_xmlObjectStore'
 
 export interface S3StoreOptions {
   /** Bucket name. Required. */
@@ -70,74 +70,9 @@ export interface S3StoreOptions {
   presignExpiresIn?: number
 }
 
-/** Build the request URL for a given S3 path under this store.
- *  - With `endpoint` set: path-style (`<endpoint>/<bucket>/<key>`).
- *  - Without `endpoint`: virtual-hosted-style
- *    (`https://<bucket>.s3.<region>.amazonaws.com/<key>`). */
-function buildUrl(opts: { bucket: string; region: string; endpoint?: string }, key: string, search?: string): string {
-  const trail = search ? `?${search}` : ''
-  const safeKey = key.split('/').map(encodeURIComponent).join('/')
-  if (opts.endpoint) {
-    const base = opts.endpoint.replace(/\/+$/, '')
-    return `${base}/${opts.bucket}/${safeKey}${trail}`
-  }
-  return `https://${opts.bucket}.s3.${opts.region}.amazonaws.com/${safeKey}${trail}`
-}
-
-/** Minimal XML extractor for ListObjectsV2's flat structure. Avoids
- *  pulling in a full XML parser — S3's list response is regular enough
- *  that we can walk it with a tag-aware string scan. Returns the inner
- *  text of every occurrence of `<tag>...</tag>`. */
-function extractAll(xml: string, tag: string): string[] {
-  const out: string[] = []
-  const re = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'g')
-  for (const m of xml.matchAll(re)) out.push(decodeXmlEntities(m[1]))
-  return out
-}
-
-function extractFirst(xml: string, tag: string): string | undefined {
-  const m = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))
-  return m ? decodeXmlEntities(m[1]) : undefined
-}
-
-function decodeXmlEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&')
-}
-
-/** Pull the per-`<Contents>` block fields out of a ListObjectsV2 body.
- *  Each block looks like:
- *    <Contents><Key>...</Key><LastModified>...</LastModified><Size>...</Size>...</Contents> */
-function parseContents(xml: string): Array<{ key: string; size: number; lastModified: string }> {
-  const out: Array<{ key: string; size: number; lastModified: string }> = []
-  for (const block of extractAll(xml, 'Contents')) {
-    const key = extractFirst(block, 'Key')
-    if (!key) continue
-    const sizeStr = extractFirst(block, 'Size') ?? '0'
-    const lastModified = extractFirst(block, 'LastModified') ?? ''
-    out.push({ key, size: parseInt(sizeStr, 10), lastModified })
-  }
-  return out
-}
-
-function parseCommonPrefixes(xml: string): string[] {
-  const out: string[] = []
-  for (const block of extractAll(xml, 'CommonPrefixes')) {
-    const prefix = extractFirst(block, 'Prefix')
-    if (prefix) out.push(prefix)
-  }
-  return out
-}
-
 export function S3Store(opts: S3StoreOptions): Store {
   const region = opts.region ?? 'us-east-1'
   const f = opts.fetch ?? globalThis.fetch.bind(globalThis)
-  const allowedPrefixes = opts.prefixes
-  const urlOpts = { bucket: opts.bucket, region, endpoint: opts.endpoint }
 
   const signer = opts.accessKeyId && opts.secretAccessKey
     ? new AwsClient({
@@ -149,99 +84,29 @@ export function S3Store(opts: S3StoreOptions): Store {
       })
     : undefined
 
-  async function request(url: string, init?: RequestInit): Promise<Response> {
-    if (!signer) return f(url, init)
-    // aws4fetch's `.fetch` signs then dispatches. We pass through the
-    // user-supplied fetch only when unsigned — aws4fetch always uses
-    // global fetch internally, which is fine for both browser and CFW.
-    return signer.fetch(url, init)
-  }
+  // aws4fetch's `.fetch` signs then dispatches. We pass through the
+  // user-supplied fetch only when unsigned — aws4fetch always uses
+  // global fetch internally, which is fine for both browser and CFW.
+  const request = signer
+    ? (url: string, init?: RequestInit) => signer.fetch(url, init)
+    : (url: string, init?: RequestInit) => f(url, init)
 
-  const checkPrefix = (path: string, label: string) => {
-    if (!allowedPrefixes || allowedPrefixes.length === 0) return
-    if (allowedPrefixes.some(p => path === p || path.startsWith(p))) return
-    throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(', ')}`)
-  }
+  const core = xmlObjectStore({
+    bucket: opts.bucket,
+    region,
+    ...(opts.endpoint ? { endpoint: opts.endpoint } : {}),
+    request,
+    ...(opts.prefixes ? { allowedPrefixes: opts.prefixes } : {}),
+  })
 
   return {
-    async list(prefix, listOpts: ListOptions = {}): Promise<ListResult> {
-      const p = prefix.endsWith('/') || prefix === '' ? prefix : `${prefix}/`
-      // Scoped-bucket virtual root (parallels `R2Store`): listing `""`
-      // with allowed prefixes returns a synthetic dir per prefix.
-      if (p === '' && allowedPrefixes && allowedPrefixes.length > 0 && !allowedPrefixes.some(ap => ap === '')) {
-        const entries: Entry[] = allowedPrefixes
-          .map(ap => ({ key: ap.endsWith('/') ? ap : `${ap}/`, isDir: true }))
-          .sort((a, b) => a.key.localeCompare(b.key))
-        return { entries }
-      }
-      checkPrefix(p, 'list prefix')
-
-      const params = new URLSearchParams({ 'list-type': '2', delimiter: '/' })
-      if (p) params.set('prefix', p)
-      if (listOpts.cursor) params.set('continuation-token', listOpts.cursor)
-      params.set('max-keys', String(listOpts.limit ?? 1000))
-
-      const url = buildUrl(urlOpts, '', params.toString())
-      const res = await request(url)
-      if (!res.ok) throw new Error(`S3 list ${p}: ${res.status} ${await res.text()}`)
-      const xml = await res.text()
-
-      const dirs = parseCommonPrefixes(xml).map(prefix => ({ key: prefix, isDir: true } as Entry))
-      const files: Entry[] = []
-      for (const o of parseContents(xml)) {
-        if (o.key === p) continue  // skip zero-byte "directory marker"
-        files.push({
-          key: o.key,
-          size: o.size,
-          lastModified: o.lastModified,
-          isDir: false,
-        })
-      }
-      const entries: Entry[] = [...dirs, ...files]
-      entries.sort((a, b) => {
-        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
-        return a.key.localeCompare(b.key)
-      })
-      const out: ListResult = { entries }
-      const isTruncated = (extractFirst(xml, 'IsTruncated') ?? 'false').trim() === 'true'
-      const nextToken = extractFirst(xml, 'NextContinuationToken')
-      if (isTruncated && nextToken) out.cursor = nextToken
-      return out
-    },
-
-    async get(path: string, range?: Range): Promise<GetResult> {
-      checkPrefix(path, 'get path')
-      const url = buildUrl(urlOpts, path)
-      const headers: Record<string, string> = {}
-      if (range) headers['Range'] = `bytes=${range.offset}-${range.offset + range.length - 1}`
-      const res = await request(url, { headers })
-      if (res.status === 404) throw new NotFoundError(path)
-      if (!res.ok && res.status !== 206) {
-        throw new Error(`S3 get ${path}: ${res.status} ${await res.text()}`)
-      }
-      const cr = res.headers.get('Content-Range')
-      // 206 + no `Content-Range` (common: AWS S3 default CORS strips
-      // it) means we can't know the total size from this response —
-      // `Content-Length` is the partial length, not the full file's.
-      // Only trust `Content-Length` for 200 responses.
-      const totalSize = cr
-        ? parseInt(cr.split('/')[1], 10)
-        : res.status === 200
-          ? parseInt(res.headers.get('Content-Length') ?? '', 10)
-          : NaN
-      const bytes = new Uint8Array(await res.arrayBuffer())
-      const out: GetResult = { bytes }
-      if (Number.isFinite(totalSize)) out.totalSize = totalSize
-      const ct = res.headers.get('Content-Type')
-      if (ct) out.contentType = ct
-      return out
-    },
-
+    list: core.list,
+    get: core.get,
     capabilities: { range: true },
 
     // Static URL works for unsigned (public) buckets only — signed
     // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
-    ...(signer ? {} : { getUrl: (p: string) => buildUrl(urlOpts, p) }),
+    ...(signer ? {} : { getUrl: (p: string) => core.buildUrl(p) }),
 
     // SigV4 presigned download URL, for signed buckets. Browser-side use
     // case: a user pastes their own access keys at `/s3` or `/r2` to
@@ -251,7 +116,7 @@ export function S3Store(opts: S3StoreOptions): Store {
     ...(opts.accessKeyId && opts.secretAccessKey
       ? {
           async getDownloadUrl(path: string, dlOpts?: { expiresIn?: number }): Promise<string> {
-            checkPrefix(path, 'getDownloadUrl path')
+            core.checkPrefix(path, 'getDownloadUrl path')
             const basename = path.split('/').pop() || path
             const search = new URLSearchParams({
               'X-Amz-Expires': String(dlOpts?.expiresIn ?? opts.presignExpiresIn ?? 3600),
@@ -259,7 +124,7 @@ export function S3Store(opts: S3StoreOptions): Store {
             })
             const signer = new AwsV4Signer({
               method: 'GET',
-              url: buildUrl(urlOpts, path, search.toString()),
+              url: core.buildUrl(path, search.toString()),
               accessKeyId: opts.accessKeyId!,
               secretAccessKey: opts.secretAccessKey!,
               ...(opts.sessionToken ? { sessionToken: opts.sessionToken } : {}),
