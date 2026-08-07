@@ -10,6 +10,7 @@ export default defineConfig({
     'src/stores/mock.ts',
     'src/stores/multi.ts',
     'src/stores/s3.ts',
+    'src/stores/gcs.ts',
     'src/server/index.ts',
     'src/test/conformance.ts',
     'src/renderers/parquet.tsx',

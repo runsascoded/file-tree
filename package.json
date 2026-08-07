@@ -47,6 +47,11 @@
       "import": "./dist/stores/s3.js",
       "require": "./dist/stores/s3.cjs"
     },
+    "./stores/gcs": {
+      "types": "./dist/stores/gcs.d.ts",
+      "import": "./dist/stores/gcs.js",
+      "require": "./dist/stores/gcs.cjs"
+    },
     "./test/conformance": {
       "types": "./dist/test/conformance.d.ts",
       "import": "./dist/test/conformance.js",
