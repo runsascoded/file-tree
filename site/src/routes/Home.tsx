@@ -29,6 +29,11 @@ export function Home() {
           <Link to="/r2">R2</Link> — browse a Cloudflare R2 bucket through its S3-compatible API.
           Same client, different endpoint.
         </li>
+        <li>
+          <Link to="/gcs">GCS</Link> — browse a Google Cloud Storage bucket via its
+          {' '}S3-interop XML API. Unsigned public buckets, HMAC interop keys, or (server-side)
+          OAuth bearer tokens.
+        </li>
       </ul>
 
       <h2>The <code>Store</code> interface</h2>
@@ -57,10 +62,13 @@ const store = MockStore({
       <h2>Currently shipped Stores</h2>
       <ul>
         <li><code>R2Store(bucket, &#123; prefixes? &#125;)</code> — Cloudflare Workers R2 binding</li>
+        <li><code>S3Store(&#123; bucket, region?, endpoint?, accessKeyId?, secretAccessKey? &#125;)</code> — S3-compat (AWS / R2 / MinIO); SigV4 via <code>aws4fetch</code></li>
+        <li><code>GcsStore(&#123; bucket, accessKeyId?, secretAccessKey?, getToken? &#125;)</code> — Google Cloud Storage (unsigned / HMAC / OAuth bearer)</li>
         <li><code>HttpStore(apiBase)</code> — browser → server proxy</li>
         <li><code>MockStore(input)</code> — in-memory fixture (this demo + tests)</li>
+        <li><code>MultiStore(&#123; name: store, … &#125;)</code> — namespaced composite over N children</li>
       </ul>
-      <p>Roadmap: <code>S3Store</code>, <code>GitHubStore</code>, <code>GitLabStore</code>, plus static-bucket variants of each.</p>
+      <p>Roadmap: <code>GitHubStore</code>, <code>GitLabStore</code>, plus static-bucket variants.</p>
 
       <h2>Conformance harness</h2>
       <p>

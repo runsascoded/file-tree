@@ -42,6 +42,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.7.0
         version: 4.7.0(vite@6.4.2)
+      hyparquet-writer:
+        specifier: ^0.16.5
+        version: 0.16.5
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
@@ -606,8 +609,14 @@ packages:
   html-url-attributes@3.0.1:
     resolution: {integrity: sha512-ol6UPyBWqsrO6EJySPz2O7ZSr856WDrEzM5zMqp+FJJLGMW35cLYmmZnl0vztAZxRUoNZJFTCohfjuIJ8I4QBQ==}
 
+  hyparquet-writer@0.16.5:
+    resolution: {integrity: sha512-+f9/aOOiZrQU9MCinU79npYvyo62C4UOkbtk2+c8ViyPGBt4ihLpT+ZhEw8oBLroTbkJVO22y4ftcY/R9AYaQg==}
+
   hyparquet@1.25.8:
     resolution: {integrity: sha512-KYRKZCHBgEY9FOuqTe9m+zdrKBcTo9ZcaIUqG7SdZygv5hwrGD3C6wuTrGt07cbEkgO71UIih+KbojLKf3ENbg==}
+
+  hyparquet@1.27.1:
+    resolution: {integrity: sha512-kvMGVKlB/xa9UHxWLJkySJYGC436nPeBWC9Fzo/BZtMEzFUjmzD1KuLz67EOpA3Ci6V7yF/yTG7QRSDSx5EDSg==}
 
   inline-style-parser@0.2.7:
     resolution: {integrity: sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA==}
@@ -1454,7 +1463,13 @@ snapshots:
 
   html-url-attributes@3.0.1: {}
 
+  hyparquet-writer@0.16.5:
+    dependencies:
+      hyparquet: 1.27.1
+
   hyparquet@1.25.8: {}
+
+  hyparquet@1.27.1: {}
 
   inline-style-parser@0.2.7: {}
 
