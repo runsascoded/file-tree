@@ -290,6 +290,8 @@ function MultiStore(children) {
 
 // src/stores/s3.ts
 import { AwsClient, AwsV4Signer as AwsV4Signer2 } from "aws4fetch";
+
+// src/stores/_xmlObjectStore.ts
 function buildUrl(opts, key, search) {
   const trail = search ? `?${search}` : "";
   const safeKey = key.split("/").map(encodeURIComponent).join("/");
@@ -331,28 +333,17 @@ function parseCommonPrefixes(xml) {
   }
   return out;
 }
-function S3Store(opts) {
-  const region = opts.region ?? "us-east-1";
-  const f = opts.fetch ?? globalThis.fetch.bind(globalThis);
-  const allowedPrefixes = opts.prefixes;
-  const urlOpts = { bucket: opts.bucket, region, endpoint: opts.endpoint };
-  const signer = opts.accessKeyId && opts.secretAccessKey ? new AwsClient({
-    accessKeyId: opts.accessKeyId,
-    secretAccessKey: opts.secretAccessKey,
-    ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
-    service: "s3",
-    region
-  }) : void 0;
-  async function request(url, init) {
-    if (!signer) return f(url, init);
-    return signer.fetch(url, init);
-  }
+function xmlObjectStore(opts) {
+  const urlOpts = { bucket: opts.bucket, region: opts.region, endpoint: opts.endpoint };
+  const allowedPrefixes = opts.allowedPrefixes;
   const checkPrefix = (path, label) => {
     if (!allowedPrefixes || allowedPrefixes.length === 0) return;
     if (allowedPrefixes.some((p) => path === p || path.startsWith(p))) return;
     throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(", ")}`);
   };
   return {
+    buildUrl: (key, search) => buildUrl(urlOpts, key, search),
+    checkPrefix,
     async list(prefix, listOpts = {}) {
       const p = prefix.endsWith("/") || prefix === "" ? prefix : `${prefix}/`;
       if (p === "" && allowedPrefixes && allowedPrefixes.length > 0 && !allowedPrefixes.some((ap) => ap === "")) {
@@ -365,8 +356,8 @@ function S3Store(opts) {
       if (listOpts.cursor) params.set("continuation-token", listOpts.cursor);
       params.set("max-keys", String(listOpts.limit ?? 1e3));
       const url = buildUrl(urlOpts, "", params.toString());
-      const res = await request(url);
-      if (!res.ok) throw new Error(`S3 list ${p}: ${res.status} ${await res.text()}`);
+      const res = await opts.request(url);
+      if (!res.ok) throw new Error(`list ${p}: ${res.status} ${await res.text()}`);
       const xml = await res.text();
       const dirs = parseCommonPrefixes(xml).map((prefix2) => ({ key: prefix2, isDir: true }));
       const files = [];
@@ -395,10 +386,10 @@ function S3Store(opts) {
       const url = buildUrl(urlOpts, path);
       const headers = {};
       if (range) headers["Range"] = `bytes=${range.offset}-${range.offset + range.length - 1}`;
-      const res = await request(url, { headers });
+      const res = await opts.request(url, { headers });
       if (res.status === 404) throw new NotFoundError(path);
       if (!res.ok && res.status !== 206) {
-        throw new Error(`S3 get ${path}: ${res.status} ${await res.text()}`);
+        throw new Error(`get ${path}: ${res.status} ${await res.text()}`);
       }
       const cr = res.headers.get("Content-Range");
       const totalSize = cr ? parseInt(cr.split("/")[1], 10) : res.status === 200 ? parseInt(res.headers.get("Content-Length") ?? "", 10) : NaN;
@@ -408,11 +399,36 @@ function S3Store(opts) {
       const ct = res.headers.get("Content-Type");
       if (ct) out.contentType = ct;
       return out;
-    },
+    }
+  };
+}
+
+// src/stores/s3.ts
+function S3Store(opts) {
+  const region = opts.region ?? "us-east-1";
+  const f = opts.fetch ?? globalThis.fetch.bind(globalThis);
+  const signer = opts.accessKeyId && opts.secretAccessKey ? new AwsClient({
+    accessKeyId: opts.accessKeyId,
+    secretAccessKey: opts.secretAccessKey,
+    ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
+    service: "s3",
+    region
+  }) : void 0;
+  const request = signer ? (url, init) => signer.fetch(url, init) : (url, init) => f(url, init);
+  const core = xmlObjectStore({
+    bucket: opts.bucket,
+    region,
+    ...opts.endpoint ? { endpoint: opts.endpoint } : {},
+    request,
+    ...opts.prefixes ? { allowedPrefixes: opts.prefixes } : {}
+  });
+  return {
+    list: core.list,
+    get: core.get,
     capabilities: { range: true },
     // Static URL works for unsigned (public) buckets only — signed
     // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
-    ...signer ? {} : { getUrl: (p) => buildUrl(urlOpts, p) },
+    ...signer ? {} : { getUrl: (p) => core.buildUrl(p) },
     // SigV4 presigned download URL, for signed buckets. Browser-side use
     // case: a user pastes their own access keys at `/s3` or `/r2` to
     // browse a private bucket — `<FileTree>` calls this when the user
@@ -420,7 +436,7 @@ function S3Store(opts) {
     // GETs directly. Mirrors `R2Store`'s presign path.
     ...opts.accessKeyId && opts.secretAccessKey ? {
       async getDownloadUrl(path, dlOpts) {
-        checkPrefix(path, "getDownloadUrl path");
+        core.checkPrefix(path, "getDownloadUrl path");
         const basename = path.split("/").pop() || path;
         const search = new URLSearchParams({
           "X-Amz-Expires": String(dlOpts?.expiresIn ?? opts.presignExpiresIn ?? 3600),
@@ -428,7 +444,7 @@ function S3Store(opts) {
         });
         const signer2 = new AwsV4Signer2({
           method: "GET",
-          url: buildUrl(urlOpts, path, search.toString()),
+          url: core.buildUrl(path, search.toString()),
           accessKeyId: opts.accessKeyId,
           secretAccessKey: opts.secretAccessKey,
           ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
@@ -442,7 +458,74 @@ function S3Store(opts) {
     } : {}
   };
 }
+
+// src/stores/gcs.ts
+import { AwsClient as AwsClient2, AwsV4Signer as AwsV4Signer3 } from "aws4fetch";
+var DEFAULT_ENDPOINT = "https://storage.googleapis.com";
+var DEFAULT_REGION = "auto";
+function GcsStore(opts) {
+  const endpoint = opts.endpoint ?? DEFAULT_ENDPOINT;
+  const region = opts.region ?? DEFAULT_REGION;
+  const f = opts.fetch ?? globalThis.fetch.bind(globalThis);
+  const bearer = opts.getToken;
+  const hmacSigner = !bearer && opts.accessKeyId && opts.secretAccessKey ? new AwsClient2({
+    accessKeyId: opts.accessKeyId,
+    secretAccessKey: opts.secretAccessKey,
+    service: "s3",
+    // GCS's S3-compat API accepts SigV4 with `service: s3`
+    region
+  }) : void 0;
+  const request = bearer ? async (url, init) => {
+    const token = await bearer();
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    return f(url, { ...init, headers });
+  } : hmacSigner ? (url, init) => hmacSigner.fetch(url, init) : (url, init) => f(url, init);
+  const core = xmlObjectStore({
+    bucket: opts.bucket,
+    region,
+    endpoint,
+    request,
+    ...opts.prefixes ? { allowedPrefixes: opts.prefixes } : {}
+  });
+  return {
+    list: core.list,
+    get: core.get,
+    capabilities: { range: true },
+    // Unsigned/public: browser can hit the URL directly. Bearer & HMAC
+    // both need per-request auth (bearer can't go in a URL safely;
+    // HMAC uses presign via `getDownloadUrl`).
+    ...bearer || hmacSigner ? {} : { getUrl: (p) => core.buildUrl(p) },
+    // SigV4 presigned download URL — HMAC mode only. GCS honors
+    // V4 query signing when the credential scope matches the HMAC key.
+    // Bearer mode intentionally omits this: bearer tokens can't be
+    // embedded in a signed URL, so the proxy `get` path serves
+    // downloads instead.
+    ...hmacSigner ? {
+      async getDownloadUrl(path, dlOpts) {
+        core.checkPrefix(path, "getDownloadUrl path");
+        const basename = path.split("/").pop() || path;
+        const search = new URLSearchParams({
+          "X-Amz-Expires": String(dlOpts?.expiresIn ?? opts.presignExpiresIn ?? 3600),
+          "response-content-disposition": `attachment; filename="${basename.replace(/"/g, '\\"')}"`
+        });
+        const signer = new AwsV4Signer3({
+          method: "GET",
+          url: core.buildUrl(path, search.toString()),
+          accessKeyId: opts.accessKeyId,
+          secretAccessKey: opts.secretAccessKey,
+          service: "s3",
+          region,
+          signQuery: true
+        });
+        const signed = await signer.sign();
+        return signed.url.toString();
+      }
+    } : {}
+  };
+}
 export {
+  GcsStore,
   HttpStore,
   MockStore,
   MultiStore,

@@ -1,5 +1,5 @@
 // src/renderers/parquet.tsx
-import { useEffect, useState as useState2 } from "react";
+import { useEffect, useRef, useState as useState2 } from "react";
 import { parquetMetadataAsync, parquetRead, parquetSchema } from "hyparquet";
 
 // src/react/asyncBuffer.ts
@@ -49,17 +49,25 @@ var defaultUseState = (_key, defaultValue) => useState(defaultValue);
 
 // src/renderers/parquet.tsx
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+var ROWS_PER_PAGE = 100;
+var RG_CACHE_SIZE = 4;
 function ParquetViewer({ store, path, usePersistedState }) {
   const [meta, setMeta] = useState2(null);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
   const [rows, setRows] = useState2(null);
   const [error, setError] = useState2(null);
+  const [rgPage, setRgPage] = useState2(0);
+  useEffect(() => {
+    setRgPage(0);
+  }, [page]);
+  const rgCache = useRef(/* @__PURE__ */ new Map());
   useEffect(() => {
     let cancelled = false;
     setMeta(null);
     setRows(null);
     setError(null);
+    rgCache.current = /* @__PURE__ */ new Map();
     (async () => {
       try {
         const file = await asyncBufferFromStore(store, path);
@@ -97,7 +105,15 @@ function ParquetViewer({ store, path, usePersistedState }) {
   }, [meta, page, setPage]);
   useEffect(() => {
     if (!meta || meta.rowGroups.length === 0) return;
-    const rg2 = meta.rowGroups[Math.min(page, meta.rowGroups.length - 1)];
+    const rgIdx = Math.min(page, meta.rowGroups.length - 1);
+    const rg2 = meta.rowGroups[rgIdx];
+    const cached = rgCache.current.get(rgIdx);
+    if (cached) {
+      rgCache.current.delete(rgIdx);
+      rgCache.current.set(rgIdx, cached);
+      setRows(cached);
+      return;
+    }
     let cancelled = false;
     setRows(null);
     (async () => {
@@ -113,7 +129,14 @@ function ParquetViewer({ store, path, usePersistedState }) {
             if (Array.isArray(data)) for (const r of data) out.push(r);
           }
         });
-        if (!cancelled) setRows(out);
+        if (cancelled) return;
+        rgCache.current.set(rgIdx, out);
+        while (rgCache.current.size > RG_CACHE_SIZE) {
+          const oldest = rgCache.current.keys().next().value;
+          if (oldest === void 0) break;
+          rgCache.current.delete(oldest);
+        }
+        setRows(out);
       } catch (e) {
         if (!cancelled) setError(String(e));
       }
@@ -133,6 +156,21 @@ function ParquetViewer({ store, path, usePersistedState }) {
   }
   const rgIndex = Math.min(Math.max(page, 0), rowGroups.length - 1);
   const rg = rowGroups[rgIndex];
+  const rgPageCount = rows ? Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE)) : 0;
+  const clampedRgPage = Math.min(Math.max(rgPage, 0), Math.max(0, rgPageCount - 1));
+  const pageRowStart = rg.rowStart + clampedRgPage * ROWS_PER_PAGE;
+  const pageRowEnd = rows ? rg.rowStart + Math.min((clampedRgPage + 1) * ROWS_PER_PAGE, rows.length) : pageRowStart;
+  const visibleRows = rows ? rows.slice(clampedRgPage * ROWS_PER_PAGE, (clampedRgPage + 1) * ROWS_PER_PAGE) : null;
+  const goPrevPage = () => {
+    if (clampedRgPage > 0) setRgPage(clampedRgPage - 1);
+    else if (rgIndex > 0) setPage(rgIndex - 1);
+  };
+  const goNextPage = () => {
+    if (clampedRgPage < rgPageCount - 1) setRgPage(clampedRgPage + 1);
+    else if (rgIndex < rowGroups.length - 1) setPage(rgIndex + 1);
+  };
+  const canGoPrev = clampedRgPage > 0 || rgIndex > 0;
+  const canGoNext = rows !== null && clampedRgPage < rgPageCount - 1 || rgIndex < rowGroups.length - 1;
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     /* @__PURE__ */ jsxs("p", { style: { opacity: 0.7, fontSize: "0.95em" }, children: [
       /* @__PURE__ */ jsx("b", { children: totalRows.toLocaleString() }),
@@ -174,14 +212,53 @@ function ParquetViewer({ store, path, usePersistedState }) {
       ] })
     ] }),
     /* @__PURE__ */ jsx(Pager, { rg, rgCount: rowGroups.length, setPage, totalRows }),
+    /* @__PURE__ */ jsx(
+      RowPager,
+      {
+        canGoPrev,
+        canGoNext,
+        goPrev: goPrevPage,
+        goNext: goNextPage,
+        rowStart: pageRowStart,
+        rowEnd: pageRowEnd,
+        totalRows,
+        pageIdx: clampedRgPage,
+        pageCount: rgPageCount,
+        rows
+      }
+    ),
     /* @__PURE__ */ jsx("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ jsxs("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
       /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { style: { position: "sticky", top: 0, background: "rgba(127,127,127,0.15)" }, children: schema.map((c) => /* @__PURE__ */ jsx("th", { style: { padding: "0.3em 0.6em", textAlign: "left", borderBottom: "1px solid rgba(127,127,127,0.4)", fontWeight: 500 }, children: c.name }, c.name)) }) }),
-      /* @__PURE__ */ jsx("tbody", { children: rows === null ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsxs("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
+      /* @__PURE__ */ jsx("tbody", { children: visibleRows === null ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsxs("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
         "loading row group ",
         rgIndex,
         "\u2026"
-      ] }) }) : rows.map((r, i) => /* @__PURE__ */ jsx("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => /* @__PURE__ */ jsx("td", { style: { padding: "0.2em 0.6em", whiteSpace: "nowrap", maxWidth: "30em", overflow: "hidden", textOverflow: "ellipsis" }, children: fmtCell(r[c.name]) }, c.name)) }, i)) })
+      ] }) }) : visibleRows.map((r, i) => /* @__PURE__ */ jsx("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => /* @__PURE__ */ jsx("td", { style: { padding: "0.2em 0.6em", whiteSpace: "nowrap", maxWidth: "30em", overflow: "hidden", textOverflow: "ellipsis" }, children: fmtCell(r[c.name]) }, c.name)) }, clampedRgPage * ROWS_PER_PAGE + i)) })
     ] }) })
+  ] });
+}
+function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, totalRows, pageIdx, pageCount, rows }) {
+  if (rows === null) {
+    return /* @__PURE__ */ jsx("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.5 }, children: /* @__PURE__ */ jsx("span", { children: "rows \u2014" }) });
+  }
+  return /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.9 }, children: [
+    /* @__PURE__ */ jsx("button", { disabled: !canGoPrev, onClick: goPrev, children: "\u2039" }),
+    /* @__PURE__ */ jsxs("span", { style: { fontVariantNumeric: "tabular-nums" }, children: [
+      "rows ",
+      /* @__PURE__ */ jsx("b", { children: rowStart.toLocaleString() }),
+      "\u2013",
+      /* @__PURE__ */ jsx("b", { children: rowEnd.toLocaleString() }),
+      " / ",
+      totalRows.toLocaleString(),
+      pageCount > 1 && /* @__PURE__ */ jsxs("span", { style: { opacity: 0.6 }, children: [
+        " \xB7 page ",
+        pageIdx + 1,
+        "/",
+        pageCount,
+        " of RG"
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("button", { disabled: !canGoNext, onClick: goNext, children: "\u203A" })
   ] });
 }
 function Pager({ rg, rgCount, setPage, totalRows }) {

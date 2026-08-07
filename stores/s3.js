@@ -9,7 +9,7 @@ var NotFoundError = class extends Error {
   }
 };
 
-// src/stores/s3.ts
+// src/stores/_xmlObjectStore.ts
 function buildUrl(opts, key, search) {
   const trail = search ? `?${search}` : "";
   const safeKey = key.split("/").map(encodeURIComponent).join("/");
@@ -51,28 +51,17 @@ function parseCommonPrefixes(xml) {
   }
   return out;
 }
-function S3Store(opts) {
-  const region = opts.region ?? "us-east-1";
-  const f = opts.fetch ?? globalThis.fetch.bind(globalThis);
-  const allowedPrefixes = opts.prefixes;
-  const urlOpts = { bucket: opts.bucket, region, endpoint: opts.endpoint };
-  const signer = opts.accessKeyId && opts.secretAccessKey ? new AwsClient({
-    accessKeyId: opts.accessKeyId,
-    secretAccessKey: opts.secretAccessKey,
-    ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
-    service: "s3",
-    region
-  }) : void 0;
-  async function request(url, init) {
-    if (!signer) return f(url, init);
-    return signer.fetch(url, init);
-  }
+function xmlObjectStore(opts) {
+  const urlOpts = { bucket: opts.bucket, region: opts.region, endpoint: opts.endpoint };
+  const allowedPrefixes = opts.allowedPrefixes;
   const checkPrefix = (path, label) => {
     if (!allowedPrefixes || allowedPrefixes.length === 0) return;
     if (allowedPrefixes.some((p) => path === p || path.startsWith(p))) return;
     throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(", ")}`);
   };
   return {
+    buildUrl: (key, search) => buildUrl(urlOpts, key, search),
+    checkPrefix,
     async list(prefix, listOpts = {}) {
       const p = prefix.endsWith("/") || prefix === "" ? prefix : `${prefix}/`;
       if (p === "" && allowedPrefixes && allowedPrefixes.length > 0 && !allowedPrefixes.some((ap) => ap === "")) {
@@ -85,8 +74,8 @@ function S3Store(opts) {
       if (listOpts.cursor) params.set("continuation-token", listOpts.cursor);
       params.set("max-keys", String(listOpts.limit ?? 1e3));
       const url = buildUrl(urlOpts, "", params.toString());
-      const res = await request(url);
-      if (!res.ok) throw new Error(`S3 list ${p}: ${res.status} ${await res.text()}`);
+      const res = await opts.request(url);
+      if (!res.ok) throw new Error(`list ${p}: ${res.status} ${await res.text()}`);
       const xml = await res.text();
       const dirs = parseCommonPrefixes(xml).map((prefix2) => ({ key: prefix2, isDir: true }));
       const files = [];
@@ -115,10 +104,10 @@ function S3Store(opts) {
       const url = buildUrl(urlOpts, path);
       const headers = {};
       if (range) headers["Range"] = `bytes=${range.offset}-${range.offset + range.length - 1}`;
-      const res = await request(url, { headers });
+      const res = await opts.request(url, { headers });
       if (res.status === 404) throw new NotFoundError(path);
       if (!res.ok && res.status !== 206) {
-        throw new Error(`S3 get ${path}: ${res.status} ${await res.text()}`);
+        throw new Error(`get ${path}: ${res.status} ${await res.text()}`);
       }
       const cr = res.headers.get("Content-Range");
       const totalSize = cr ? parseInt(cr.split("/")[1], 10) : res.status === 200 ? parseInt(res.headers.get("Content-Length") ?? "", 10) : NaN;
@@ -128,11 +117,36 @@ function S3Store(opts) {
       const ct = res.headers.get("Content-Type");
       if (ct) out.contentType = ct;
       return out;
-    },
+    }
+  };
+}
+
+// src/stores/s3.ts
+function S3Store(opts) {
+  const region = opts.region ?? "us-east-1";
+  const f = opts.fetch ?? globalThis.fetch.bind(globalThis);
+  const signer = opts.accessKeyId && opts.secretAccessKey ? new AwsClient({
+    accessKeyId: opts.accessKeyId,
+    secretAccessKey: opts.secretAccessKey,
+    ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
+    service: "s3",
+    region
+  }) : void 0;
+  const request = signer ? (url, init) => signer.fetch(url, init) : (url, init) => f(url, init);
+  const core = xmlObjectStore({
+    bucket: opts.bucket,
+    region,
+    ...opts.endpoint ? { endpoint: opts.endpoint } : {},
+    request,
+    ...opts.prefixes ? { allowedPrefixes: opts.prefixes } : {}
+  });
+  return {
+    list: core.list,
+    get: core.get,
     capabilities: { range: true },
     // Static URL works for unsigned (public) buckets only — signed
     // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
-    ...signer ? {} : { getUrl: (p) => buildUrl(urlOpts, p) },
+    ...signer ? {} : { getUrl: (p) => core.buildUrl(p) },
     // SigV4 presigned download URL, for signed buckets. Browser-side use
     // case: a user pastes their own access keys at `/s3` or `/r2` to
     // browse a private bucket — `<FileTree>` calls this when the user
@@ -140,7 +154,7 @@ function S3Store(opts) {
     // GETs directly. Mirrors `R2Store`'s presign path.
     ...opts.accessKeyId && opts.secretAccessKey ? {
       async getDownloadUrl(path, dlOpts) {
-        checkPrefix(path, "getDownloadUrl path");
+        core.checkPrefix(path, "getDownloadUrl path");
         const basename = path.split("/").pop() || path;
         const search = new URLSearchParams({
           "X-Amz-Expires": String(dlOpts?.expiresIn ?? opts.presignExpiresIn ?? 3600),
@@ -148,7 +162,7 @@ function S3Store(opts) {
         });
         const signer2 = new AwsV4Signer({
           method: "GET",
-          url: buildUrl(urlOpts, path, search.toString()),
+          url: core.buildUrl(path, search.toString()),
           accessKeyId: opts.accessKeyId,
           secretAccessKey: opts.secretAccessKey,
           ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},

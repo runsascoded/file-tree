@@ -17,12 +17,12 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/stores/s3.ts
-var s3_exports = {};
-__export(s3_exports, {
-  S3Store: () => S3Store
+// src/stores/gcs.ts
+var gcs_exports = {};
+__export(gcs_exports, {
+  GcsStore: () => GcsStore
 });
-module.exports = __toCommonJS(s3_exports);
+module.exports = __toCommonJS(gcs_exports);
 var import_aws4fetch = require("aws4fetch");
 
 // src/types.ts
@@ -145,22 +145,31 @@ function xmlObjectStore(opts) {
   };
 }
 
-// src/stores/s3.ts
-function S3Store(opts) {
-  const region = opts.region ?? "us-east-1";
+// src/stores/gcs.ts
+var DEFAULT_ENDPOINT = "https://storage.googleapis.com";
+var DEFAULT_REGION = "auto";
+function GcsStore(opts) {
+  const endpoint = opts.endpoint ?? DEFAULT_ENDPOINT;
+  const region = opts.region ?? DEFAULT_REGION;
   const f = opts.fetch ?? globalThis.fetch.bind(globalThis);
-  const signer = opts.accessKeyId && opts.secretAccessKey ? new import_aws4fetch.AwsClient({
+  const bearer = opts.getToken;
+  const hmacSigner = !bearer && opts.accessKeyId && opts.secretAccessKey ? new import_aws4fetch.AwsClient({
     accessKeyId: opts.accessKeyId,
     secretAccessKey: opts.secretAccessKey,
-    ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
     service: "s3",
+    // GCS's S3-compat API accepts SigV4 with `service: s3`
     region
   }) : void 0;
-  const request = signer ? (url, init) => signer.fetch(url, init) : (url, init) => f(url, init);
+  const request = bearer ? async (url, init) => {
+    const token = await bearer();
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    return f(url, { ...init, headers });
+  } : hmacSigner ? (url, init) => hmacSigner.fetch(url, init) : (url, init) => f(url, init);
   const core = xmlObjectStore({
     bucket: opts.bucket,
     region,
-    ...opts.endpoint ? { endpoint: opts.endpoint } : {},
+    endpoint,
     request,
     ...opts.prefixes ? { allowedPrefixes: opts.prefixes } : {}
   });
@@ -168,15 +177,16 @@ function S3Store(opts) {
     list: core.list,
     get: core.get,
     capabilities: { range: true },
-    // Static URL works for unsigned (public) buckets only — signed
-    // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
-    ...signer ? {} : { getUrl: (p) => core.buildUrl(p) },
-    // SigV4 presigned download URL, for signed buckets. Browser-side use
-    // case: a user pastes their own access keys at `/s3` or `/r2` to
-    // browse a private bucket — `<FileTree>` calls this when the user
-    // clicks the download icon, getting a short-lived URL the browser
-    // GETs directly. Mirrors `R2Store`'s presign path.
-    ...opts.accessKeyId && opts.secretAccessKey ? {
+    // Unsigned/public: browser can hit the URL directly. Bearer & HMAC
+    // both need per-request auth (bearer can't go in a URL safely;
+    // HMAC uses presign via `getDownloadUrl`).
+    ...bearer || hmacSigner ? {} : { getUrl: (p) => core.buildUrl(p) },
+    // SigV4 presigned download URL — HMAC mode only. GCS honors
+    // V4 query signing when the credential scope matches the HMAC key.
+    // Bearer mode intentionally omits this: bearer tokens can't be
+    // embedded in a signed URL, so the proxy `get` path serves
+    // downloads instead.
+    ...hmacSigner ? {
       async getDownloadUrl(path, dlOpts) {
         core.checkPrefix(path, "getDownloadUrl path");
         const basename = path.split("/").pop() || path;
@@ -184,17 +194,16 @@ function S3Store(opts) {
           "X-Amz-Expires": String(dlOpts?.expiresIn ?? opts.presignExpiresIn ?? 3600),
           "response-content-disposition": `attachment; filename="${basename.replace(/"/g, '\\"')}"`
         });
-        const signer2 = new import_aws4fetch.AwsV4Signer({
+        const signer = new import_aws4fetch.AwsV4Signer({
           method: "GET",
           url: core.buildUrl(path, search.toString()),
           accessKeyId: opts.accessKeyId,
           secretAccessKey: opts.secretAccessKey,
-          ...opts.sessionToken ? { sessionToken: opts.sessionToken } : {},
           service: "s3",
           region,
           signQuery: true
         });
-        const signed = await signer2.sign();
+        const signed = await signer.sign();
         return signed.url.toString();
       }
     } : {}
@@ -202,6 +211,6 @@ function S3Store(opts) {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  S3Store
+  GcsStore
 });
-//# sourceMappingURL=s3.cjs.map
+//# sourceMappingURL=gcs.cjs.map
