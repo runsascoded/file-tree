@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- tree connectors -->
+  <path d="M7 5 V25 M7 12 H12 M7 19 H12 M7 25 H12" fill="none" stroke="#64748b" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- root folder -->
+  <path d="M3.5 4 h4 l1.5 1.5 h6 a1 1 0 0 1 1 1 V11 H3.5 a1 1 0 0 1 -1 -1 V5 a1 1 0 0 1 1 -1 Z" fill="#f5a623"/>
+  <!-- file leaves -->
+  <rect x="12" y="9.5" width="15" height="5" rx="1.2" fill="#cbd5e1"/>
+  <rect x="12" y="16.5" width="15" height="5" rx="1.2" fill="#94a3b8"/>
+  <rect x="12" y="22.5" width="15" height="5" rx="1.2" fill="#94a3b8"/>
+</svg>
