@@ -1,7 +1,85 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode, ComponentType } from 'react';
-import { Store, ZipEntriesResult, GetResult } from '../index.cjs';
+import { Entry, Store, ZipEntriesResult, GetResult } from '../index.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
+
+interface Crumb {
+    label: string;
+    to: string;
+    /** Store key this crumb addresses (directories include a trailing
+     *  slash). Populated by `<FileTree>`; optional so hand-built
+     *  `Crumb[]`s stay valid. */
+    path?: string;
+}
+interface CrumbCtx {
+    crumb: Crumb;
+    index: number;
+    /** The current location — rendered as plain text, not a link. */
+    isLast: boolean;
+    /** What `<Breadcrumb>` would have rendered for this crumb. */
+    defaultNode: ReactNode;
+}
+/** Per-crumb render hook, mirroring `CellRenderer` — return
+ *  `ctx.defaultNode` for crumbs you don't want to touch. */
+type CrumbRenderer = (ctx: CrumbCtx) => ReactNode;
+declare function Breadcrumb({ crumbs, separator, rightSlot, renderCrumb }: {
+    crumbs: Crumb[];
+    separator?: string;
+    rightSlot?: ReactNode;
+    renderCrumb?: CrumbRenderer;
+}): react_jsx_runtime.JSX.Element | null;
+
+/** Columns rendered by the default `<DirListing>` table. */
+type CellColumn = 'name' | 'size' | 'modified';
+interface CellCtx {
+    /** The listing entry this row is for. */
+    entry: Entry;
+    column: CellColumn;
+    /** Store-relative prefix of the directory being listed. */
+    prefix: string;
+    /** Route this row links to (`routeBase` + splat). */
+    href: string;
+    /** What `<DirListing>` would have rendered for this cell. Decorating
+     *  callers wrap it; overriding callers ignore it. */
+    defaultNode: ReactNode;
+}
+/** Per-cell render hook. Called for every cell of every row; return
+ *  `ctx.defaultNode` for the cells you don't care about:
+ *
+ *    renderCell={({ entry, column, defaultNode }) =>
+ *      column === 'name' && isDevice(entry.key)
+ *        ? <>{defaultNode} <em>{deviceName(entry.key)}</em></>
+ *        : defaultNode}
+ *
+ *  Deliberately unopinionated about placement/styling — the library
+ *  hands back the node it would have rendered and gets out of the way. */
+type CellRenderer = (ctx: CellCtx) => ReactNode;
+interface DirListingProps {
+    store: Store;
+    /** Store-relative prefix (incl. trailing slash). */
+    prefix: string;
+    /** Route base for sub-links. E.g. `/files`. */
+    routeBase: string;
+    /** Optional root prefix for splat conversion (matches `<FileTree rootPrefix>`). */
+    rootPrefix?: string;
+    /** Optional filter string (controlled). If omitted, an internal text input
+     *  is rendered. */
+    q?: string;
+    setQ?: (q: string) => void;
+    /** Placeholder for the internal filter input. Default `"filter"`. */
+    filterPlaceholder?: string;
+    /** Persisted-state hook for the internal filter `q`. Default is
+     *  `useState` (in-memory). Pass `useUrlPersistedState` (from
+     *  `@rdub/file-tree/url-state`) to bind `q` to `?q=…`. Ignored when
+     *  the caller controls `q`/`setQ` directly. */
+    usePersistedState?: PersistedState;
+    /** When set + a `README.md` (case-insensitive) is in the listing, the
+     *  README is fetched and rendered below the table via this fn. */
+    markdownRenderer?: (source: string) => ReactNode;
+    /** Optional per-cell render hook (see `CellRenderer`). */
+    renderCell?: CellRenderer;
+}
+declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, filterPlaceholder, usePersistedState, markdownRenderer, renderCell }: DirListingProps): react_jsx_runtime.JSX.Element;
 
 /** Parse a URL path-suffix into a renderable view kind + store key.
  *
@@ -156,6 +234,16 @@ interface FileTreeProps {
      *  breadcrumb row. Use this for "open in SQL", "view raw", "share",
      *  etc. — actions specific to a consumer's surrounding app. */
     viewerActions?: (ctx: ViewerActionCtx) => ReactNode;
+    /** Optional per-cell render hook for the directory listing (see
+     *  `CellRenderer`). Receives the node the listing would have rendered
+     *  plus the row's entry/column, so consumers can decorate specific
+     *  cells (e.g. append a human-readable name to a directory whose key
+     *  encodes an ID) without reimplementing the default. */
+    renderCell?: CellRenderer;
+    /** Optional per-crumb render hook for the breadcrumb (see
+     *  `CrumbRenderer`) — same shape as `renderCell`, so the same
+     *  decoration can be applied to path segments. */
+    renderCrumb?: CrumbRenderer;
     /** Placeholder for the directory-listing filter input. Default
      *  `"filter"`. Consumers can supply something more specific
      *  (e.g. `"filter (e.g. *.parquet)"` or project-specific nouns). */
@@ -176,7 +264,7 @@ interface ViewerActionCtx {
     /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
     entry?: string;
 }
-declare function FileTree({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder, usePersistedState }: FileTreeProps): react_jsx_runtime.JSX.Element;
+declare function FileTree({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps): react_jsx_runtime.JSX.Element;
 
 /** Adapter from `Store` to hyparquet's `AsyncBuffer` shape
  *  (`{ byteLength: number; slice(start, end?): Promise<ArrayBuffer> }`).
@@ -196,41 +284,6 @@ interface AsyncBuffer {
     slice(start: number, end?: number): Promise<ArrayBuffer>;
 }
 declare function asyncBufferFromStore(store: Store, path: string): Promise<AsyncBuffer>;
-
-interface Crumb {
-    label: string;
-    to: string;
-}
-declare function Breadcrumb({ crumbs, separator, rightSlot }: {
-    crumbs: Crumb[];
-    separator?: string;
-    rightSlot?: ReactNode;
-}): react_jsx_runtime.JSX.Element | null;
-
-interface DirListingProps {
-    store: Store;
-    /** Store-relative prefix (incl. trailing slash). */
-    prefix: string;
-    /** Route base for sub-links. E.g. `/files`. */
-    routeBase: string;
-    /** Optional root prefix for splat conversion (matches `<FileTree rootPrefix>`). */
-    rootPrefix?: string;
-    /** Optional filter string (controlled). If omitted, an internal text input
-     *  is rendered. */
-    q?: string;
-    setQ?: (q: string) => void;
-    /** Placeholder for the internal filter input. Default `"filter"`. */
-    filterPlaceholder?: string;
-    /** Persisted-state hook for the internal filter `q`. Default is
-     *  `useState` (in-memory). Pass `useUrlPersistedState` (from
-     *  `@rdub/file-tree/url-state`) to bind `q` to `?q=…`. Ignored when
-     *  the caller controls `q`/`setQ` directly. */
-    usePersistedState?: PersistedState;
-    /** When set + a `README.md` (case-insensitive) is in the listing, the
-     *  README is fetched and rendered below the table via this fn. */
-    markdownRenderer?: (source: string) => ReactNode;
-}
-declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, filterPlaceholder, usePersistedState, markdownRenderer }: DirListingProps): react_jsx_runtime.JSX.Element;
 
 interface TextViewerProps {
     store: Store;
@@ -314,4 +367,4 @@ declare function fmtSize(n: number | undefined): string;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { AUDIO, type AsyncBuffer, Breadcrumb, CODE_LANG, type Crumb, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, TEXTY, TextViewer, type TextViewerProps, VIDEO, type ViewerActionCtx, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, basename, extOf, fmtSize, keyToSplat, makeMatcher, parsePath, readZipEntries, readZipEntry };
+export { AUDIO, type AsyncBuffer, Breadcrumb, CODE_LANG, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, TEXTY, TextViewer, type TextViewerProps, VIDEO, type ViewerActionCtx, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, basename, extOf, fmtSize, keyToSplat, makeMatcher, parsePath, readZipEntries, readZipEntry };

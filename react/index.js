@@ -5,13 +5,17 @@ import { useLocation } from "react-router-dom";
 // src/react/Breadcrumb.tsx
 import { Link } from "react-router-dom";
 import { jsx, jsxs } from "react/jsx-runtime";
-function Breadcrumb({ crumbs, separator = " / ", rightSlot }) {
+function Breadcrumb({ crumbs, separator = " / ", rightSlot, renderCrumb }) {
   if (crumbs.length === 0 && !rightSlot) return null;
   return /* @__PURE__ */ jsxs("nav", { "aria-label": "Breadcrumb", style: { fontFamily: "ui-monospace, monospace", fontSize: "0.95em", marginBottom: "0.5em" }, children: [
-    crumbs.map((c, i) => /* @__PURE__ */ jsxs("span", { children: [
-      i > 0 && /* @__PURE__ */ jsx("span", { style: { opacity: 0.5 }, children: separator }),
-      i === crumbs.length - 1 ? /* @__PURE__ */ jsx("span", { style: { opacity: 0.7 }, children: c.label }) : /* @__PURE__ */ jsx(Link, { to: c.to, children: c.label })
-    ] }, c.to)),
+    crumbs.map((c, i) => {
+      const isLast = i === crumbs.length - 1;
+      const defaultNode = isLast ? /* @__PURE__ */ jsx("span", { style: { opacity: 0.7 }, children: c.label }) : /* @__PURE__ */ jsx(Link, { to: c.to, children: c.label });
+      return /* @__PURE__ */ jsxs("span", { children: [
+        i > 0 && /* @__PURE__ */ jsx("span", { style: { opacity: 0.5 }, children: separator }),
+        renderCrumb ? renderCrumb({ crumb: c, index: i, isLast, defaultNode }) : defaultNode
+      ] }, c.to);
+    }),
     rightSlot && /* @__PURE__ */ jsx("span", { style: { marginLeft: "0.8em" }, children: rightSlot })
   ] });
 }
@@ -125,7 +129,7 @@ var defaultUseState = (_key, defaultValue) => useState(defaultValue);
 
 // src/react/DirListing.tsx
 import { Fragment, jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
-function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, filterPlaceholder = "filter", usePersistedState, markdownRenderer }) {
+function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, filterPlaceholder = "filter", usePersistedState, markdownRenderer, renderCell }) {
   const [entries, setEntries] = useState2(null);
   const [error, setError] = useState2(null);
   const [cursor, setCursor] = useState2(void 0);
@@ -243,14 +247,15 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
         const name = basename(e.key);
         const splat = keyToSplat(e.key, rootPrefix);
         const href = `${baseTrimmed}/${splat}`;
+        const cell = (column, defaultNode) => renderCell ? renderCell({ entry: e, column, prefix, href, defaultNode }) : defaultNode;
         return /* @__PURE__ */ jsxs2("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.2)" }, children: [
-          /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: /* @__PURE__ */ jsxs2(Link2, { to: href, children: [
+          /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: cell("name", /* @__PURE__ */ jsxs2(Link2, { to: href, children: [
             e.isDir ? /* @__PURE__ */ jsx2("span", { style: { opacity: 0.6 }, children: "\u{1F4C1} " }) : null,
             name,
             e.isDir ? "/" : ""
-          ] }) }),
-          /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: e.isDir ? 0.4 : 1 }, children: e.isDir ? "\u2014" : fmtSize(e.size) }),
-          /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6, fontSize: "0.9em" }, children: e.lastModified?.slice(0, 10) ?? "" })
+          ] })) }),
+          /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: e.isDir ? 0.4 : 1 }, children: cell("size", e.isDir ? "\u2014" : fmtSize(e.size)) }),
+          /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6, fontSize: "0.9em" }, children: cell("modified", e.lastModified?.slice(0, 10) ?? "") })
         ] }, e.key);
       }) })
     ] }),
@@ -757,7 +762,7 @@ function TruncationBanner({ shown, total }) {
 
 // src/react/FileTree.tsx
 import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder, usePersistedState }) {
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }) {
   const location = useLocation();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
@@ -779,14 +784,14 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
   ] }) : void 0;
   return /* @__PURE__ */ jsxs7("div", { className, style, children: [
     title && /* @__PURE__ */ jsx7("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
-    /* @__PURE__ */ jsx7(Breadcrumb, { crumbs, rightSlot: right }),
-    /* @__PURE__ */ jsx7(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder, usePersistedState })
+    /* @__PURE__ */ jsx7(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
+    /* @__PURE__ */ jsx7(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState })
   ] });
 }
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder, usePersistedState }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }) {
   switch (parsed.kind) {
     case "dir":
-      return /* @__PURE__ */ jsx7(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, filterPlaceholder, usePersistedState });
+      return /* @__PURE__ */ jsx7(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState });
     case "text": {
       const ext = extOf(parsed.path);
       const isMd = ext === "md" || ext === "markdown";
@@ -904,13 +909,15 @@ function buildCrumbs(parsed, routeBase, rootPrefix) {
   const splat = keyToSplat(path, rootPrefix);
   const parts = splat.split("/").filter((p) => p.length > 0);
   const baseTrimmed = routeBase.replace(/\/+$/, "");
-  const crumbs = [{ label: "root", to: `${baseTrimmed}/` }];
+  const crumbs = [{ label: "root", to: `${baseTrimmed}/`, path: rootPrefix }];
   let cum = "";
   for (const p of parts) {
     cum = cum ? `${cum}/${p}` : p;
+    const isFileLeaf = parsed.kind !== "dir" && cum === splat;
     crumbs.push({
       label: basename(p),
-      to: `${baseTrimmed}/${cum}${parsed.kind === "dir" && cum === splat ? "/" : ""}`
+      to: `${baseTrimmed}/${cum}${parsed.kind === "dir" && cum === splat ? "/" : ""}`,
+      path: `${rootPrefix}${cum}${isFileLeaf ? "" : "/"}`
     });
   }
   return crumbs;
