@@ -1,5 +1,5 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
-import { ReactNode } from 'react';
+import { ReactNode, CSSProperties } from 'react';
 import { Store } from '../index.js';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
 
@@ -98,13 +98,50 @@ interface ParquetCellCtx {
  *  `renderValue` (JSON tree): called for every cell, decorate the ones
  *  you care about and return `ctx.defaultNode` for the rest. */
 type ParquetCellRenderer = (ctx: ParquetCellCtx) => ReactNode;
+/** Per-column statistics from the current row group's footer metadata.
+ *  Not reconstructible from the decoded rows a consumer sees — the
+ *  footer is only ever read here. Absent when the writer omitted it. */
+interface ParquetColumnStats {
+    min?: unknown;
+    max?: unknown;
+    nullCount?: number;
+}
+interface ParquetHeaderCtx {
+    column: ParquetColumn;
+    /** Stats for the row group currently on screen, when the footer
+     *  carries them — so the range moves as you page. */
+    stats?: ParquetColumnStats;
+    /** What the viewer would have rendered for this header. */
+    defaultNode: ReactNode;
+}
+type ParquetHeaderRenderer = (ctx: ParquetHeaderCtx) => ReactNode;
+/** Attributes merged over a column's default `<td>` / `<th>` styling.
+ *  Returning nothing leaves the default untouched. */
+type ParquetColumnProps = (col: ParquetColumn) => {
+    style?: CSSProperties;
+    className?: string;
+} | void;
 interface ParquetViewerOptions {
     renderCell?: ParquetCellRenderer;
+    /** Per-column header content (see `ParquetHeaderRenderer`) — a place
+     *  to hang format toggles, stat readouts, and the like. */
+    renderHeader?: ParquetHeaderRenderer;
+    /** Per-column `<td>` attributes, merged over the viewer's defaults. */
+    cellProps?: ParquetColumnProps;
+    /** Per-column `<th>` attributes. Separate from `cellProps` so
+     *  overriding one doesn't silently change the other; note the
+     *  built-in numeric alignment already keeps the pair in sync. */
+    headerProps?: ParquetColumnProps;
     /** Apply the epoch-range heuristic to unannotated numeric columns
      *  (signals b+c). Default `true`. Turning it off keeps annotated
      *  `TIMESTAMP`/`DATE` columns formatted — it only suppresses the
      *  guess. */
     inferTimestamps?: boolean;
+    /** Right-align numeric columns with `tabular-nums`, so digits line up
+     *  down the column and magnitudes are comparable at a glance.
+     *  Default `true`. Columns read as temporal are excluded — they
+     *  render as text, not quantities. */
+    alignNumeric?: boolean;
 }
 /** Build a parquet viewer with per-cell decoration and/or the epoch
  *  heuristic disabled. Call at module scope — each call produces a new
@@ -115,10 +152,10 @@ declare function makeParquetViewer(opts?: ParquetViewerOptions): (props: {
     path: string;
     usePersistedState?: PersistedState;
 }) => react_jsx_runtime.JSX.Element;
-declare function ParquetViewer({ store, path, usePersistedState, renderCell, inferTimestamps }: {
+declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric }: {
     store: Store;
     path: string;
     usePersistedState?: PersistedState;
 } & ParquetViewerOptions): react_jsx_runtime.JSX.Element;
 
-export { type ParquetCellCtx, type ParquetCellRenderer, type ParquetColumn, ParquetViewer, type ParquetViewerOptions, type TemporalColumn, type TemporalFormat, type TemporalPrecision, type TemporalSource, type TemporalUnit, formatTemporal, inferColumnFormats, inferTemporalFormat, makeParquetViewer, toMillis };
+export { type ParquetCellCtx, type ParquetCellRenderer, type ParquetColumn, type ParquetColumnProps, type ParquetColumnStats, type ParquetHeaderCtx, type ParquetHeaderRenderer, ParquetViewer, type ParquetViewerOptions, type TemporalColumn, type TemporalFormat, type TemporalPrecision, type TemporalSource, type TemporalUnit, formatTemporal, inferColumnFormats, inferTemporalFormat, makeParquetViewer, toMillis };

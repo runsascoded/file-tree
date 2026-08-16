@@ -192,12 +192,15 @@ function inferColumnFormats(cols, rows, opts = {}) {
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 var ROWS_PER_PAGE = 100;
 var RG_CACHE_SIZE = 4;
+var NUMERIC_TYPES = /* @__PURE__ */ new Set(["INT32", "INT64", "INT96", "FLOAT", "DOUBLE"]);
+var TD_STYLE = { padding: "0.2em 0.6em", whiteSpace: "nowrap", maxWidth: "30em", overflow: "hidden", textOverflow: "ellipsis" };
+var TH_STYLE = { padding: "0.3em 0.6em", textAlign: "left", borderBottom: "1px solid rgba(127,127,127,0.4)", fontWeight: 500 };
 function makeParquetViewer(opts = {}) {
   return function BoundParquetViewer(props) {
     return /* @__PURE__ */ jsx(ParquetViewer, { ...props, ...opts });
   };
 }
-function ParquetViewer({ store, path, usePersistedState, renderCell, inferTimestamps = true }) {
+function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true }) {
   const [meta, setMeta] = useState2(null);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
@@ -234,13 +237,29 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, inferTimest
         let cum = 0;
         md.row_groups.forEach((rg2, i) => {
           const numRows = Number(rg2.num_rows);
+          const stats = /* @__PURE__ */ new Map();
+          for (const chunk of rg2.columns) {
+            const cm = chunk.meta_data;
+            const s = cm?.statistics;
+            if (!cm || !s) continue;
+            const min = s.min_value ?? s.min;
+            const max = s.max_value ?? s.max;
+            const nullCount = s.null_count != null ? Number(s.null_count) : void 0;
+            if (min === void 0 && max === void 0 && nullCount === void 0) continue;
+            stats.set(cm.path_in_schema.join("."), {
+              ...min !== void 0 ? { min } : {},
+              ...max !== void 0 ? { max } : {},
+              ...nullCount !== void 0 ? { nullCount } : {}
+            });
+          }
           rowGroups2.push({
             index: i,
             numRows,
             rowStart: cum,
             rowEnd: cum + numRows,
             uncompressedBytes: Number(rg2.total_byte_size),
-            compressedBytes: rg2.total_compressed_size != null ? Number(rg2.total_compressed_size) : null
+            compressedBytes: rg2.total_compressed_size != null ? Number(rg2.total_compressed_size) : null,
+            stats
           });
           cum += numRows;
         });
@@ -302,6 +321,22 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, inferTimest
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
   );
+  const colStyles = useMemo(() => {
+    const out = /* @__PURE__ */ new Map();
+    for (const c of meta?.schema ?? []) {
+      const numeric = alignNumeric && !temporal.has(c.name) && c.physicalType !== void 0 && NUMERIC_TYPES.has(c.physicalType);
+      const align = numeric ? { textAlign: "right", fontVariantNumeric: "tabular-nums" } : {};
+      const cp = cellProps?.(c) || {};
+      const hp = headerProps?.(c) || {};
+      out.set(c.name, {
+        cell: { ...TD_STYLE, ...align, ...cp.style },
+        header: { ...TH_STYLE, ...align, ...hp.style },
+        ...cp.className ? { cellClass: cp.className } : {},
+        ...hp.className ? { headerClass: hp.className } : {}
+      });
+    }
+    return out;
+  }, [meta, temporal, alignNumeric, cellProps, headerProps]);
   if (error) return /* @__PURE__ */ jsxs("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
@@ -385,7 +420,13 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, inferTimest
       }
     ),
     /* @__PURE__ */ jsx("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ jsxs("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { style: { position: "sticky", top: 0, background: "rgba(127,127,127,0.15)" }, children: schema.map((c) => /* @__PURE__ */ jsx("th", { style: { padding: "0.3em 0.6em", textAlign: "left", borderBottom: "1px solid rgba(127,127,127,0.4)", fontWeight: 500 }, children: c.name }, c.name)) }) }),
+      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { style: { position: "sticky", top: 0, background: "rgba(127,127,127,0.15)" }, children: schema.map((c) => {
+        const st = colStyles.get(c.name);
+        const stats = rg.stats.get(c.name);
+        const title = statsTitle(stats, temporal.get(c.name));
+        const defaultNode = title ? /* @__PURE__ */ jsx("span", { title, children: c.name }) : c.name;
+        return /* @__PURE__ */ jsx("th", { style: st?.header ?? TH_STYLE, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, ...stats ? { stats } : {}, defaultNode }) : defaultNode }, c.name);
+      }) }) }),
       /* @__PURE__ */ jsx("tbody", { children: visibleRows === null ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsxs("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
         "loading row group ",
         rgIndex,
@@ -393,7 +434,8 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, inferTimest
       ] }) }) : visibleRows.map((r, i) => /* @__PURE__ */ jsx("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => {
         const value = r[c.name];
         const defaultNode = fmtCell(value, temporal.get(c.name));
-        return /* @__PURE__ */ jsx("td", { style: { padding: "0.2em 0.6em", whiteSpace: "nowrap", maxWidth: "30em", overflow: "hidden", textOverflow: "ellipsis" }, children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, defaultNode }) : defaultNode }, c.name);
+        const st = colStyles.get(c.name);
+        return /* @__PURE__ */ jsx("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, defaultNode }) : defaultNode }, c.name);
       }) }, clampedRgPage * ROWS_PER_PAGE + i)) })
     ] }) })
   ] });
@@ -459,6 +501,36 @@ function fmtCell(v, temporal) {
     if (s !== null) return /* @__PURE__ */ jsx("span", { title: rawText(v), style: { fontVariantNumeric: "tabular-nums" }, children: s });
   }
   return rawText(v);
+}
+function statValue(v, temporal) {
+  if (v === null || v === void 0) return null;
+  if (temporal) {
+    const s = formatTemporal(v, temporal);
+    if (s !== null) return s;
+  }
+  if (typeof v === "bigint" || typeof v === "number") return String(v);
+  if (typeof v === "string") return v.length > 40 ? `${v.slice(0, 40)}\u2026` : v;
+  if (v instanceof Date) return v.toISOString();
+  if (v instanceof Uint8Array) {
+    try {
+      const s = new TextDecoder("utf-8", { fatal: true }).decode(v);
+      return s.length > 40 ? `${s.slice(0, 40)}\u2026` : s;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function statsTitle(stats, temporal) {
+  if (!stats) return void 0;
+  const parts = [];
+  const min = statValue(stats.min, temporal);
+  const max = statValue(stats.max, temporal);
+  if (min !== null && max !== null) parts.push(min === max ? `= ${min}` : `${min} \u2026 ${max}`);
+  else if (min !== null) parts.push(`\u2265 ${min}`);
+  else if (max !== null) parts.push(`\u2264 ${max}`);
+  if (stats.nullCount) parts.push(`${stats.nullCount.toLocaleString()} null`);
+  return parts.length ? `row group: ${parts.join(" \xB7 ")}` : void 0;
 }
 function typeLabel(c, temporal) {
   const parts = [c.physicalType ?? "?"];
