@@ -19,10 +19,13 @@ var COLORS = {
 };
 var FONT = "ui-monospace, monospace";
 var INDENT = "1.4em";
-function renderJsonTree(source, usePersistedState) {
-  return /* @__PURE__ */ jsx(JsonViewer, { source, usePersistedState });
+function makeJsonTreeRenderer({ renderValue } = {}) {
+  return function renderJson(source, usePersistedState) {
+    return /* @__PURE__ */ jsx(JsonViewer, { source, usePersistedState, renderValue });
+  };
 }
-function JsonViewer({ source, usePersistedState }) {
+var renderJsonTree = makeJsonTreeRenderer();
+function JsonViewer({ source, usePersistedState, renderValue }) {
   const use = usePersistedState ?? defaultUseState;
   const [q, setQ] = use("json-q", "");
   const [jq, setJq] = use("jq", "");
@@ -149,7 +152,8 @@ function JsonViewer({ source, usePersistedState }) {
         forceOpen,
         forceOpenVersion: expandVersion,
         initialOpen: true,
-        copyPath
+        copyPath,
+        renderValue
       }
     ) })
   ] });
@@ -185,20 +189,28 @@ function RawPre({ children }) {
     whiteSpace: "pre-wrap"
   }, children });
 }
-function Node({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath }) {
+function scalarNode(value, q) {
   if (value === null) return /* @__PURE__ */ jsx("span", { style: { color: COLORS.null }, children: "null" });
   if (typeof value === "string") return /* @__PURE__ */ jsx(HighlightedString, { value, q });
   if (typeof value === "number") return /* @__PURE__ */ jsx("span", { style: { color: COLORS.number }, children: value });
   if (typeof value === "boolean") return /* @__PURE__ */ jsx("span", { style: { color: COLORS.bool }, children: String(value) });
+  return null;
+}
+function Node({ value, path, keyName, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
+  const scalar = scalarNode(value, q);
+  if (scalar !== null) {
+    if (!renderValue) return /* @__PURE__ */ jsx(Fragment, { children: scalar });
+    return /* @__PURE__ */ jsx(Fragment, { children: renderValue({ value, path, key: keyName, defaultNode: scalar }) });
+  }
   if (Array.isArray(value)) {
-    return /* @__PURE__ */ jsx(ArrayNode, { value, path, q, matches, forceOpen, forceOpenVersion, initialOpen: initialOpen ?? false, copyPath });
+    return /* @__PURE__ */ jsx(ArrayNode, { value, path, q, matches, forceOpen, forceOpenVersion, initialOpen: initialOpen ?? false, copyPath, renderValue });
   }
   if (typeof value === "object") {
-    return /* @__PURE__ */ jsx(ObjectNode, { value, path, q, matches, forceOpen, forceOpenVersion, initialOpen: initialOpen ?? false, copyPath });
+    return /* @__PURE__ */ jsx(ObjectNode, { value, path, q, matches, forceOpen, forceOpenVersion, initialOpen: initialOpen ?? false, copyPath, renderValue });
   }
   return /* @__PURE__ */ jsx("span", { children: String(value) });
 }
-function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath }) {
+function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
   const matchedHere = matches?.has(path) ?? false;
   const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere);
   if (value.length === 0) return /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "[]" });
@@ -208,7 +220,7 @@ function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initi
     open ? /* @__PURE__ */ jsx("div", { style: { marginLeft: INDENT }, children: value.map((v, i) => {
       const childPath = `${path}[${i}]`;
       return /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx(Node, { value: v, path: childPath, q, matches, forceOpen, forceOpenVersion, copyPath }),
+        /* @__PURE__ */ jsx(Node, { value: v, path: childPath, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }),
         i < value.length - 1 && /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "," })
       ] }, i);
     }) }) : /* @__PURE__ */ jsxs("span", { style: { color: COLORS.punct, opacity: 0.7 }, children: [
@@ -219,7 +231,7 @@ function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initi
     /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "]" })
   ] });
 }
-function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath }) {
+function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
   const matchedHere = matches?.has(path) ?? false;
   const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere);
   const keys = Object.keys(value);
@@ -232,7 +244,7 @@ function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, init
       return /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx(KeyLabel, { keyName: k, q, path: childPath, copyPath }),
         /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: ": " }),
-        /* @__PURE__ */ jsx(Node, { value: value[k], path: childPath, q, matches, forceOpen, forceOpenVersion, copyPath }),
+        /* @__PURE__ */ jsx(Node, { value: value[k], path: childPath, keyName: k, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }),
         i < keys.length - 1 && /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "," })
       ] }, k);
     }) }) : /* @__PURE__ */ jsxs("span", { style: { color: COLORS.punct, opacity: 0.7 }, children: [
@@ -357,6 +369,7 @@ async function runJq(value, expr) {
   return jq.json(value, expr);
 }
 export {
+  makeJsonTreeRenderer,
   renderJsonTree
 };
 //# sourceMappingURL=json.js.map
