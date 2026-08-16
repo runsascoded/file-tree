@@ -40,8 +40,41 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+  # Only `mock-demo` runs here: `http-demo` drives `site/worker`, whose R2
+  # bindings are remote, so it needs CF credentials + live buckets. The
+  # hermetic half is what catches renderer/listing regressions — e.g. a
+  # new fixture silently invalidating the root entry-count assertions.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install site deps
+        run: pnpm install --frozen-lockfile
+        working-directory: site
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+      # The webServer command builds the lib before serving the site.
+      - name: Playwright
+        run: pnpm exec playwright test e2e/mock-demo.spec.ts
+        env:
+          E2E_MOCK_ONLY: '1'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   build-pages:
-    needs: test
+    needs: [test, e2e]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -81,7 +114,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
   build-dist:
-    needs: test
+    needs: [test, e2e]
     if: github.ref == 'refs/heads/main'
     uses: runsascoded/npm-dist/.github/workflows/build-dist.yml@v1
     # Default flattening mode: npm-dist copies `dist/`'s contents to the
@@ -93,7 +126,7 @@ jobs:
     # validator failure. Default mode keeps both in sync.
 
   deploy-worker:
-    needs: test
+    needs: [test, e2e]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

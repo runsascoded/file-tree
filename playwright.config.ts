@@ -3,6 +3,12 @@ import { defineConfig, devices } from '@playwright/test'
 const PORT = 8731
 const baseURL = `http://localhost:${PORT}`
 
+// `http-demo` drives `site/worker`, whose R2 bindings are `remote = true`
+// — `wrangler dev` needs CF credentials and live buckets. `mock-demo` is
+// hermetic. `E2E_MOCK_ONLY` drops the worker server so CI can run the
+// hermetic half with no secrets and no network.
+const mockOnly = !!process.env.E2E_MOCK_ONLY
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -29,13 +35,13 @@ export default defineConfig({
       stderr: 'pipe',
       timeout: 120_000,
     },
-    {
+    ...(mockOnly ? [] : [{
       command: 'pnpm --dir site/worker dev',
       url: 'http://localhost:8732/v1/files/list?prefix=',
       reuseExistingServer: !process.env.CI,
-      stdout: 'pipe',
-      stderr: 'pipe',
+      stdout: 'pipe' as const,
+      stderr: 'pipe' as const,
       timeout: 120_000,
-    },
+    }]),
   ],
 })
