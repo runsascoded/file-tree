@@ -16,6 +16,16 @@ export const DEMO_FIXTURE = {
   'data/2025/q2.csv': 'date,value\n2025-04-01,400\n2025-05-01,440\n',
   'logs/2026-01-01.log': '[INFO] System started\n[DEBUG] Connected to db\n',
   'logs/2026-01-02.log': '[INFO] Processing batch 1\n[INFO] Processing batch 2\n',
-  'config.json': '{\n  "version": "0.0.1",\n  "demo": true\n}\n',
+  // Deliberately 4 levels deep (root → server → tls → ciphers): the JSON
+  // viewer's `initialOpenDepth` and expand-all behavior are only
+  // meaningfully exercised by nesting.
+  'config.json': JSON.stringify({
+    version: '0.0.1',
+    demo: true,
+    server: {
+      host: 'localhost',
+      tls: { enabled: false, ciphers: ['aes', 'chacha'] },
+    },
+  }, null, 2) + '\n',
   'config.yaml': 'version: 0.0.1\ndemo: true\nsources:\n  - mock\n  - http\n',
 }

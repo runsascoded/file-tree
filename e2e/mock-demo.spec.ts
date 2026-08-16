@@ -1,4 +1,12 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+/** Whole JSON tree as one normalized line — carets included, so
+ *  open/closed state is part of the assertion. Collapsed containers
+ *  show as `{ N keys }` / `[ N items ]`. */
+async function jsonTree(page: Page): Promise<string> {
+  const text = await page.locator('.rdub-file-tree-json-tree').textContent()
+  return (text ?? '').replace(/\s+/g, ' ').trim()
+}
 
 test.describe('MockDemo', () => {
   test('lists root entries', async ({ page }) => {
@@ -65,6 +73,31 @@ test.describe('MockDemo', () => {
     const readmePanel = page.locator('.rdub-file-tree-default-readme')
     await expect(readmePanel).toBeVisible()
     await expect(readmePanel.getByRole('heading', { name: '@rdub/file-tree demo' })).toBeVisible()
+  })
+
+  test('opens config.json with only the root expanded', async ({ page }) => {
+    await page.goto('/mock/config.json')
+    // `initialOpenDepth` defaults to 1: root open, every child closed.
+    expect(await jsonTree(page)).toBe(
+      '▾{"version": "0.0.1","demo": true,"server": ▸{ 2 keys }}',
+    )
+  })
+
+  test('expand-all reaches every level in one click', async ({ page }) => {
+    await page.goto('/mock/config.json')
+    await page.getByTitle('Expand all').click()
+    // Regression: nodes that mount *because of* the expand used to
+    // ignore it, so this took one click per level of nesting.
+    expect(await jsonTree(page)).toBe(
+      '▾{"version": "0.0.1","demo": true,"server": ▾{"host": "localhost",'
+      + '"tls": ▾{"enabled": false,"ciphers": ▾["aes","chacha"]}}}',
+    )
+  })
+
+  test('collapse-all closes the root', async ({ page }) => {
+    await page.goto('/mock/config.json')
+    await page.getByTitle('Collapse all').click()
+    expect(await jsonTree(page)).toBe('▸{ 3 keys }')
   })
 
   test('shows error for non-existent path', async ({ page }) => {

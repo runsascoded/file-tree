@@ -271,6 +271,7 @@ import { makeJsonTreeRenderer } from '@rdub/file-tree/renderers/json'
 const TS_KEYS = new Set(['start', 'end', 'requested_at'])
 
 const renderJson = makeJsonTreeRenderer({
+  initialOpenDepth: 2,
   renderValue: ({ key, value, defaultNode }) =>
     key !== undefined && TS_KEYS.has(key) && typeof value === 'number'
       ? <>{defaultNode} <span className="dim">{new Date(value * 1000).toISOString()}</span></>
@@ -281,6 +282,8 @@ const renderJson = makeJsonTreeRenderer({
 ```
 
 `renderValue` is called for every string / number / boolean / null, with `{ value, path, key?, defaultNode }` — `path` is the jq path (`.foo[0].bar`), `key` is the enclosing object key (unset for array elements). Containers aren't passed through it; they own the disclosure carets.
+
+`initialOpenDepth` is how many container levels start expanded, default `1` (the root, nothing else). Depth counts containers, not keys — so a document of flat records, `[{…}, {…}]`, wants `2`; `Infinity` opens everything.
 
 The peers are declared `optional` in `peerDependenciesMeta`, so installing only what you import is enough. Source lives at [`src/renderers/`](src/renderers/) — copy + tweak if you want different styling, paginate sizes, or language set.
 

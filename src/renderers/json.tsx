@@ -52,11 +52,27 @@ export interface JsonValueCtx {
  *  the disclosure carets and child layout. */
 export type JsonValueRenderer = (ctx: JsonValueCtx) => ReactNode
 
+export interface JsonTreeOptions {
+  renderValue?: JsonValueRenderer
+  /** How many container levels start expanded. 1 (default) opens the
+   *  root and nothing else; 2 also opens its immediate children, etc.
+   *  `Infinity` opens everything. Depth counts containers, so a
+   *  document of flat records — `[{…}, {…}]` — needs 2 to be legible. */
+  initialOpenDepth?: number
+}
+
 /** Build a `jsonRenderer` with per-value decoration. `renderJsonTree` is
  *  this with no options; both take `(source, usePersistedState?)`. */
-export function makeJsonTreeRenderer({ renderValue }: { renderValue?: JsonValueRenderer } = {}) {
+export function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1 }: JsonTreeOptions = {}) {
   return function renderJson(source: string, usePersistedState?: PersistedState) {
-    return <JsonViewer source={source} usePersistedState={usePersistedState} renderValue={renderValue} />
+    return (
+      <JsonViewer
+        source={source}
+        usePersistedState={usePersistedState}
+        renderValue={renderValue}
+        initialOpenDepth={initialOpenDepth}
+      />
+    )
   }
 }
 
@@ -66,7 +82,7 @@ export function makeJsonTreeRenderer({ renderValue }: { renderValue?: JsonValueR
  *  `jsonRenderer` and forward it. */
 export const renderJsonTree = makeJsonTreeRenderer()
 
-function JsonViewer({ source, usePersistedState, renderValue }: { source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer }) {
+function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }: { source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer; initialOpenDepth: number }) {
   const use = usePersistedState ?? defaultUseState
   const [q, setQ] = use<string>('json-q', '')
   const [jq, setJq] = use<string>('jq', '')
@@ -164,15 +180,16 @@ function JsonViewer({ source, usePersistedState, renderValue }: { source: string
           jq error: {jqError}
         </div>
       )}
-      <div style={{ overflowX: 'auto', maxHeight: '80vh' }}>
+      <div className="rdub-file-tree-json-tree" style={{ overflowX: 'auto', maxHeight: '80vh' }}>
         <Node
           value={value}
           path=""
+          depth={0}
+          initialOpenDepth={initialOpenDepth}
           q={q}
           matches={matches}
           forceOpen={forceOpen}
           forceOpenVersion={expandVersion}
-          initialOpen
           copyPath={copyPath}
           renderValue={renderValue}
         />
@@ -221,13 +238,16 @@ interface NodeProps {
   value: unknown
   /** jq-style path to this node (e.g. `.foo[0].bar`, `""` at root). */
   path: string
+  /** Container nesting level; 0 at the root. Compared against
+   *  `initialOpenDepth` to decide whether this node starts expanded. */
+  depth: number
+  initialOpenDepth: number
   /** Object key this node sits under; unset for array elements + root. */
   keyName?: string
   q: string
   matches: Set<string> | null
   forceOpen: boolean | null
   forceOpenVersion: number
-  initialOpen?: boolean
   copyPath: (path: string) => void
   renderValue?: JsonValueRenderer
 }
@@ -242,22 +262,23 @@ function scalarNode(value: unknown, q: string): ReactNode {
   return null
 }
 
-function Node({ value, path, keyName, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps) {
+function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }: NodeProps) {
   const scalar = scalarNode(value, q)
   if (scalar !== null) {
     if (!renderValue) return <>{scalar}</>
     return <>{renderValue({ value, path, key: keyName, defaultNode: scalar })}</>
   }
+  const rest = { path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue, initialOpen: depth < initialOpenDepth }
   if (Array.isArray(value)) {
-    return <ArrayNode value={value} path={path} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} initialOpen={initialOpen ?? false} copyPath={copyPath} renderValue={renderValue} />
+    return <ArrayNode value={value} {...rest} />
   }
   if (typeof value === 'object') {
-    return <ObjectNode value={value as Record<string, unknown>} path={path} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} initialOpen={initialOpen ?? false} copyPath={copyPath} renderValue={renderValue} />
+    return <ObjectNode value={value as Record<string, unknown>} {...rest} />
   }
   return <span>{String(value)}</span>
 }
 
-function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: unknown[]; initialOpen: boolean }) {
+function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: unknown[]; initialOpen: boolean }) {
   const matchedHere = matches?.has(path) ?? false
   const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere)
   if (value.length === 0) return <span style={{ color: COLORS.punct }}>[]</span>
@@ -271,7 +292,7 @@ function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initi
             const childPath = `${path}[${i}]`
             return (
               <div key={i}>
-                <Node value={v} path={childPath} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
+                <Node value={v} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
                 {i < value.length - 1 && <span style={{ color: COLORS.punct }}>,</span>}
               </div>
             )
@@ -285,7 +306,7 @@ function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initi
   )
 }
 
-function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: Record<string, unknown>; initialOpen: boolean }) {
+function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: Record<string, unknown>; initialOpen: boolean }) {
   const matchedHere = matches?.has(path) ?? false
   const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere)
   const keys = Object.keys(value)
@@ -302,7 +323,7 @@ function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, init
               <div key={k}>
                 <KeyLabel keyName={k} q={q} path={childPath} copyPath={copyPath} />
                 <span style={{ color: COLORS.punct }}>: </span>
-                <Node value={value[k]} path={childPath} keyName={k} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
+                <Node value={value[k]} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} keyName={k} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
                 {i < keys.length - 1 && <span style={{ color: COLORS.punct }}>,</span>}
               </div>
             )
@@ -319,7 +340,13 @@ function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, init
 /** Per-node `open` state that respects: (a) initial, (b) user toggles,
  *  (c) global expand/collapse-all bumps, (d) search-match auto-open. */
 function useOpenState(initialOpen: boolean, forceOpen: boolean | null, forceOpenVersion: number, matchedHere: boolean) {
-  const [open, setOpen] = useState(initialOpen)
+  // A node mounts either at first render or because an ancestor just
+  // opened — including as a *result* of expand-all. In that second case
+  // the version-bump below can't help it (it seeds `lastVersion` to the
+  // already-bumped value), so a standing `forceOpen` has to be honored
+  // at mount. Without this, expand-all only reaches the frontier of
+  // mounted nodes: one click per level of nesting.
+  const [open, setOpen] = useState(forceOpen ?? initialOpen)
   const [lastVersion, setLastVersion] = useState(forceOpenVersion)
   // expand/collapse-all: snap to forceOpen on a version bump.
   if (forceOpenVersion !== lastVersion) {
