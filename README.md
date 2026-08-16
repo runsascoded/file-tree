@@ -305,12 +305,55 @@ Per-file action buttons rendered next to the download icon. Signature:
 
 Use for "open in SQL REPL", "view raw", "share", etc. — consumer-app-specific. See `site/src/viewerActions.tsx` for a reference (parquet/CSV → `/sql?url=...`).
 
+## Cell / crumb render hooks
+
+`renderCell` and `renderCrumb` let a consumer take over any cell of the directory listing, or any breadcrumb segment. Both receive **the node the library would have rendered** as `defaultNode`, so decorating doesn't mean reimplementing the default (icon, `<Link>`, size formatting):
+
+```ts
+type CellRenderer = (ctx: {
+  entry: Entry                                // { key, isDir, size?, lastModified? }
+  column: 'name' | 'size' | 'modified'
+  prefix: string                              // dir being listed
+  href: string                                // route this row links to
+  defaultNode: ReactNode
+}) => ReactNode
+
+type CrumbRenderer = (ctx: {
+  crumb: { label: string; to: string; path?: string }   // `path` = store key
+  index: number
+  isLast: boolean
+  defaultNode: ReactNode
+}) => ReactNode
+```
+
+There's no "which cells does this apply to" config — the fn is called for every cell and answers that itself by returning `defaultNode`. E.g. annotating directories whose key encodes an ID with a human-readable name:
+
+```tsx
+const deviceName = (key: string) => DEVICES[/(?:^|\/)awair-(\d+)\/?$/.exec(key)?.[1] ?? '']
+
+<FileTree
+  store={store}
+  routeBase="/files"
+  renderCell={({ entry, column, defaultNode }) => {
+    if (column !== 'name') return defaultNode
+    const name = deviceName(entry.key)
+    return name ? <>{defaultNode} <span className="dim">{name}</span></> : defaultNode
+  }}
+  renderCrumb={({ crumb, defaultNode }) => {
+    const name = deviceName(crumb.path ?? '')
+    return name ? <>{defaultNode} <span className="dim">{name}</span></> : defaultNode
+  }}
+/>
+```
+
+Ignoring `defaultNode` gives you a total override of that cell. For replacing the listing wholesale (a different table engine, sortable columns, virtualization), fork `src/react/DirListing.tsx` — it's ~230 lines with no private imports.
+
 ## Subpath exports
 
 | Path | What |
 |---|---|
 | `@rdub/file-tree` | `Store` types, `NotFoundError`, `ZipEntry` types |
-| `@rdub/file-tree/react` | `<FileTree>`, `<DirListing>`, `<TextViewer>`, `<Breadcrumb>`, `<MediaViewer>`, `<ZipEntryList>`, `<ZipEntryPreview>`, `parsePath`, `asyncBufferFromStore`, `AUDIO`/`CODE_LANG`/`MarkdownRenderer`/`ParquetRenderer`/`ViewerActionCtx` |
+| `@rdub/file-tree/react` | `<FileTree>`, `<DirListing>`, `<TextViewer>`, `<Breadcrumb>`, `<MediaViewer>`, `<ZipEntryList>`, `<ZipEntryPreview>`, `parsePath`, `asyncBufferFromStore`, `AUDIO`/`CODE_LANG`/`MarkdownRenderer`/`ParquetRenderer`/`ViewerActionCtx`/`CellRenderer`/`CrumbRenderer` |
 | `@rdub/file-tree/stores/r2` | `R2Store`, `R2StoreOptions`, `R2PresignOptions` |
 | `@rdub/file-tree/stores/s3` | `S3Store`, `S3StoreOptions` (works for AWS S3, R2 via S3 API, MinIO) |
 | `@rdub/file-tree/stores/http` | `HttpStore`, `HttpStoreOptions` |

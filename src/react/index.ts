@@ -1,5 +1,7 @@
 export { FileTree } from './FileTree'
 export type { FileTreeProps, MarkdownRenderer, ParquetRenderer, ViewerActionCtx } from './FileTree'
+export type { CellColumn, CellCtx, CellRenderer } from './DirListing'
+export type { CrumbCtx, CrumbRenderer } from './Breadcrumb'
 export { asyncBufferFromStore } from './asyncBuffer'
 export type { AsyncBuffer } from './asyncBuffer'
 export { Breadcrumb } from './Breadcrumb'

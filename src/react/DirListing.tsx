@@ -6,6 +6,34 @@ import { makeMatcher } from './match'
 import { basename, keyToSplat } from './parsePath'
 import { defaultUseState, type PersistedState } from './persistedState'
 
+/** Columns rendered by the default `<DirListing>` table. */
+export type CellColumn = 'name' | 'size' | 'modified'
+
+export interface CellCtx {
+  /** The listing entry this row is for. */
+  entry: Entry
+  column: CellColumn
+  /** Store-relative prefix of the directory being listed. */
+  prefix: string
+  /** Route this row links to (`routeBase` + splat). */
+  href: string
+  /** What `<DirListing>` would have rendered for this cell. Decorating
+   *  callers wrap it; overriding callers ignore it. */
+  defaultNode: ReactNode
+}
+
+/** Per-cell render hook. Called for every cell of every row; return
+ *  `ctx.defaultNode` for the cells you don't care about:
+ *
+ *    renderCell={({ entry, column, defaultNode }) =>
+ *      column === 'name' && isDevice(entry.key)
+ *        ? <>{defaultNode} <em>{deviceName(entry.key)}</em></>
+ *        : defaultNode}
+ *
+ *  Deliberately unopinionated about placement/styling — the library
+ *  hands back the node it would have rendered and gets out of the way. */
+export type CellRenderer = (ctx: CellCtx) => ReactNode
+
 export interface DirListingProps {
   store: Store
   /** Store-relative prefix (incl. trailing slash). */
@@ -28,9 +56,11 @@ export interface DirListingProps {
   /** When set + a `README.md` (case-insensitive) is in the listing, the
    *  README is fetched and rendered below the table via this fn. */
   markdownRenderer?: (source: string) => ReactNode
+  /** Optional per-cell render hook (see `CellRenderer`). */
+  renderCell?: CellRenderer
 }
 
-export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', usePersistedState, markdownRenderer }: DirListingProps) {
+export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', usePersistedState, markdownRenderer, renderCell }: DirListingProps) {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
@@ -158,19 +188,23 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
             const name = basename(e.key)
             const splat = keyToSplat(e.key, rootPrefix)
             const href = `${baseTrimmed}/${splat}`
+            const cell = (column: CellColumn, defaultNode: ReactNode) =>
+              renderCell ? renderCell({ entry: e, column, prefix, href, defaultNode }) : defaultNode
             return (
               <tr key={e.key} style={{ borderTop: '1px solid rgba(127,127,127,0.2)' }}>
                 <td style={{ padding: '0.3em 0.6em 0.3em 0', fontFamily: 'ui-monospace, monospace' }}>
-                  <Link to={href}>
-                    {e.isDir ? <span style={{ opacity: 0.6 }}>📁 </span> : null}
-                    {name}{e.isDir ? '/' : ''}
-                  </Link>
+                  {cell('name', (
+                    <Link to={href}>
+                      {e.isDir ? <span style={{ opacity: 0.6 }}>📁 </span> : null}
+                      {name}{e.isDir ? '/' : ''}
+                    </Link>
+                  ))}
                 </td>
                 <td style={{ padding: '0.3em 0.6em', textAlign: 'right', fontVariantNumeric: 'tabular-nums', opacity: e.isDir ? 0.4 : 1 }}>
-                  {e.isDir ? '—' : fmtSize(e.size)}
+                  {cell('size', e.isDir ? '—' : fmtSize(e.size))}
                 </td>
                 <td style={{ padding: '0.3em 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums', opacity: 0.6, fontSize: '0.9em' }}>
-                  {e.lastModified?.slice(0, 10) ?? ''}
+                  {cell('modified', e.lastModified?.slice(0, 10) ?? '')}
                 </td>
               </tr>
             )

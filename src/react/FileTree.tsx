@@ -12,8 +12,8 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Store } from '../types'
-import { Breadcrumb, type Crumb } from './Breadcrumb'
-import { DirListing } from './DirListing'
+import { Breadcrumb, type Crumb, type CrumbRenderer } from './Breadcrumb'
+import { DirListing, type CellRenderer } from './DirListing'
 import { MediaViewer } from './MediaViewer'
 import { TextViewer } from './TextViewer'
 import { ZipEntryList } from './ZipEntryList'
@@ -93,6 +93,16 @@ export interface FileTreeProps {
    *  breadcrumb row. Use this for "open in SQL", "view raw", "share",
    *  etc. — actions specific to a consumer's surrounding app. */
   viewerActions?: (ctx: ViewerActionCtx) => ReactNode
+  /** Optional per-cell render hook for the directory listing (see
+   *  `CellRenderer`). Receives the node the listing would have rendered
+   *  plus the row's entry/column, so consumers can decorate specific
+   *  cells (e.g. append a human-readable name to a directory whose key
+   *  encodes an ID) without reimplementing the default. */
+  renderCell?: CellRenderer
+  /** Optional per-crumb render hook for the breadcrumb (see
+   *  `CrumbRenderer`) — same shape as `renderCell`, so the same
+   *  decoration can be applied to path segments. */
+  renderCrumb?: CrumbRenderer
   /** Placeholder for the directory-listing filter input. Default
    *  `"filter"`. Consumers can supply something more specific
    *  (e.g. `"filter (e.g. *.parquet)"` or project-specific nouns). */
@@ -115,7 +125,7 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, filterPlaceholder, usePersistedState }: FileTreeProps) {
+export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -147,16 +157,16 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
   return (
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
-      <Breadcrumb crumbs={crumbs} rightSlot={right} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
+      <Breadcrumb crumbs={crumbs} rightSlot={right} renderCrumb={renderCrumb} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, filterPlaceholder, usePersistedState }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; filterPlaceholder?: string; usePersistedState?: PersistedState }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState }) {
   switch (parsed.kind) {
     case 'dir':
-      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
+      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
     case 'text': {
       const ext = extOf(parsed.path)
       const isMd = ext === 'md' || ext === 'markdown'
@@ -276,13 +286,17 @@ function buildCrumbs(parsed: Parsed, routeBase: string, rootPrefix: string): Cru
   const splat = keyToSplat(path, rootPrefix)
   const parts = splat.split('/').filter(p => p.length > 0)
   const baseTrimmed = routeBase.replace(/\/+$/, '')
-  const crumbs: Crumb[] = [{ label: 'root', to: `${baseTrimmed}/` }]
+  const crumbs: Crumb[] = [{ label: 'root', to: `${baseTrimmed}/`, path: rootPrefix }]
   let cum = ''
   for (const p of parts) {
     cum = cum ? `${cum}/${p}` : p
+    // Every crumb but a file leaf addresses a directory, so its store key
+    // carries a trailing slash (`to` only gets one for the current dir).
+    const isFileLeaf = parsed.kind !== 'dir' && cum === splat
     crumbs.push({
       label: basename(p),
       to: `${baseTrimmed}/${cum}${parsed.kind === 'dir' && cum === splat ? '/' : ''}`,
+      path: `${rootPrefix}${cum}${isFileLeaf ? '' : '/'}`,
     })
   }
   return crumbs
