@@ -17,7 +17,7 @@
  *  Uses `hyparquet` (optional peer) for footer/metadata + row-range
  *  reads, fed via `asyncBufferFromStore` so it works against any
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { parquetMetadataAsync, parquetRead, parquetSchema } from 'hyparquet'
 import type { Store } from '../types'
 import { asyncBufferFromStore } from '../react/asyncBuffer'
@@ -51,13 +51,51 @@ export interface ParquetCellCtx {
  *  you care about and return `ctx.defaultNode` for the rest. */
 export type ParquetCellRenderer = (ctx: ParquetCellCtx) => ReactNode
 
+/** Per-column statistics from the current row group's footer metadata.
+ *  Not reconstructible from the decoded rows a consumer sees — the
+ *  footer is only ever read here. Absent when the writer omitted it. */
+export interface ParquetColumnStats {
+  min?: unknown
+  max?: unknown
+  nullCount?: number
+}
+
+export interface ParquetHeaderCtx {
+  column: ParquetColumn
+  /** Stats for the row group currently on screen, when the footer
+   *  carries them — so the range moves as you page. */
+  stats?: ParquetColumnStats
+  /** What the viewer would have rendered for this header. */
+  defaultNode: ReactNode
+}
+
+export type ParquetHeaderRenderer = (ctx: ParquetHeaderCtx) => ReactNode
+
+/** Attributes merged over a column's default `<td>` / `<th>` styling.
+ *  Returning nothing leaves the default untouched. */
+export type ParquetColumnProps = (col: ParquetColumn) => { style?: CSSProperties; className?: string } | void
+
 export interface ParquetViewerOptions {
   renderCell?: ParquetCellRenderer
+  /** Per-column header content (see `ParquetHeaderRenderer`) — a place
+   *  to hang format toggles, stat readouts, and the like. */
+  renderHeader?: ParquetHeaderRenderer
+  /** Per-column `<td>` attributes, merged over the viewer's defaults. */
+  cellProps?: ParquetColumnProps
+  /** Per-column `<th>` attributes. Separate from `cellProps` so
+   *  overriding one doesn't silently change the other; note the
+   *  built-in numeric alignment already keeps the pair in sync. */
+  headerProps?: ParquetColumnProps
   /** Apply the epoch-range heuristic to unannotated numeric columns
    *  (signals b+c). Default `true`. Turning it off keeps annotated
    *  `TIMESTAMP`/`DATE` columns formatted — it only suppresses the
    *  guess. */
   inferTimestamps?: boolean
+  /** Right-align numeric columns with `tabular-nums`, so digits line up
+   *  down the column and magnitudes are comparable at a glance.
+   *  Default `true`. Columns read as temporal are excluded — they
+   *  render as text, not quantities. */
+  alignNumeric?: boolean
 }
 
 interface RowGroupInfo {
@@ -67,6 +105,8 @@ interface RowGroupInfo {
   rowEnd: number    // exclusive
   uncompressedBytes: number
   compressedBytes: number | null
+  /** Keyed by column name; empty when the writer wrote no statistics. */
+  stats: Map<string, ParquetColumnStats>
 }
 
 interface Meta {
@@ -92,6 +132,15 @@ const ROWS_PER_PAGE = 100
  *  scan enough runway to feel free. */
 const RG_CACHE_SIZE = 4
 
+/** Physical types that read as quantities, and so right-align by
+ *  default. `BOOLEAN` and the byte-array types are excluded. */
+const NUMERIC_TYPES = new Set(['INT32', 'INT64', 'INT96', 'FLOAT', 'DOUBLE'])
+
+/** Base cell/header styling, hoisted so per-column overrides merge over
+ *  a single source of truth rather than a literal inlined in JSX. */
+const TD_STYLE: CSSProperties = { padding: '0.2em 0.6em', whiteSpace: 'nowrap', maxWidth: '30em', overflow: 'hidden', textOverflow: 'ellipsis' }
+const TH_STYLE: CSSProperties = { padding: '0.3em 0.6em', textAlign: 'left', borderBottom: '1px solid rgba(127,127,127,0.4)', fontWeight: 500 }
+
 /** Build a parquet viewer with per-cell decoration and/or the epoch
  *  heuristic disabled. Call at module scope — each call produces a new
  *  component type, so calling it during render would remount the table
@@ -102,7 +151,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, inferTimestamps = true }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const [meta, setMeta] = useState<Meta | null>(null)
   // 0-indexed row-group pagination. Default `useState` (in-memory);
   // when `usePersistedState` is the URL hook, binds to `?page=N` with
@@ -153,6 +202,24 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, infe
         let cum = 0
         md.row_groups.forEach((rg, i) => {
           const numRows = Number(rg.num_rows)
+          const stats = new Map<string, ParquetColumnStats>()
+          for (const chunk of rg.columns) {
+            const cm = chunk.meta_data
+            const s = cm?.statistics
+            if (!cm || !s) continue
+            // `min_value`/`max_value` are the modern (correctly-ordered)
+            // fields; `min`/`max` are the deprecated ones, kept as a
+            // fallback for older writers.
+            const min = s.min_value ?? s.min
+            const max = s.max_value ?? s.max
+            const nullCount = s.null_count != null ? Number(s.null_count) : undefined
+            if (min === undefined && max === undefined && nullCount === undefined) continue
+            stats.set(cm.path_in_schema.join('.'), {
+              ...(min !== undefined ? { min } : {}),
+              ...(max !== undefined ? { max } : {}),
+              ...(nullCount !== undefined ? { nullCount } : {}),
+            })
+          }
           rowGroups.push({
             index: i,
             numRows,
@@ -160,6 +227,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, infe
             rowEnd: cum + numRows,
             uncompressedBytes: Number(rg.total_byte_size),
             compressedBytes: rg.total_compressed_size != null ? Number(rg.total_compressed_size) : null,
+            stats,
           })
           cum += numRows
         })
@@ -228,6 +296,28 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, infe
     () => (meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : new Map<string, TemporalFormat>()),
     [meta, rows, inferTimestamps],
   )
+
+  // Resolved once per column rather than per cell — a 100-row page of a
+  // 17-column file would otherwise call `cellProps` 1,700 times a render.
+  const colStyles = useMemo(() => {
+    const out = new Map<string, { cell: CSSProperties; header: CSSProperties; cellClass?: string; headerClass?: string }>()
+    for (const c of meta?.schema ?? []) {
+      // Numeric alignment keys off the *rendered* meaning, not the
+      // physical type: a column read as temporal prints as text, so
+      // right-aligning it would just detach it from its header.
+      const numeric = alignNumeric && !temporal.has(c.name) && c.physicalType !== undefined && NUMERIC_TYPES.has(c.physicalType)
+      const align: CSSProperties = numeric ? { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } : {}
+      const cp = cellProps?.(c) || {}
+      const hp = headerProps?.(c) || {}
+      out.set(c.name, {
+        cell: { ...TD_STYLE, ...align, ...cp.style },
+        header: { ...TH_STYLE, ...align, ...hp.style },
+        ...(cp.className ? { cellClass: cp.className } : {}),
+        ...(hp.className ? { headerClass: hp.className } : {}),
+      })
+    }
+    return out
+  }, [meta, temporal, alignNumeric, cellProps, headerProps])
 
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (!meta) return <div style={{ opacity: 0.6 }}>reading parquet metadata…</div>
@@ -327,11 +417,17 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, infe
         <table style={{ borderCollapse: 'collapse', fontSize: '0.82em', fontFamily: 'ui-monospace, monospace' }}>
           <thead>
             <tr style={{ position: 'sticky', top: 0, background: 'rgba(127,127,127,0.15)' }}>
-              {schema.map(c => (
-                <th key={c.name} style={{ padding: '0.3em 0.6em', textAlign: 'left', borderBottom: '1px solid rgba(127,127,127,0.4)', fontWeight: 500 }}>
-                  {c.name}
-                </th>
-              ))}
+              {schema.map(c => {
+                const st = colStyles.get(c.name)
+                const stats = rg.stats.get(c.name)
+                const title = statsTitle(stats, temporal.get(c.name))
+                const defaultNode = title ? <span title={title}>{c.name}</span> : c.name
+                return (
+                  <th key={c.name} style={st?.header ?? TH_STYLE} className={st?.headerClass}>
+                    {renderHeader ? renderHeader({ column: c, ...(stats ? { stats } : {}), defaultNode }) : defaultNode}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -343,8 +439,9 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, infe
                   {schema.map(c => {
                     const value = r[c.name]
                     const defaultNode = fmtCell(value, temporal.get(c.name))
+                    const st = colStyles.get(c.name)
                     return (
-                      <td key={c.name} style={{ padding: '0.2em 0.6em', whiteSpace: 'nowrap', maxWidth: '30em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <td key={c.name} style={st?.cell ?? TD_STYLE} className={st?.cellClass}>
                         {renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, defaultNode }) : defaultNode}
                       </td>
                     )
@@ -437,6 +534,43 @@ function fmtCell(v: unknown, temporal?: TemporalFormat): ReactNode {
     if (s !== null) return <span title={rawText(v)} style={{ fontVariantNumeric: 'tabular-nums' }}>{s}</span>
   }
   return rawText(v)
+}
+
+/** One stat value as text, or `null` if it isn't safely printable.
+ *  Parquet stats are raw per-type values — byte arrays for strings,
+ *  bigints for INT64 — so anything unrecognised is dropped rather than
+ *  stringified into `[object Object]`. */
+function statValue(v: unknown, temporal?: TemporalFormat): string | null {
+  if (v === null || v === undefined) return null
+  if (temporal) {
+    const s = formatTemporal(v, temporal)
+    if (s !== null) return s
+  }
+  if (typeof v === 'bigint' || typeof v === 'number') return String(v)
+  if (typeof v === 'string') return v.length > 40 ? `${v.slice(0, 40)}…` : v
+  if (v instanceof Date) return v.toISOString()
+  if (v instanceof Uint8Array) {
+    try {
+      const s = new TextDecoder('utf-8', { fatal: true }).decode(v)
+      return s.length > 40 ? `${s.slice(0, 40)}…` : s
+    } catch { return null }
+  }
+  return null
+}
+
+/** Header `title` summarising the current row group's range for a
+ *  column — a cheap orientation cue in a file with millions of rows,
+ *  and the footer already carries it. */
+function statsTitle(stats: ParquetColumnStats | undefined, temporal?: TemporalFormat): string | undefined {
+  if (!stats) return undefined
+  const parts: string[] = []
+  const min = statValue(stats.min, temporal)
+  const max = statValue(stats.max, temporal)
+  if (min !== null && max !== null) parts.push(min === max ? `= ${min}` : `${min} … ${max}`)
+  else if (min !== null) parts.push(`≥ ${min}`)
+  else if (max !== null) parts.push(`≤ ${max}`)
+  if (stats.nullCount) parts.push(`${stats.nullCount.toLocaleString()} null`)
+  return parts.length ? `row group: ${parts.join(' · ')}` : undefined
 }
 
 /** `INT64 · TIMESTAMP(MILLIS)`, or just `INT64` when unannotated.

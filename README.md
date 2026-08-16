@@ -385,6 +385,25 @@ const ParquetViewer = makeParquetViewer({          // module scope, not inside r
 
 `renderCell` gets `{ value, column, row, rowIndex, defaultNode }` — `column` carries `{ name, physicalType, logicalType, timeUnit, convertedType }`, and `rowIndex` is absolute within the file, not within the page.
 
+Presentation stops at the cell's *contents*, so three more options cover the column itself:
+
+```tsx
+makeParquetViewer({
+  // merged over the viewer's own <td> / <th> style — no wrapper element,
+  // so the cell keeps its own ellipsis behaviour
+  cellProps:   col => col.name === 'note' ? { style: { textAlign: 'center' } } : undefined,
+  headerProps: col => col.name === 'note' ? { style: { textAlign: 'center' } } : undefined,
+  // stats are the current row group's, straight from the footer — not
+  // reconstructible from the decoded rows a consumer sees
+  renderHeader: ({ column, stats, defaultNode }) =>
+    <>{defaultNode}{stats?.nullCount ? <sup>∅</sup> : null}</>,
+})
+```
+
+**Numeric columns right-align by default**, with `tabular-nums`, so digits line up down the column and magnitudes are comparable at a glance — headers follow their column. Columns read as temporal are excluded (they render as text, not quantities), as are `BOOLEAN` and the byte-array types. Turn it off with `alignNumeric: false`, or override per column with `cellProps`.
+
+The default header also carries a `title` summarising the current row group's range (`row group: 0 … 70578`, or `= 626` for a constant column) whenever the writer recorded statistics — a cheap orientation cue in a file with millions of rows.
+
 ## Timestamp inference (parquet)
 
 Epoch integers are the worst-reading thing in a data table, and often the column you scan most. The viewer reads a column as temporal on the first signal that hits:
