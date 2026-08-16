@@ -19,13 +19,21 @@ var COLORS = {
 };
 var FONT = "ui-monospace, monospace";
 var INDENT = "1.4em";
-function makeJsonTreeRenderer({ renderValue } = {}) {
+function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1 } = {}) {
   return function renderJson(source, usePersistedState) {
-    return /* @__PURE__ */ jsx(JsonViewer, { source, usePersistedState, renderValue });
+    return /* @__PURE__ */ jsx(
+      JsonViewer,
+      {
+        source,
+        usePersistedState,
+        renderValue,
+        initialOpenDepth
+      }
+    );
   };
 }
 var renderJsonTree = makeJsonTreeRenderer();
-function JsonViewer({ source, usePersistedState, renderValue }) {
+function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }) {
   const use = usePersistedState ?? defaultUseState;
   const [q, setQ] = use("json-q", "");
   const [jq, setJq] = use("jq", "");
@@ -142,16 +150,17 @@ function JsonViewer({ source, usePersistedState, renderValue }) {
       "jq error: ",
       jqError
     ] }),
-    /* @__PURE__ */ jsx("div", { style: { overflowX: "auto", maxHeight: "80vh" }, children: /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx("div", { className: "rdub-file-tree-json-tree", style: { overflowX: "auto", maxHeight: "80vh" }, children: /* @__PURE__ */ jsx(
       Node,
       {
         value,
         path: "",
+        depth: 0,
+        initialOpenDepth,
         q,
         matches,
         forceOpen,
         forceOpenVersion: expandVersion,
-        initialOpen: true,
         copyPath,
         renderValue
       }
@@ -196,21 +205,22 @@ function scalarNode(value, q) {
   if (typeof value === "boolean") return /* @__PURE__ */ jsx("span", { style: { color: COLORS.bool }, children: String(value) });
   return null;
 }
-function Node({ value, path, keyName, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
+function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }) {
   const scalar = scalarNode(value, q);
   if (scalar !== null) {
     if (!renderValue) return /* @__PURE__ */ jsx(Fragment, { children: scalar });
     return /* @__PURE__ */ jsx(Fragment, { children: renderValue({ value, path, key: keyName, defaultNode: scalar }) });
   }
+  const rest = { path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue, initialOpen: depth < initialOpenDepth };
   if (Array.isArray(value)) {
-    return /* @__PURE__ */ jsx(ArrayNode, { value, path, q, matches, forceOpen, forceOpenVersion, initialOpen: initialOpen ?? false, copyPath, renderValue });
+    return /* @__PURE__ */ jsx(ArrayNode, { value, ...rest });
   }
   if (typeof value === "object") {
-    return /* @__PURE__ */ jsx(ObjectNode, { value, path, q, matches, forceOpen, forceOpenVersion, initialOpen: initialOpen ?? false, copyPath, renderValue });
+    return /* @__PURE__ */ jsx(ObjectNode, { value, ...rest });
   }
   return /* @__PURE__ */ jsx("span", { children: String(value) });
 }
-function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
+function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
   const matchedHere = matches?.has(path) ?? false;
   const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere);
   if (value.length === 0) return /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "[]" });
@@ -220,7 +230,7 @@ function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initi
     open ? /* @__PURE__ */ jsx("div", { style: { marginLeft: INDENT }, children: value.map((v, i) => {
       const childPath = `${path}[${i}]`;
       return /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx(Node, { value: v, path: childPath, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }),
+        /* @__PURE__ */ jsx(Node, { value: v, path: childPath, depth: depth + 1, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }),
         i < value.length - 1 && /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "," })
       ] }, i);
     }) }) : /* @__PURE__ */ jsxs("span", { style: { color: COLORS.punct, opacity: 0.7 }, children: [
@@ -231,7 +241,7 @@ function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initi
     /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "]" })
   ] });
 }
-function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
+function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
   const matchedHere = matches?.has(path) ?? false;
   const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere);
   const keys = Object.keys(value);
@@ -244,7 +254,7 @@ function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, init
       return /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx(KeyLabel, { keyName: k, q, path: childPath, copyPath }),
         /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: ": " }),
-        /* @__PURE__ */ jsx(Node, { value: value[k], path: childPath, keyName: k, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }),
+        /* @__PURE__ */ jsx(Node, { value: value[k], path: childPath, depth: depth + 1, initialOpenDepth, keyName: k, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }),
         i < keys.length - 1 && /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "," })
       ] }, k);
     }) }) : /* @__PURE__ */ jsxs("span", { style: { color: COLORS.punct, opacity: 0.7 }, children: [
@@ -256,7 +266,7 @@ function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, init
   ] });
 }
 function useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere) {
-  const [open, setOpen] = useState2(initialOpen);
+  const [open, setOpen] = useState2(forceOpen ?? initialOpen);
   const [lastVersion, setLastVersion] = useState2(forceOpenVersion);
   if (forceOpenVersion !== lastVersion) {
     setLastVersion(forceOpenVersion);

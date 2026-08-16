@@ -25,15 +25,21 @@ interface JsonValueCtx {
  *  Containers (objects / arrays) are not passed through it — they own
  *  the disclosure carets and child layout. */
 type JsonValueRenderer = (ctx: JsonValueCtx) => ReactNode;
+interface JsonTreeOptions {
+    renderValue?: JsonValueRenderer;
+    /** How many container levels start expanded. 1 (default) opens the
+     *  root and nothing else; 2 also opens its immediate children, etc.
+     *  `Infinity` opens everything. Depth counts containers, so a
+     *  document of flat records — `[{…}, {…}]` — needs 2 to be legible. */
+    initialOpenDepth?: number;
+}
 /** Build a `jsonRenderer` with per-value decoration. `renderJsonTree` is
  *  this with no options; both take `(source, usePersistedState?)`. */
-declare function makeJsonTreeRenderer({ renderValue }?: {
-    renderValue?: JsonValueRenderer;
-}): (source: string, usePersistedState?: PersistedState) => react_jsx_runtime.JSX.Element;
+declare function makeJsonTreeRenderer({ renderValue, initialOpenDepth }?: JsonTreeOptions): (source: string, usePersistedState?: PersistedState) => react_jsx_runtime.JSX.Element;
 /** Accepts an optional `usePersistedState` hook; the default
  *  `renderJsonTree` (no second arg) wires plain `useState`. Consumers
  *  who want URL state pass `useUrlPersistedState` via `<FileTree>`'s
  *  `jsonRenderer` and forward it. */
 declare const renderJsonTree: (source: string, usePersistedState?: PersistedState) => react_jsx_runtime.JSX.Element;
 
-export { type JsonValueCtx, type JsonValueRenderer, makeJsonTreeRenderer, renderJsonTree };
+export { type JsonTreeOptions, type JsonValueCtx, type JsonValueRenderer, makeJsonTreeRenderer, renderJsonTree };
