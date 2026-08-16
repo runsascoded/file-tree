@@ -7,6 +7,16 @@ const PORT = 8731
 
 export default defineConfig({
   plugins: [react()],
+  // `@rdub/file-tree` is linked (`link:..`), so its `react-router-dom`
+  // import resolves against the *lib's* node_modules, not the site's —
+  // two copies, two `Router` contexts, and `useLocation` inside
+  // `<FileTree>` throws "may be used only in the context of a <Router>".
+  // Only bites the build: the dev server happens to collapse them, so
+  // this fails exclusively in production. Same hazard for react itself
+  // (duplicate dispatcher → invalid-hook-call), hence all three.
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-router-dom'],
+  },
   server: {
     port: PORT,
     strictPort: true,
