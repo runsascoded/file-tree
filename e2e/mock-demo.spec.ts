@@ -20,8 +20,9 @@ test.describe('MockDemo', () => {
     await expect(page.getByRole('link', { name: /^📁\s*docs\/$/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*data\/$/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*logs\/$/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^📁\s*samples\/$/ })).toBeVisible()
 
-    await expect(page.getByText('6 entries')).toBeVisible()
+    await expect(page.getByText('7 entries')).toBeVisible()
   })
 
   test('navigates into a directory', async ({ page }) => {
@@ -40,7 +41,7 @@ test.describe('MockDemo', () => {
 
   test('filters entries', async ({ page }) => {
     await page.goto('/mock')
-    await expect(page.getByText('6 entries')).toBeVisible()
+    await expect(page.getByText('7 entries')).toBeVisible()
 
     const filter = page.getByRole('searchbox')
     await filter.fill('config')
@@ -48,11 +49,11 @@ test.describe('MockDemo', () => {
     await expect(page.getByRole('link', { name: 'config.json', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'config.yaml', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'README.md', exact: true })).toHaveCount(0)
-    await expect(page.getByText('2 / 6')).toBeVisible()
+    await expect(page.getByText('2 / 7')).toBeVisible()
 
     await page.getByRole('button', { name: 'clear' }).click()
     await expect(filter).toHaveValue('')
-    await expect(page.getByText('6 entries')).toBeVisible()
+    await expect(page.getByText('7 entries')).toBeVisible()
     await expect(page.getByRole('link', { name: 'README.md', exact: true })).toBeVisible()
   })
 
