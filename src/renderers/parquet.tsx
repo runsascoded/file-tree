@@ -17,14 +17,48 @@
  *  Uses `hyparquet` (optional peer) for footer/metadata + row-range
  *  reads, fed via `asyncBufferFromStore` so it works against any
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parquetMetadataAsync, parquetRead, parquetSchema } from 'hyparquet'
 import type { Store } from '../types'
 import { asyncBufferFromStore } from '../react/asyncBuffer'
 import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
+import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
 
-interface SchemaCol { name: string; type?: string }
+// Re-exported so a consumer writing a `renderCell` for a temporal
+// column can reuse the same reading + formatting the default does,
+// rather than reimplementing epoch math.
+export { formatTemporal, inferColumnFormats, inferTemporalFormat, toMillis } from './temporal'
+export type { TemporalColumn, TemporalFormat, TemporalPrecision, TemporalSource, TemporalUnit } from './temporal'
+
+/** A leaf column of the file's schema. Passed to `renderCell` so a
+ *  consumer can key off type as well as name. */
+export interface ParquetColumn extends TemporalColumn {}
+
+export interface ParquetCellCtx {
+  value: unknown
+  column: ParquetColumn
+  /** The whole row, for cells whose rendering depends on a sibling. */
+  row: Record<string, unknown>
+  /** Absolute row index within the file, not within the page. */
+  rowIndex: number
+  /** What the viewer would have rendered for this cell. */
+  defaultNode: ReactNode
+}
+
+/** Per-cell render hook, mirroring `renderCell` (dir listing) and
+ *  `renderValue` (JSON tree): called for every cell, decorate the ones
+ *  you care about and return `ctx.defaultNode` for the rest. */
+export type ParquetCellRenderer = (ctx: ParquetCellCtx) => ReactNode
+
+export interface ParquetViewerOptions {
+  renderCell?: ParquetCellRenderer
+  /** Apply the epoch-range heuristic to unannotated numeric columns
+   *  (signals b+c). Default `true`. Turning it off keeps annotated
+   *  `TIMESTAMP`/`DATE` columns formatted — it only suppresses the
+   *  guess. */
+  inferTimestamps?: boolean
+}
 
 interface RowGroupInfo {
   index: number
@@ -36,7 +70,7 @@ interface RowGroupInfo {
 }
 
 interface Meta {
-  schema: SchemaCol[]
+  schema: ParquetColumn[]
   totalRows: number
   byteSize: number
   rowGroups: RowGroupInfo[]
@@ -58,7 +92,17 @@ const ROWS_PER_PAGE = 100
  *  scan enough runway to feel free. */
 const RG_CACHE_SIZE = 4
 
-export function ParquetViewer({ store, path, usePersistedState }: { store: Store; path: string; usePersistedState?: PersistedState }) {
+/** Build a parquet viewer with per-cell decoration and/or the epoch
+ *  heuristic disabled. Call at module scope — each call produces a new
+ *  component type, so calling it during render would remount the table
+ *  on every pass. `ParquetViewer` is this with no options. */
+export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
+  return function BoundParquetViewer(props: { store: Store; path: string; usePersistedState?: PersistedState }) {
+    return <ParquetViewer {...props} {...opts} />
+  }
+}
+
+export function ParquetViewer({ store, path, usePersistedState, renderCell, inferTimestamps = true }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const [meta, setMeta] = useState<Meta | null>(null)
   // 0-indexed row-group pagination. Default `useState` (in-memory);
   // when `usePersistedState` is the URL hook, binds to `?page=N` with
@@ -94,10 +138,17 @@ export function ParquetViewer({ store, path, usePersistedState }: { store: Store
         const file = await asyncBufferFromStore(store, path)
         const md = await parquetMetadataAsync(file)
         if (cancelled) return
-        const schema: SchemaCol[] = parquetSchema(md).children.map((c: { element: { name: string; type?: unknown } }) => ({
-          name: c.element.name,
-          ...(c.element.type ? { type: String(c.element.type) } : {}),
-        }))
+        const schema: ParquetColumn[] = parquetSchema(md).children.map(c => {
+          const el = c.element
+          const lt = el.logical_type
+          return {
+            name: el.name,
+            ...(el.type ? { physicalType: String(el.type) } : {}),
+            ...(lt ? { logicalType: lt.type } : {}),
+            ...(lt && 'unit' in lt ? { timeUnit: lt.unit } : {}),
+            ...(el.converted_type ? { convertedType: String(el.converted_type) } : {}),
+          }
+        })
         const rowGroups: RowGroupInfo[] = []
         let cum = 0
         md.row_groups.forEach((rg, i) => {
@@ -169,6 +220,15 @@ export function ParquetViewer({ store, path, usePersistedState }: { store: Store
     return () => { cancelled = true }
   }, [store, path, page, meta])
 
+  // Temporal reading per column, from the decoded rows of the current
+  // row group. Recomputed per RG rather than per file: a later RG can
+  // legitimately disagree (a column that's all-null early, say), and
+  // re-deriving is cheap next to the fetch + decode that produced them.
+  const temporal = useMemo(
+    () => (meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : new Map<string, TemporalFormat>()),
+    [meta, rows, inferTimestamps],
+  )
+
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (!meta) return <div style={{ opacity: 0.6 }}>reading parquet metadata…</div>
 
@@ -215,7 +275,7 @@ export function ParquetViewer({ store, path, usePersistedState }: { store: Store
             {schema.map(c => (
               <tr key={c.name}>
                 <td style={{ padding: '0.1em 0.6em 0.1em 0', fontFamily: 'ui-monospace, monospace' }}>{c.name}</td>
-                <td style={{ padding: '0.1em 0', opacity: 0.7 }}>{c.type ?? '?'}</td>
+                <td style={{ padding: '0.1em 0', opacity: 0.7 }}>{typeLabel(c, temporal.get(c.name))}</td>
               </tr>
             ))}
           </tbody>
@@ -280,11 +340,15 @@ export function ParquetViewer({ store, path, usePersistedState }: { store: Store
             ) : (
               visibleRows.map((r, i) => (
                 <tr key={clampedRgPage * ROWS_PER_PAGE + i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
-                  {schema.map(c => (
-                    <td key={c.name} style={{ padding: '0.2em 0.6em', whiteSpace: 'nowrap', maxWidth: '30em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {fmtCell(r[c.name])}
-                    </td>
-                  ))}
+                  {schema.map(c => {
+                    const value = r[c.name]
+                    const defaultNode = fmtCell(value, temporal.get(c.name))
+                    return (
+                      <td key={c.name} style={{ padding: '0.2em 0.6em', whiteSpace: 'nowrap', maxWidth: '30em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, defaultNode }) : defaultNode}
+                      </td>
+                    )
+                  })}
                 </tr>
               ))
             )}
@@ -353,13 +417,37 @@ function Pager({ rg, rgCount, setPage, totalRows }: {
   )
 }
 
-function fmtCell(v: unknown): ReactNode {
-  // Render null/undefined as a faded `·` so an all-optional row reads
-  // as "missing values" rather than "broken row". Empty `<td>`s look
-  // identical to a truncated render.
-  if (v === null || v === undefined) return <span style={{ opacity: 0.3 }}>·</span>
+function rawText(v: unknown): string {
   if (typeof v === 'bigint') return v.toString()
   if (v instanceof Date) return v.toISOString()
   if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
+}
+
+function fmtCell(v: unknown, temporal?: TemporalFormat): ReactNode {
+  // Render null/undefined as a faded `·` so an all-optional row reads
+  // as "missing values" rather than "broken row". Empty `<td>`s look
+  // identical to a truncated render.
+  if (v === null || v === undefined) return <span style={{ opacity: 0.3 }}>·</span>
+  if (temporal) {
+    const s = formatTemporal(v, temporal)
+    // Keep the raw value one hover away — the interpretation can be a
+    // guess, and the underlying integer stays the thing you'd paste
+    // into a query.
+    if (s !== null) return <span title={rawText(v)} style={{ fontVariantNumeric: 'tabular-nums' }}>{s}</span>
+  }
+  return rawText(v)
+}
+
+/** `INT64 · TIMESTAMP(MILLIS)`, or just `INT64` when unannotated.
+ *  An inferred reading is labelled as such — the heuristic is a guess,
+ *  and the schema panel is where someone goes to check it. */
+function typeLabel(c: ParquetColumn, temporal?: TemporalFormat): string {
+  const parts = [c.physicalType ?? '?']
+  const ann = c.logicalType
+    ? c.timeUnit ? `${c.logicalType}(${c.timeUnit})` : c.logicalType
+    : c.convertedType
+  if (ann) parts.push(ann)
+  if (temporal?.source === 'inferred') parts.push(`epoch ${temporal.unit.toLowerCase()} (inferred)`)
+  return parts.join(' · ')
 }

@@ -370,6 +370,33 @@ const deviceName = (key: string) => DEVICES[/(?:^|\/)awair-(\d+)\/?$/.exec(key)?
 
 Ignoring `defaultNode` gives you a total override of that cell. For replacing the listing wholesale (a different table engine, sortable columns, virtualization), fork `src/react/DirListing.tsx` — it's ~230 lines with no private imports.
 
+The parquet viewer takes the same hook, one table down, via `makeParquetViewer`:
+
+```tsx
+import { makeParquetViewer } from '@rdub/file-tree/renderers/parquet'
+
+const ParquetViewer = makeParquetViewer({          // module scope, not inside render
+  renderCell: ({ column, value, defaultNode }) =>
+    column.name === 'station_id'
+      ? <a href={`/stations/${value}`}>{defaultNode}</a>
+      : defaultNode,
+})
+```
+
+`renderCell` gets `{ value, column, row, rowIndex, defaultNode }` — `column` carries `{ name, physicalType, logicalType, timeUnit, convertedType }`, and `rowIndex` is absolute within the file, not within the page.
+
+## Timestamp inference (parquet)
+
+Epoch integers are the worst-reading thing in a data table, and often the column you scan most. The viewer reads a column as temporal on the first signal that hits:
+
+1. **Type annotation** — `TIMESTAMP(unit)` / `DATE`, via `logical_type` or the legacy `converted_type`. Unambiguous, but plenty of writers emit epoch millis as a bare `INT64`, so it doesn't fire nearly as often as you'd hope.
+2. **Value range** — every sampled value inside one unit's plausible-epoch window (~1990–2100). The windows are ~3 orders of magnitude apart, so seconds/millis/micros/nanos don't get confused with each other; the unit is read off the data rather than assumed.
+3. **Name gate** — (2) only applies to a column already named like a timestamp (`dt`, `ts`, `time`, `timestamp`, `date`, or a `_at` / `_time` / `_ts` / `_date` suffix). A large-integer `id` column must never become a date, and a name alone never triggers anything.
+
+Mixed units, out-of-window values, or a non-numeric in the column all fall back to rendering raw — a silently mis-rendered timestamp is worse than a visible integer. Output is always UTC with an explicit `Z`, elided to the coarsest form that loses nothing (`2026-04-25 00:00Z`, `… 00:00:37Z`, `… 00:00:37.500Z`, or a bare `2026-04-25` for a `DATE`), and the raw value stays on the cell's `title`. The schema panel labels a guess as `INT64 · epoch millis (inferred)`, so you can always see which readings were inferred rather than declared.
+
+To turn the heuristic off — annotated columns still format — use `makeParquetViewer({ inferTimestamps: false })`. `formatTemporal` / `inferTemporalFormat` are exported from the same subpath if you'd rather drive it yourself from a `renderCell`.
+
 ## Subpath exports
 
 | Path | What |
