@@ -1,6 +1,8 @@
 /** Demo fixture for MockStore. Designed to look like a realistic
  *  data-bucket layout — same shape consumers (ctbk, crashes) browse
  *  in production. */
+import { EVENTS_PARQUET } from './parquet'
+
 export const DEMO_FIXTURE = {
   'README.md': '# @rdub/file-tree demo\n\nThis is a `MockStore`-backed file browser. ' +
     'Everything you see is in-memory, defined in `site/src/fixtures/demo.ts`.\n\n' +
@@ -28,4 +30,7 @@ export const DEMO_FIXTURE = {
     },
   }, null, 2) + '\n',
   'config.yaml': 'version: 0.0.1\ndemo: true\nsources:\n  - mock\n  - http\n',
+  // Exercises the parquet viewer's timestamp inference — see
+  // `./parquet.ts` for what each column is meant to prove.
+  'samples/events.parquet': EVENTS_PARQUET,
 }
