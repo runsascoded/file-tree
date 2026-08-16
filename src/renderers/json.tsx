@@ -27,15 +27,46 @@ const COLORS = {
 const FONT = 'ui-monospace, monospace'
 const INDENT = '1.4em'
 
+export interface JsonValueCtx {
+  /** The scalar itself (string / number / boolean / null). */
+  value: unknown
+  /** jq-style path to it, e.g. `.foo[0].bar`. */
+  path: string
+  /** Object key it sits under; `undefined` for array elements + root. */
+  key?: string
+  /** What the tree would have rendered for it. */
+  defaultNode: ReactNode
+}
+
+/** Per-scalar render hook: called for every string / number / boolean /
+ *  null in the document; return `ctx.defaultNode` for the ones you don't
+ *  care about. Use it to annotate domain-specific values — epoch
+ *  timestamps as dates, byte counts as KiB, ids as names:
+ *
+ *    renderValue: ({ key, value, defaultNode }) =>
+ *      key === 'ts' && typeof value === 'number'
+ *        ? <>{defaultNode} <em>{new Date(value * 1000).toISOString()}</em></>
+ *        : defaultNode
+ *
+ *  Containers (objects / arrays) are not passed through it — they own
+ *  the disclosure carets and child layout. */
+export type JsonValueRenderer = (ctx: JsonValueCtx) => ReactNode
+
+/** Build a `jsonRenderer` with per-value decoration. `renderJsonTree` is
+ *  this with no options; both take `(source, usePersistedState?)`. */
+export function makeJsonTreeRenderer({ renderValue }: { renderValue?: JsonValueRenderer } = {}) {
+  return function renderJson(source: string, usePersistedState?: PersistedState) {
+    return <JsonViewer source={source} usePersistedState={usePersistedState} renderValue={renderValue} />
+  }
+}
+
 /** Accepts an optional `usePersistedState` hook; the default
  *  `renderJsonTree` (no second arg) wires plain `useState`. Consumers
  *  who want URL state pass `useUrlPersistedState` via `<FileTree>`'s
  *  `jsonRenderer` and forward it. */
-export function renderJsonTree(source: string, usePersistedState?: PersistedState) {
-  return <JsonViewer source={source} usePersistedState={usePersistedState} />
-}
+export const renderJsonTree = makeJsonTreeRenderer()
 
-function JsonViewer({ source, usePersistedState }: { source: string; usePersistedState?: PersistedState }) {
+function JsonViewer({ source, usePersistedState, renderValue }: { source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer }) {
   const use = usePersistedState ?? defaultUseState
   const [q, setQ] = use<string>('json-q', '')
   const [jq, setJq] = use<string>('jq', '')
@@ -143,6 +174,7 @@ function JsonViewer({ source, usePersistedState }: { source: string; usePersiste
           forceOpenVersion={expandVersion}
           initialOpen
           copyPath={copyPath}
+          renderValue={renderValue}
         />
       </div>
     </div>
@@ -189,29 +221,43 @@ interface NodeProps {
   value: unknown
   /** jq-style path to this node (e.g. `.foo[0].bar`, `""` at root). */
   path: string
+  /** Object key this node sits under; unset for array elements + root. */
+  keyName?: string
   q: string
   matches: Set<string> | null
   forceOpen: boolean | null
   forceOpenVersion: number
   initialOpen?: boolean
   copyPath: (path: string) => void
+  renderValue?: JsonValueRenderer
 }
 
-function Node({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath }: NodeProps) {
+/** Default rendering for a scalar; `null` signals "this is a container",
+ *  which `Node` hands to `ArrayNode` / `ObjectNode` instead. */
+function scalarNode(value: unknown, q: string): ReactNode {
   if (value === null) return <span style={{ color: COLORS.null }}>null</span>
   if (typeof value === 'string') return <HighlightedString value={value} q={q} />
   if (typeof value === 'number') return <span style={{ color: COLORS.number }}>{value}</span>
   if (typeof value === 'boolean') return <span style={{ color: COLORS.bool }}>{String(value)}</span>
+  return null
+}
+
+function Node({ value, path, keyName, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps) {
+  const scalar = scalarNode(value, q)
+  if (scalar !== null) {
+    if (!renderValue) return <>{scalar}</>
+    return <>{renderValue({ value, path, key: keyName, defaultNode: scalar })}</>
+  }
   if (Array.isArray(value)) {
-    return <ArrayNode value={value} path={path} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} initialOpen={initialOpen ?? false} copyPath={copyPath} />
+    return <ArrayNode value={value} path={path} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} initialOpen={initialOpen ?? false} copyPath={copyPath} renderValue={renderValue} />
   }
   if (typeof value === 'object') {
-    return <ObjectNode value={value as Record<string, unknown>} path={path} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} initialOpen={initialOpen ?? false} copyPath={copyPath} />
+    return <ObjectNode value={value as Record<string, unknown>} path={path} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} initialOpen={initialOpen ?? false} copyPath={copyPath} renderValue={renderValue} />
   }
   return <span>{String(value)}</span>
 }
 
-function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath }: NodeProps & { value: unknown[]; initialOpen: boolean }) {
+function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: unknown[]; initialOpen: boolean }) {
   const matchedHere = matches?.has(path) ?? false
   const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere)
   if (value.length === 0) return <span style={{ color: COLORS.punct }}>[]</span>
@@ -225,7 +271,7 @@ function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initi
             const childPath = `${path}[${i}]`
             return (
               <div key={i}>
-                <Node value={v} path={childPath} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} />
+                <Node value={v} path={childPath} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
                 {i < value.length - 1 && <span style={{ color: COLORS.punct }}>,</span>}
               </div>
             )
@@ -239,7 +285,7 @@ function ArrayNode({ value, path, q, matches, forceOpen, forceOpenVersion, initi
   )
 }
 
-function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath }: NodeProps & { value: Record<string, unknown>; initialOpen: boolean }) {
+function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: Record<string, unknown>; initialOpen: boolean }) {
   const matchedHere = matches?.has(path) ?? false
   const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere)
   const keys = Object.keys(value)
@@ -256,7 +302,7 @@ function ObjectNode({ value, path, q, matches, forceOpen, forceOpenVersion, init
               <div key={k}>
                 <KeyLabel keyName={k} q={q} path={childPath} copyPath={copyPath} />
                 <span style={{ color: COLORS.punct }}>: </span>
-                <Node value={value[k]} path={childPath} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} />
+                <Node value={value[k]} path={childPath} keyName={k} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
                 {i < keys.length - 1 && <span style={{ color: COLORS.punct }}>,</span>}
               </div>
             )

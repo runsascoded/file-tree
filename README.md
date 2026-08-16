@@ -263,6 +263,25 @@ import { renderViewerActions } from './viewerActions'                 // ↗ SQL
 | `renderCode` | `@rdub/file-tree/renderers/code` | `highlight.js` |
 | `renderJsonTree` | `@rdub/file-tree/renderers/json` | `jq-web` (optional, for jq filter only) |
 
+`renderJsonTree` also comes in a parameterized form, for annotating domain-specific scalars (epoch timestamps, byte counts, ids) without forking the viewer. Same `defaultNode` convention as `renderCell` below:
+
+```tsx
+import { makeJsonTreeRenderer } from '@rdub/file-tree/renderers/json'
+
+const TS_KEYS = new Set(['start', 'end', 'requested_at'])
+
+const renderJson = makeJsonTreeRenderer({
+  renderValue: ({ key, value, defaultNode }) =>
+    key !== undefined && TS_KEYS.has(key) && typeof value === 'number'
+      ? <>{defaultNode} <span className="dim">{new Date(value * 1000).toISOString()}</span></>
+      : defaultNode,
+})
+
+<FileTree store={store} routeBase="/files" jsonRenderer={renderJson} />
+```
+
+`renderValue` is called for every string / number / boolean / null, with `{ value, path, key?, defaultNode }` — `path` is the jq path (`.foo[0].bar`), `key` is the enclosing object key (unset for array elements). Containers aren't passed through it; they own the disclosure carets.
+
 The peers are declared `optional` in `peerDependenciesMeta`, so installing only what you import is enough. Source lives at [`src/renderers/`](src/renderers/) — copy + tweak if you want different styling, paginate sizes, or language set.
 
 `jq-web` is an Emscripten WASM module that expects to fetch `jq.wasm` from the same URL as its `jq.js`. In Vite/webpack apps that's usually a copy step — easiest path is to copy `node_modules/jq-web/jq.wasm` to your `public/` dir (or use a `copy-files`/`copy-webpack-plugin` equivalent). Without that, typing in the `jq` input surfaces a `WebAssembly.instantiate()` error; the search / expand-all / copy-path features still work.
