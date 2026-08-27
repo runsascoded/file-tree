@@ -9,6 +9,13 @@ const baseURL = `http://localhost:${PORT}`
 // hermetic half with no secrets and no network.
 const mockOnly = !!process.env.E2E_MOCK_ONLY
 
+// Which Chromium to drive. Default is Playwright's own build, which it
+// downloads into `~/Library/Caches/ms-playwright` — that's what CI does.
+// `E2E_CHANNEL=chrome` runs against an already-installed Chrome instead:
+// same engine, nothing to fetch, and a working local `e2e` on a machine
+// where that download won't complete.
+const channel = process.env.E2E_CHANNEL
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -23,7 +30,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], ...(channel ? { channel } : {}) },
     },
   ],
   webServer: [

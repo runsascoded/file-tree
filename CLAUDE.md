@@ -37,9 +37,11 @@ guardrails.
 
 ```bash
 pnpm install
-pnpm test            # 9/9 conformance
+pnpm test            # vitest: store conformance + temporal inference
 pnpm typecheck
 pnpm build           # tsup → dist/
+pnpm e2e:mock        # what CI runs (hermetic; needs Playwright's chromium)
+pnpm e2e:chrome      # same, against installed Chrome — no browser download
 
 cd site && pnpm install && pnpm dev    # http://localhost:8731/
 ```
