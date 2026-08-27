@@ -16,6 +16,13 @@ export const DEMO_FIXTURE = {
   'data/2024/q2.csv': 'date,value\n2024-04-01,180\n2024-05-01,220\n2024-06-01,260\n',
   'data/2025/q1.csv': 'date,value\n2025-01-01,300\n2025-02-01,330\n2025-03-01,360\n',
   'data/2025/q2.csv': 'date,value\n2025-04-01,400\n2025-05-01,440\n',
+  // FK-link targets: `MockDemo`'s parquet `renderCell` turns the
+  // `region` column into links to these, so a cell click navigates to
+  // another file in the same tree.
+  'docs/regions/nyc.md': '# NYC\n\nNew York City. Timezone `America/New_York`; ' +
+    'the `events.parquet` rows tagged `nyc` land here.\n',
+  'docs/regions/sfo.md': '# SFO\n\nSan Francisco. Timezone `America/Los_Angeles`.\n',
+  'docs/regions/lax.md': '# LAX\n\nLos Angeles. Timezone `America/Los_Angeles`.\n',
   'logs/2026-01-01.log': '[INFO] System started\n[DEBUG] Connected to db\n',
   'logs/2026-01-02.log': '[INFO] Processing batch 1\n[INFO] Processing batch 2\n',
   // Deliberately 4 levels deep (root → server → tls → ciphers): the JSON

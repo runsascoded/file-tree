@@ -40,7 +40,8 @@ test.describe('MockDemo', () => {
 
     await expect(page.getByRole('link', { name: 'intro.md', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*guide\/$/ })).toBeVisible()
-    await expect(page.getByText('2 entries')).toBeVisible()
+    await expect(page.getByRole('link', { name: /^📁\s*regions\/$/ })).toBeVisible()
+    await expect(page.getByText('3 entries')).toBeVisible()
 
     const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' })
     await expect(breadcrumb.getByRole('link', { name: 'root', exact: true })).toBeVisible()
@@ -121,13 +122,43 @@ test.describe('MockDemo', () => {
     ])
 
     // `dt` / `event_ts` are bare INT64s read as epochs; `recorded` is
-    // annotated. `id` is a bare INT64 *inside* the epoch window that
-    // must stay raw — the name gate is the only thing keeping it a
-    // number.
+    // annotated. `id` stays a *number* — it's a bare INT64 sitting
+    // inside the epoch window, and only the name gate keeps it from
+    // being read as a date. Its `◆` and the `$` on `value` come from
+    // the demo's `renderCell`, so this row pins the hook too.
     expect(await parquetRow(page, 0)).toEqual([
       '2026-04-25 00:00Z', '2026-04-25 00:00:00Z', '2026-04-25 00:00:00Z',
-      '1777075200000', 'nyc', '0',
+      '◆ 1777075200000', 'nyc', '$0.00',
     ])
+  })
+
+  test('a parquet cell can link to another file in the tree', async ({ page }) => {
+    await page.goto('/mock/samples/events.parquet')
+
+    // `renderCell` turns `region` into an FK: the first row is `nyc`,
+    // and the link resolves within the same `<FileTree>` route rather
+    // than reloading the app.
+    const cell = page.locator('table').last().locator('tbody tr').first().locator('td').nth(4)
+    await cell.getByRole('link').click()
+
+    await expect(page).toHaveURL(/\/mock\/docs\/regions\/nyc\.md$/)
+    await expect(page.getByRole('heading', { name: 'NYC' })).toBeVisible()
+  })
+
+  test('decorates directory-listing cells', async ({ page }) => {
+    await page.goto('/mock/data/2024')
+
+    // `renderCell` (dir listing) appends a label derived from the key,
+    // wrapping the node the listing would have rendered — so the link
+    // itself still reads as the bare filename.
+    const names = await page.locator('tbody tr td:first-child').allTextContents()
+    expect(names.map(t => t.replace(/\s+/g, ' ').trim())).toEqual([
+      'q1.csv Q1 2024',
+      'q2.csv Q2 2024',
+    ])
+    // The label is appended *around* the default node, so the link is
+    // still just the filename — decorating, not replacing.
+    await expect(page.getByRole('link', { name: 'q1.csv', exact: true })).toBeVisible()
   })
 
   test('shows error for non-existent path', async ({ page }) => {
