@@ -3,7 +3,7 @@ import { FileTree } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import { DEMO_FIXTURE } from '../fixtures/demo'
 import { renderMarkdown } from '@rdub/file-tree/renderers/markdown'
-import { makeParquetViewer } from '@rdub/file-tree/renderers/parquet'
+import { makeParquetViewer, type ParquetViewerOptions } from '@rdub/file-tree/renderers/parquet'
 import { renderJsonTree } from '@rdub/file-tree/renderers/json'
 import { CsvViewer } from '@rdub/file-tree/renderers/csv'
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
@@ -19,17 +19,31 @@ import { renderViewerActions } from '../viewerActions'
  *  `region` is the interesting column — a `BYTE_ARRAY`, so it's left
  *  alone by the built-in numeric alignment, and `cellProps` centers it
  *  to show an override reaching the `<td>` itself rather than a wrapper
- *  inside it. `renderHeader` marks it so the two are visibly paired. */
+ *  inside it. `renderHeader` marks it so the two are visibly paired.
+ *
+ *  Both hooks gate on `path` as well as column name: one viewer serves
+ *  the whole tree, so a `region` column in some *other* file wouldn't
+ *  pick up this file's presentation. */
+const EVENTS = 'samples/events.parquet'
+
 const ParquetViewer = makeParquetViewer({
-  cellProps: col => (col.name === 'region' ? { style: { textAlign: 'center', opacity: 0.85 } } : undefined),
-  headerProps: col => (col.name === 'region' ? { style: { textAlign: 'center' } } : undefined),
-  renderHeader: ({ column, stats, defaultNode }) =>
-    column.name === 'region'
+  cellProps: (col, path) => (path === EVENTS && col.name === 'region' ? { style: { textAlign: 'center', opacity: 0.85 } } : undefined),
+  headerProps: (col, path) => (path === EVENTS && col.name === 'region' ? { style: { textAlign: 'center' } } : undefined),
+})
+
+/** The other way in: `<FileTree parquetOptions>` reaches the same hooks
+ *  without a bound component, which is what you want once a hook closes
+ *  over live state — the renderer type stays stable, so the table isn't
+ *  remounted. Merged under whatever `makeParquetViewer` already baked
+ *  in, so the two compose as long as they don't set the same key. */
+const parquetOptions: ParquetViewerOptions = {
+  renderHeader: ({ column, stats, path, defaultNode }) =>
+    path === EVENTS && column.name === 'region'
       ? <>{defaultNode}<span style={{ opacity: 0.5, fontWeight: 400 }}> (hooked)</span></>
       : stats?.nullCount
         ? <>{defaultNode}<span style={{ opacity: 0.5, fontWeight: 400 }}> ∅</span></>
         : defaultNode,
-})
+}
 
 export function MockDemo() {
   const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100 }), [])
@@ -41,6 +55,7 @@ export function MockDemo() {
         title="MockStore demo"
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
+        parquetOptions={parquetOptions}
         jsonRenderer={renderJsonTree}
         csvRenderer={CsvViewer}
         notebookRenderer={NotebookViewer}

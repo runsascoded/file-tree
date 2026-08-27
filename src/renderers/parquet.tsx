@@ -152,7 +152,11 @@ const TH_STYLE: CSSProperties = { padding: '0.3em 0.6em', textAlign: 'left', bor
  *  component type, so calling it during render would remount the table
  *  on every pass. `ParquetViewer` is this with no options. */
 export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
-  return function BoundParquetViewer(props: { store: Store; path: string; usePersistedState?: PersistedState }) {
+  // Declares the options too, because it forwards them: anything
+  // `<FileTree parquetOptions>` hands down lands in `props` and reaches
+  // the viewer. `opts` is spread last, so what was baked in at
+  // construction still wins.
+  return function BoundParquetViewer(props: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
     return <ParquetViewer {...props} {...opts} />
   }
 }

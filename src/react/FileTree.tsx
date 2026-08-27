@@ -9,7 +9,7 @@
  *     <FileTree store={store} routeBase="/files" />
  *   } />
  */
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ComponentProps, type ComponentType, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Store } from '../types'
 import { Breadcrumb, type Crumb, type CrumbRenderer } from './Breadcrumb'
@@ -43,10 +43,22 @@ export type MarkdownRenderer = (source: string) => ReactNode
  *  `usePersistedState` is injected by `<FileTree>` and threads its
  *  `usePersistedState` prop down — use it for any state the renderer
  *  wants to persist (e.g. `?page=N`). Renderers that don't care
- *  ignore the prop. */
-export type ParquetRenderer = ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>
+ *  ignore the prop; likewise the `parquetOptions` spread onto every
+ *  renderer, which a custom one is free to ignore. */
+export interface ParquetRendererProps { store: Store; path: string; usePersistedState?: PersistedState }
+export type ParquetRenderer = ComponentType<ParquetRendererProps>
 
-export interface FileTreeProps {
+/** Whatever `R` accepts *beyond* the three props `<FileTree>` supplies
+ *  itself — i.e. exactly what's left to configure. Collapses to `never`
+ *  for a renderer that takes nothing extra, so handing options to one
+ *  that can't use them is a compile error rather than a bag of unknown
+ *  props spread onto someone's component. */
+export type ParquetOptionsOf<R extends ParquetRenderer> =
+  keyof Omit<ComponentProps<R>, keyof ParquetRendererProps> extends never
+    ? never
+    : Omit<ComponentProps<R>, keyof ParquetRendererProps>
+
+export interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
   store: Store
   /** Path the browser is mounted under, e.g. `/files`. */
   routeBase: string
@@ -68,7 +80,18 @@ export interface FileTreeProps {
   /** Optional parquet renderer (see `ParquetRenderer`). When set,
    *  `.parquet`/`.pqt` paths render via this component (typically a
    *  hyparquet-backed table). */
-  parquetRenderer?: ParquetRenderer
+  parquetRenderer?: R
+  /** Options forwarded to `parquetRenderer`, so customizing a cell
+   *  doesn't require wrapping the viewer in a component of your own.
+   *
+   *  Prefer this over `makeParquetViewer` when a hook must close over
+   *  something that changes — a format toggle, or a lookup fetched
+   *  separately from the file. The renderer type stays stable across
+   *  renders, so the table isn't remounted, whereas calling the factory
+   *  inside render mints a new component type each pass. Styling that
+   *  CSS can own (color, alignment, theme) belongs in CSS, not here.
+   *  Options baked in by `makeParquetViewer` win over these. */
+  parquetOptions?: ParquetOptionsOf<R>
   /** Optional JSON renderer. When set, `.json` files render via this fn
    *  (typically a collapsible tree) instead of plaintext `<pre>`. The
    *  second arg is the resolved `usePersistedState` hook (forward it
@@ -125,7 +148,7 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps) {
+export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps<R>) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -158,12 +181,12 @@ export function FileTree({ store, routeBase, rootPrefix = '', extraTexty, title,
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} rightSlot={right} renderCrumb={renderCrumb} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState }) {
   switch (parsed.kind) {
     case 'dir':
       return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
@@ -196,7 +219,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
     case 'parquet': {
       if (!parquetRenderer) return <UnsupportedView label="Parquet preview" />
       const Component = parquetRenderer
-      return <Component store={store} path={parsed.path} usePersistedState={usePersistedState} />
+      return <Component store={store} path={parsed.path} usePersistedState={usePersistedState} {...parquetOptions} />
     }
     case 'notebook': {
       if (!notebookRenderer) return <UnsupportedView label="Notebook preview" />

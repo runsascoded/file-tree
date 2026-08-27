@@ -370,7 +370,7 @@ const deviceName = (key: string) => DEVICES[/(?:^|\/)awair-(\d+)\/?$/.exec(key)?
 
 Ignoring `defaultNode` gives you a total override of that cell. For replacing the listing wholesale (a different table engine, sortable columns, virtualization), fork `src/react/DirListing.tsx` — it's ~230 lines with no private imports.
 
-The parquet viewer takes the same hook, one table down, via `makeParquetViewer`:
+The parquet viewer takes the same hook, one table down. Either bind the options to a component up front:
 
 ```tsx
 import { makeParquetViewer } from '@rdub/file-tree/renderers/parquet'
@@ -383,7 +383,28 @@ const ParquetViewer = makeParquetViewer({          // module scope, not inside r
 })
 ```
 
-`renderCell` gets `{ value, column, row, rowIndex, defaultNode }` — `column` carries `{ name, physicalType, logicalType, timeUnit, convertedType }`, and `rowIndex` is absolute within the file, not within the page.
+…or hand them to `<FileTree>` and skip the binding:
+
+```tsx
+<FileTree parquetRenderer={ParquetViewer} parquetOptions={{ renderCell }} />
+```
+
+The two differ in one way that matters: `makeParquetViewer` mints a **component type**, so it belongs at module scope — calling it inside render produces a new type every pass, which remounts the table and drops its row-group cache. `parquetOptions` is just props on a stable type, so it's the one to reach for when a hook has to close over something that changes: a format toggle (raw epochs vs. formatted, bytes vs. MB — CSS can restyle a cell but can't rewrite its text), or data that isn't in the file, like an id→name lookup you fetched separately. Presentation that CSS *can* own — colors, alignment, theme — should stay in CSS; see [Theming](#theming). Options baked in by the factory win over `parquetOptions`, so the two compose as long as they don't set the same key.
+
+`renderCell` gets `{ value, column, row, rowIndex, path, defaultNode }` — `column` carries `{ name, physicalType, logicalType, timeUnit, convertedType }`, and `rowIndex` is absolute within the file, not within the page.
+
+`path` is the file being viewed, so **one module-scope viewer covers a whole tree** of unrelated schemas — you dispatch inside the hook rather than minting a viewer per file:
+
+```tsx
+const ParquetViewer = makeParquetViewer({
+  renderCell: ({ path, column, value, defaultNode }) =>
+    path.startsWith('records/') && CURRENCY_COLS.has(column.name) && typeof value === 'number'
+      ? usd.format(value)
+      : defaultNode,
+})
+```
+
+`renderHeader` receives `path` too, and `cellProps` / `headerProps` take it as a second argument (`(col, path) => …`).
 
 Presentation stops at the cell's *contents*, so three more options cover the column itself:
 
@@ -391,8 +412,8 @@ Presentation stops at the cell's *contents*, so three more options cover the col
 makeParquetViewer({
   // merged over the viewer's own <td> / <th> style — no wrapper element,
   // so the cell keeps its own ellipsis behaviour
-  cellProps:   col => col.name === 'note' ? { style: { textAlign: 'center' } } : undefined,
-  headerProps: col => col.name === 'note' ? { style: { textAlign: 'center' } } : undefined,
+  cellProps:   (col, path) => col.name === 'note' ? { style: { textAlign: 'center' } } : undefined,
+  headerProps: (col, path) => col.name === 'note' ? { style: { textAlign: 'center' } } : undefined,
   // stats are the current row group's, straight from the footer — not
   // reconstructible from the decoded rows a consumer sees
   renderHeader: ({ column, stats, defaultNode }) =>
