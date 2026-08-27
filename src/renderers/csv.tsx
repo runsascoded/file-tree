@@ -87,7 +87,10 @@ export function CsvViewer({ store, path, delimiter }: { store: Store; path: stri
       <div style={{ overflowX: 'auto', maxHeight: '70vh', overflowY: 'auto', border: '1px solid rgba(127,127,127,0.3)', borderRadius: 4 }}>
         <table style={{ borderCollapse: 'collapse', fontSize: '0.82em', fontFamily: 'ui-monospace, monospace' }}>
           <thead>
-            <tr style={{ position: 'sticky', top: 0, background: 'var(--bg, #181818)' }}>
+            {/* `Canvas` (the UA document background) rather than a
+                hardcoded dark fallback, which rendered a black bar in a
+                light-themed host that didn't define `--bg`. */}
+            <tr style={{ position: 'sticky', top: 0, zIndex: 1, background: 'Canvas' }}>
               {header.map((c, i) => (
                 <th key={i} style={{ padding: '0.3em 0.6em', textAlign: 'left', borderBottom: '1px solid rgba(127,127,127,0.4)', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   {c}

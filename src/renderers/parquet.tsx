@@ -426,7 +426,11 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
       <div style={{ overflowX: 'auto', maxHeight: '70vh', overflowY: 'auto', border: '1px solid rgba(127,127,127,0.3)', borderRadius: 4 }}>
         <table style={{ borderCollapse: 'collapse', fontSize: '0.82em', fontFamily: 'ui-monospace, monospace' }}>
           <thead>
-            <tr style={{ position: 'sticky', top: 0, background: 'rgba(127,127,127,0.15)' }}>
+            {/* The tint has to sit on an *opaque* base or scrolled rows
+                show through the sticky header. `Canvas` is the UA's
+                document background, so it tracks `color-scheme` and
+                keeps the header theme-neutral like everything else. */}
+            <tr style={{ position: 'sticky', top: 0, zIndex: 1, background: 'linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas' }}>
               {schema.map(c => {
                 const st = colStyles.get(c.name)
                 const stats = rg.stats.get(c.name)
