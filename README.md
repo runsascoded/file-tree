@@ -437,6 +437,33 @@ Mixed units, out-of-window values, or a non-numeric in the column all fall back 
 
 To turn the heuristic off — annotated columns still format — use `makeParquetViewer({ inferTimestamps: false })`. `formatTemporal` / `inferTemporalFormat` are exported from the same subpath if you'd rather drive it yourself from a `renderCell`.
 
+### Row-group size is a browsing knob
+
+Rendering a page fetches **the whole row group** it lands in — parquet's unit of compression, so there's no sub-group slicing to be had. That makes the *writer's* row-group size the thing that decides how responsive browsing feels: pandas' `to_parquet` default puts ~1M rows in one group, which for a wide table is a ~10 MB download to look at row 1.
+
+If a file is meant to be browsed, write it in the ~50K-row neighbourhood:
+
+```python
+df.to_parquet(path, row_group_size=50_000)
+```
+
+A real case (`jc-taxes`' payment ledger, 1.7M rows) went from 2 groups of 11.4 MB to 35 of ~650 KB — a 17× smaller fetch per view, at the cost of ~4 MB more file (smaller groups compress slightly worse). The row-group table under the pager shows how a given file is laid out, so it's easy to check.
+
+## Theming
+
+The library ships no CSS and defines no palette. Every surface it draws is either inherited (text color, font) or a 50%-gray alpha — `rgba(127,127,127,0.08)` fills, `…,0.4)` borders — which reads correctly against a light *or* a dark background without knowing which it's on. So `<FileTree>` adopts the host page's theme rather than imposing one, and there's nothing to configure in the common case.
+
+The one thing it can't infer is a theme your app keeps in application state. If you have your own toggle, mirror it onto [`color-scheme`] at the root — that's what tells the browser which UA defaults to hand down, and it's what FileTree ends up inheriting:
+
+```ts
+document.documentElement.setAttribute('data-theme', theme)   // your styles
+document.documentElement.style.colorScheme = theme           // the UA's, and ours
+```
+
+Set only the first and a dark app gets a light-looking file tree: your CSS recolors your components, but the UA defaults FileTree inherits are still the light ones.
+
+[`color-scheme`]: https://developer.mozilla.org/en-US/docs/Web/CSS/color-scheme
+
 ## Subpath exports
 
 | Path | What |
