@@ -42,6 +42,10 @@ export interface ParquetCellCtx {
   row: Record<string, unknown>
   /** Absolute row index within the file, not within the page. */
   rowIndex: number
+  /** Path of the file being viewed, so one module-scope renderer can
+   *  dispatch across a tree of unrelated schemas rather than needing a
+   *  viewer per file. */
+  path: string
   /** What the viewer would have rendered for this cell. */
   defaultNode: ReactNode
 }
@@ -65,6 +69,8 @@ export interface ParquetHeaderCtx {
   /** Stats for the row group currently on screen, when the footer
    *  carries them — so the range moves as you page. */
   stats?: ParquetColumnStats
+  /** Path of the file being viewed (see `ParquetCellCtx['path']`). */
+  path: string
   /** What the viewer would have rendered for this header. */
   defaultNode: ReactNode
 }
@@ -73,7 +79,7 @@ export type ParquetHeaderRenderer = (ctx: ParquetHeaderCtx) => ReactNode
 
 /** Attributes merged over a column's default `<td>` / `<th>` styling.
  *  Returning nothing leaves the default untouched. */
-export type ParquetColumnProps = (col: ParquetColumn) => { style?: CSSProperties; className?: string } | void
+export type ParquetColumnProps = (col: ParquetColumn, path: string) => { style?: CSSProperties; className?: string } | void
 
 export interface ParquetViewerOptions {
   renderCell?: ParquetCellRenderer
@@ -307,8 +313,8 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
       // right-aligning it would just detach it from its header.
       const numeric = alignNumeric && !temporal.has(c.name) && c.physicalType !== undefined && NUMERIC_TYPES.has(c.physicalType)
       const align: CSSProperties = numeric ? { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } : {}
-      const cp = cellProps?.(c) || {}
-      const hp = headerProps?.(c) || {}
+      const cp = cellProps?.(c, path) || {}
+      const hp = headerProps?.(c, path) || {}
       out.set(c.name, {
         cell: { ...TD_STYLE, ...align, ...cp.style },
         header: { ...TH_STYLE, ...align, ...hp.style },
@@ -317,7 +323,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
       })
     }
     return out
-  }, [meta, temporal, alignNumeric, cellProps, headerProps])
+  }, [meta, temporal, alignNumeric, cellProps, headerProps, path])
 
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (!meta) return <div style={{ opacity: 0.6 }}>reading parquet metadata…</div>
@@ -424,7 +430,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                 const defaultNode = title ? <span title={title}>{c.name}</span> : c.name
                 return (
                   <th key={c.name} style={st?.header ?? TH_STYLE} className={st?.headerClass}>
-                    {renderHeader ? renderHeader({ column: c, ...(stats ? { stats } : {}), defaultNode }) : defaultNode}
+                    {renderHeader ? renderHeader({ column: c, ...(stats ? { stats } : {}), path, defaultNode }) : defaultNode}
                   </th>
                 )
               })}
@@ -442,7 +448,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                     const st = colStyles.get(c.name)
                     return (
                       <td key={c.name} style={st?.cell ?? TD_STYLE} className={st?.cellClass}>
-                        {renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, defaultNode }) : defaultNode}
+                        {renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode}
                       </td>
                     )
                   })}
