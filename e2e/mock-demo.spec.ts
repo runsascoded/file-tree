@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
 
+/** One row of the parquet table as its cell strings. `which` picks the
+ *  header row or a 0-indexed body row. */
+async function parquetRow(page: Page, which: 'header' | number): Promise<string[]> {
+  const table = page.locator('table').last()
+  const row = which === 'header' ? table.locator('thead tr') : table.locator('tbody tr').nth(which)
+  return (await row.locator(which === 'header' ? 'th' : 'td').allTextContents()).map(t => t.trim())
+}
+
 /** Whole JSON tree as one normalized line — carets included, so
  *  open/closed state is part of the assertion. Collapsed containers
  *  show as `{ N keys }` / `[ N items ]`. */
@@ -99,6 +107,27 @@ test.describe('MockDemo', () => {
     await page.goto('/mock/config.json')
     await page.getByTitle('Collapse all').click()
     expect(await jsonTree(page)).toBe('▸{ 3 keys }')
+  })
+
+  test('renders a parquet file, with inferred timestamps and column hooks', async ({ page }) => {
+    await page.goto('/mock/samples/events.parquet')
+
+    await expect(page.getByText('240 rows · 6 columns · 1 row group · 5.4 KB')).toBeVisible()
+
+    // `region` picks up `renderHeader` — and the hook is gated on `path`,
+    // so this is also the assertion that `path` reaches the ctx.
+    expect(await parquetRow(page, 'header')).toEqual([
+      'dt', 'event_ts', 'recorded', 'id', 'region (hooked)', 'value',
+    ])
+
+    // `dt` / `event_ts` are bare INT64s read as epochs; `recorded` is
+    // annotated. `id` is a bare INT64 *inside* the epoch window that
+    // must stay raw — the name gate is the only thing keeping it a
+    // number.
+    expect(await parquetRow(page, 0)).toEqual([
+      '2026-04-25 00:00Z', '2026-04-25 00:00:00Z', '2026-04-25 00:00:00Z',
+      '1777075200000', 'nyc', '0',
+    ])
   })
 
   test('shows error for non-existent path', async ({ page }) => {
