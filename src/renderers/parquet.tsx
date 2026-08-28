@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Store } from '../types'
 import {
-  NUMERIC_TYPES, useAllRows, useParquetMeta, useRowGroup,
+  isSortedBy, NUMERIC_TYPES, parsePredicate, pruneRowGroups, useAllRows, useParquetMeta, useRowGroup,
   type ParquetColumn, type ParquetColumnStats, type ParquetMeta, type RowGroupInfo,
 } from './parquetData'
 
@@ -33,7 +33,7 @@ export type { ParquetColumn, ParquetColumnStats, ParquetMeta, RowGroupInfo } fro
 import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
-import { ColumnPicker, useColumnVisibility } from './tableControls'
+import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter } from './tableControls'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 import {
   resolveColStyles, TD_STYLE, TH_STYLE,
@@ -145,6 +145,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   const { rows: rgRows, error: rgError } = useRowGroup(store, path, meta, page)
   const { rows: allRows, error: allError } = useAllRows(store, path, meta, smallTable)
   const sort = useSort(usePersistedState)
+  const [filter, setFilter] = useFilter(usePersistedState)
   const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns)
   const error = metaError ?? (smallTable ? allError : rgError)
 
@@ -161,7 +162,20 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // The rows in play: everything (sorted) in small-table mode, the
   // current row group otherwise.
   const sortedAll = useSortedRows(smallTable ? allRows : null, sort, sortComparators, meta?.schema)
-  const rows = smallTable ? sortedAll : rgRows
+  const filteredAll = useMemo(
+    () => filterRows(sortedAll, filter, visible),
+    [sortedAll, filter, visible])
+  const rows = smallTable ? filteredAll : rgRows
+
+  // Above the threshold there's no table to filter — but a *comparison*
+  // can still be answered from the footer, which is already loaded. So
+  // `dt >= 2026-01-01` prunes row groups whose min/max can't contain a
+  // match, without decoding any of them. A bare word can't: a substring
+  // says nothing about a range.
+  const predicate = smallTable ? null : parsePredicate(filter)
+  const prunedGroups = useMemo(
+    () => (predicate && meta ? pruneRowGroups(meta.rowGroups, predicate) : null),
+    [predicate?.column, predicate?.op, predicate?.value, meta])
 
   const temporal = useMemo(
     () => (meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : new Map<string, TemporalFormat>()),
@@ -187,11 +201,49 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // isn't known until inference has run over the sampled values.
   const allColumns = rawSchema.map(c => (temporal.has(c.name) ? { ...c, kind: 'temporal' as const } : c))
   const schema = allColumns.filter(c => visible.includes(c.name))
+
+  // Two different filters behind one box, and the placeholder says
+  // which you're getting: everything is in memory below the threshold,
+  // so any substring works; above it only a comparison can be answered,
+  // and only from the footer.
+  const FilterBar = () => (
+    <p style={{ opacity: 0.8, fontSize: '0.9em', margin: '0 0 0.5em', display: 'flex', alignItems: 'center', gap: '0.6em', flexWrap: 'wrap' }}>
+      <FilterInput
+        value={filter}
+        onChange={v => { setFilter(v); setRgPage(0); setPage(0) }}
+        placeholder={smallTable ? 'filter rows' : 'filter (e.g. dt >= 2026-01-01)'}
+        {...(smallTable && sortedAll ? { count: { shown: rows?.length ?? 0, total: sortedAll.length } } : {})}
+      />
+      {predicate && prunedGroups && (
+        <span style={{ opacity: 0.7 }}>
+          <b>{prunedGroups.length}</b> / {rowGroups.length} row groups can match
+          {isSortedBy(meta, predicate.column) && <> · file is sorted by <code>{predicate.column}</code></>}
+        </span>
+      )}
+      {!smallTable && !predicate && filter.trim() !== '' && (
+        <span style={{ opacity: 0.7 }}>
+          streaming — only comparisons (<code>col &gt;= x</code>) can be answered without the whole file
+        </span>
+      )}
+    </p>
+  )
   if (rowGroups.length === 0) {
     return <div style={{ opacity: 0.7 }}>parquet file has no row groups</div>
   }
-  const rgIndex = Math.min(Math.max(page, 0), rowGroups.length - 1)
-  const rg = rowGroups[rgIndex]
+  // With a predicate active, the pager walks only the row groups that
+  // could match — `page` indexes *those*. Nothing else changes: each
+  // group still decodes on demand.
+  const activeGroups = prunedGroups ?? rowGroups
+  if (activeGroups.length === 0) {
+    return (
+      <>
+        <FilterBar />
+        <p style={{ opacity: 0.7 }}>No row group can contain a match for <code>{filter}</code>.</p>
+      </>
+    )
+  }
+  const rgIndex = Math.min(Math.max(page, 0), activeGroups.length - 1)
+  const rg = activeGroups[rgIndex]
   // In small-table mode the page is a slice of the *whole* file, so the
   // row offsets are absolute and there's no row group to cross. Sorting
   // makes this necessary as well as simpler: a sort is over every row,
@@ -216,11 +268,11 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   }
   const goNextPage = () => {
     if (clampedRgPage < rgPageCount - 1) setRgPage(clampedRgPage + 1)
-    else if (!smallTable && rgIndex < rowGroups.length - 1) setPage(rgIndex + 1)
+    else if (!smallTable && rgIndex < activeGroups.length - 1) setPage(rgIndex + 1)
   }
   const canGoPrev = clampedRgPage > 0 || (!smallTable && rgIndex > 0)
   const canGoNext = (rows !== null && clampedRgPage < rgPageCount - 1)
-    || (!smallTable && rgIndex < rowGroups.length - 1)
+    || (!smallTable && rgIndex < activeGroups.length - 1)
 
   return (
     <>
@@ -278,7 +330,9 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
         </details>
       )}
 
-      <Pager rg={rg} rgCount={rowGroups.length} setPage={setPage} totalRows={totalRows} />
+      <FilterBar />
+
+      <Pager rg={rg} rgCount={activeGroups.length} setPage={setPage} totalRows={totalRows} />
 
       <RowPager
         canGoPrev={canGoPrev}

@@ -217,7 +217,19 @@ function useParquetOptions(): ParquetViewerOptions {
  *
  *  Module scope so `match` isn't rebuilt every render; `id` is what the
  *  lazy component is cached under, so it has to be stable. */
+/** The same parquet file in **streaming mode**, so the other half of
+ *  small-table mode is demoed on real data: above the threshold there's
+ *  no table to filter, but a *comparison* can still be answered from
+ *  the footer, pruning row groups that provably can't match. Try
+ *  `id >= 1777075200500` on `samples/events.pqt`. */
+const StreamingParquetViewer = makeParquetViewer({ fullLoadMaxBytes: 0, columnPicker: true })
+
 const VIEWERS: readonly ViewerEntry<never>[] = [
+  {
+    id: 'parquet-streaming',
+    match: ({ ext }) => ext === 'pqt',
+    load: async () => ({ default: StreamingParquetViewer }),
+  },
   {
     id: 'log',
     match: ({ ext }) => ext === 'log',

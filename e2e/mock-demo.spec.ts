@@ -318,6 +318,33 @@ test.describe('MockDemo', () => {
     expect((await parquetRow(page, 0))[0]).toBe('2026-04-25 00:00Z')
   })
 
+  test('filters a small table, counting matches', async ({ page }) => {
+    await page.goto('/mock/samples/events.parquet?q=nyc')
+    // 240 rows cycling nyc/sfo/lax.
+    await expect(page.getByText('80 / 240', { exact: true })).toBeVisible()
+    expect((await parquetRow(page, 0))[4]).toBe('nyc')
+  })
+
+  test('above the threshold, a comparison prunes row groups from the footer', async ({ page }) => {
+    // `.pqt` is the same bytes registered with `fullLoadMaxBytes: 0`, so
+    // this is the streaming path. There's no table to filter — but a
+    // comparison can still be answered from statistics already loaded,
+    // without decoding any column data.
+    await page.goto('/mock/samples/events.pqt?q=id >= 1777075200500')
+    await expect(page.getByText('1 / 1 row groups can match')).toBeVisible()
+
+    // A value outside every range prunes everything, and says so
+    // instead of rendering an empty table.
+    await page.goto('/mock/samples/events.pqt?q=id >= 9999999999999')
+    await expect(page.getByText('0 / 1 row groups can match')).toBeVisible()
+    await expect(page.getByText(/^No row group can contain a match/)).toBeVisible()
+
+    // A bare word is not a comparison: a substring says nothing about a
+    // range, so nothing can be pruned and the viewer says why.
+    await page.goto('/mock/samples/events.pqt?q=nyc')
+    await expect(page.getByText(/only comparisons/)).toBeVisible()
+  })
+
   test('a parquet cell can link to another file in the tree', async ({ page }) => {
     await page.goto('/mock/samples/events.parquet')
 

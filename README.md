@@ -438,6 +438,14 @@ makeParquetViewer({
 })
 ```
 
+**Filtering.** Below the threshold it's a substring match over the visible columns, sharing `?q=` with the directory listing's filter and the JSON tree's search — the same affordance, not a third idiom.
+
+Above it, one thing still works, and it's the one that matters on a large file: a **comparison** — `dt >= 2026-01-01`, `id = 42` — is answered from row-group statistics in the footer, which is already loaded. Groups whose `min`/`max` provably can't contain a match are skipped without decoding any column data, and the pager walks only the survivors. On a file the writer sorted by that column the ranges are disjoint, so a point lookup typically reaches one group out of hundreds; the viewer says so when `sorting_columns` records it.
+
+A bare word can't do this — a substring says nothing about a range — and the viewer says that rather than silently doing nothing. Pruning is conservative in the only direction that matters: a group with missing or undecodable statistics is always kept.
+
+`parsePredicate` / `pruneRowGroups` / `rowGroupMatches` / `isSortedBy` are exported from `@rdub/file-tree/renderers/parquetData` for consumers building their own.
+
 **Sorting, below a size threshold.** Both viewers stream — CSV by byte ranges, parquet by row group — and sorting needs the *whole* table, so on a large file it isn't a trade-off, it's a hang. `fullLoadMaxBytes` (default ~5 MB) is the line: at or below it the file is loaded once and every column becomes sortable, with the sort in the URL (`?sort=name`, `?sort=-name`) and an exact row count. Above it the viewer streams as before and **the sort controls are absent, not disabled** — a greyed-out arrow invites a click and teaches nothing, while a line saying `2.1 GB — streaming byte ranges` explains itself.
 
 Bytes rather than rows because it's the number a viewer knows *before* reading anything; a row count is only knowable after the decision it would inform. `0` never loads, `Infinity` always does. `sortComparators` overrides the default per column (numeric when both values parse as numbers — which matters for CSV, where lexical order puts `10` before `9` — dates by instant, else locale string order; nulls last in both directions).

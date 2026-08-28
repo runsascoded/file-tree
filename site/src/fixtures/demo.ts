@@ -74,4 +74,9 @@ export const DEMO_FIXTURE = {
   // Exercises the parquet viewer's timestamp inference — see
   // `./parquet.ts` for what each column is meant to prove.
   'samples/events.parquet': EVENTS_PARQUET,
+  // Same bytes, second extension: `MockDemo` registers `.pqt` with
+  // `fullLoadMaxBytes: 0` so the streaming half of small-table mode —
+  // row-group pruning from footer statistics — is demoed on real data
+  // rather than only unit-tested.
+  'samples/events.pqt': EVENTS_PARQUET,
 }

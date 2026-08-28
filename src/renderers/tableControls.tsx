@@ -111,3 +111,60 @@ export function ColumnPicker({ columns, vis }: { columns: readonly TableColumn[]
     </span>
   )
 }
+
+
+/** Free-text filter over the rows the viewer has.
+ *
+ *  Same idiom as the directory listing's filter and the JSON tree's
+ *  search — a plain box, matching anywhere, case-insensitive — rather
+ *  than a third thing to learn. Shares `?q=` with them for the same
+ *  reason: it's "the search box on this page", and a listing and a file
+ *  are never on screen together.
+ */
+export function useFilter(usePersistedState?: PersistedState): [string, (v: string) => void] {
+  const use = usePersistedState ?? defaultUseState
+  return use<string>('q', '')
+}
+
+/** Rows whose *visible* cells contain `q`.
+ *
+ *  Visible, not all: filtering on a column you've hidden produces rows
+ *  with no apparent reason to be there, which reads as a bug. */
+export function filterRows<R extends Record<string, unknown>>(
+  rows: R[] | null, q: string, columns: readonly string[],
+): R[] | null {
+  const needle = q.trim().toLowerCase()
+  if (!rows || !needle) return rows
+  return rows.filter(r => columns.some(c => {
+    const v = r[c]
+    return v !== null && v !== undefined && String(v).toLowerCase().includes(needle)
+  }))
+}
+
+export function FilterInput({ value, onChange, count, placeholder = 'filter' }: {
+  value: string
+  onChange: (v: string) => void
+  /** `matched / total`, shown when filtering. */
+  count?: { shown: number; total: number }
+  placeholder?: string
+}) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em' }}>
+      <input
+        type="search"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        spellCheck={false}
+        style={{
+          font: 'inherit', fontSize: '0.9em', padding: '0.15em 0.4em',
+          borderRadius: 3, border: '1px solid rgba(127,127,127,0.4)',
+          background: 'transparent', color: 'inherit', minWidth: '10em',
+        }}
+      />
+      {value.trim() !== '' && count && (
+        <span style={{ opacity: 0.7 }}>{count.shown.toLocaleString()} / {count.total.toLocaleString()}</span>
+      )}
+    </span>
+  )
+}

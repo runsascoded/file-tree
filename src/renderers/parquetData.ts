@@ -42,6 +42,14 @@ export interface ParquetColumnStats {
   nullCount?: number
 }
 
+/** One entry of a row group's declared sort order. Present only when
+ *  the writer recorded it — most don't. */
+export interface SortingColumn {
+  columnIdx: number
+  descending: boolean
+  nullsFirst: boolean
+}
+
 export interface RowGroupInfo {
   index: number
   numRows: number
@@ -51,6 +59,11 @@ export interface RowGroupInfo {
   compressedBytes: number | null
   /** Keyed by column name; empty when the writer wrote no statistics. */
   stats: Map<string, ParquetColumnStats>
+  /** Columns this row group is sorted by, if the writer said so. When a
+   *  file is sorted on a column, its row groups' ranges are disjoint and
+   *  ordered — so a predicate on that column prunes down to one or two
+   *  groups instead of scanning every footer range. */
+  sortingColumns: SortingColumn[]
 }
 
 export interface ParquetMeta {
@@ -127,6 +140,11 @@ export function useParquetMeta(store: Store, path: string): { meta: ParquetMeta 
             uncompressedBytes: Number(rg.total_byte_size),
             compressedBytes: rg.total_compressed_size != null ? Number(rg.total_compressed_size) : null,
             stats,
+            sortingColumns: (rg.sorting_columns ?? []).map(sc => ({
+              columnIdx: Number(sc.column_idx),
+              descending: !!sc.descending,
+              nullsFirst: !!sc.nulls_first,
+            })),
           })
           cum += numRows
         })
@@ -250,4 +268,80 @@ export function useAllRows(
   }, [store, path, meta, enabled])
 
   return { rows, error }
+}
+
+/** A comparison a row-group's footer statistics can be tested against.
+ *  Deliberately narrow: `min`/`max` can rule out a *range*, and nothing
+ *  else — a substring or regex tells you nothing about a range, so
+ *  pruning is only ever sound for these. */
+export interface Predicate {
+  column: string
+  op: '=' | '<' | '<=' | '>' | '>='
+  value: string
+}
+
+const PREDICATE_RE = /^\s*([^<>=\s]+)\s*(>=|<=|=|<|>)\s*(.+?)\s*$/
+
+/** `col=value`, `col>=3`, … or `null` when the text isn't a comparison
+ *  (which is the common case — a bare word is a substring search). */
+export function parsePredicate(text: string): Predicate | null {
+  const m = PREDICATE_RE.exec(text)
+  if (!m) return null
+  return { column: m[1]!, op: m[2] as Predicate['op'], value: m[3]! }
+}
+
+/** Byte arrays come back from the footer raw; a string column's bounds
+ *  are UTF-8. Anything undecodable is treated as unknown rather than
+ *  guessed at. */
+function statValue(v: unknown): unknown {
+  if (v instanceof Uint8Array) {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(v) } catch { return undefined }
+  }
+  return v
+}
+
+/** Numeric when both sides read as numbers, else string order — the
+ *  same rule the table's default sort uses, so pruning agrees with what
+ *  the reader sees. */
+function cmp(a: unknown, b: unknown): number {
+  const an = Number(a), bn = Number(b)
+  if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn
+  return String(a).localeCompare(String(b))
+}
+
+/** Could this row group contain a matching row?
+ *
+ *  Conservative in both directions that matter: a group with no
+ *  statistics for the column, or unreadable ones, is kept — pruning may
+ *  only ever remove groups that *provably* cannot match. */
+export function rowGroupMatches(rg: RowGroupInfo, p: Predicate): boolean {
+  const st = rg.stats.get(p.column)
+  if (!st) return true
+  const min = statValue(st.min)
+  const max = statValue(st.max)
+  switch (p.op) {
+    case '=':  return (min === undefined || cmp(min, p.value) <= 0) && (max === undefined || cmp(max, p.value) >= 0)
+    case '>':  return max === undefined || cmp(max, p.value) > 0
+    case '>=': return max === undefined || cmp(max, p.value) >= 0
+    case '<':  return min === undefined || cmp(min, p.value) < 0
+    case '<=': return min === undefined || cmp(min, p.value) <= 0
+  }
+}
+
+/** Row groups that could contain a match.
+ *
+ *  This is the one filter that works *above* the size threshold: it
+ *  reads only the footer, which is already loaded. On a file sorted by
+ *  the predicate's column the ranges are disjoint, so it typically
+ *  leaves one or two groups out of hundreds. */
+export function pruneRowGroups(rowGroups: readonly RowGroupInfo[], p: Predicate): RowGroupInfo[] {
+  return rowGroups.filter(rg => rowGroupMatches(rg, p))
+}
+
+/** Is the file sorted by this column, per the writer's own metadata?
+ *  Used to tell the reader *why* a filter was cheap. */
+export function isSortedBy(meta: ParquetMeta, column: string): boolean {
+  const idx = meta.schema.findIndex(c => c.name === column)
+  if (idx < 0 || meta.rowGroups.length === 0) return false
+  return meta.rowGroups.every(rg => rg.sortingColumns.some(sc => sc.columnIdx === idx))
 }

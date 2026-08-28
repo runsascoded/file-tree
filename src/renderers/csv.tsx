@@ -11,7 +11,7 @@ import { useMemo, useState } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
 import { PAGE_BYTES, useAllCsvRows, useCsvHeader, useCsvPage } from './csvData'
-import { ColumnPicker, useColumnVisibility } from './tableControls'
+import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter } from './tableControls'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 
 // Re-exported so the public subpath keeps every name it had; the
@@ -53,6 +53,7 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
   const { rows: pageRows, error: pageError } = useCsvPage(store, path, delimiter, page, smallTable ? null : total)
   const { rows: allRaw, error: allError } = useAllCsvRows(store, path, delimiter, smallTable)
   const sort = useSort(usePersistedState)
+  const [filter, setFilter] = useFilter(usePersistedState)
   const error = headerError ?? (smallTable ? allError : pageError)
 
   const allColumns: TableColumn[] = useMemo(() => (header ?? []).map(name => ({ name })), [header])
@@ -70,9 +71,12 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     () => allRaw?.map(r => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? '']))) ?? null,
     [allRaw, allColumns])
   const sortedKeyed = useSortedRows(keyed, sort, sortComparators, allColumns)
+  const filteredKeyed = useMemo(
+    () => filterRows(sortedKeyed, filter, visible),
+    [sortedKeyed, filter, visible])
   const allSorted = useMemo(
-    () => sortedKeyed?.map(o => allColumns.map(c => String(o[c.name] ?? ''))) ?? null,
-    [sortedKeyed, allColumns])
+    () => filteredKeyed?.map(o => allColumns.map(c => String(o[c.name] ?? ''))) ?? null,
+    [filteredKeyed, allColumns])
 
   const colStyles = useMemo(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
@@ -99,6 +103,16 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
         {' '}· {fmtSize(total)}
         {columnPicker && <> · <ColumnPicker columns={allColumns} vis={{ visible, ...vis }} /></>}
       </p>
+      {smallTable && (
+        <p style={{ opacity: 0.8, fontSize: '0.9em', margin: '0 0 0.5em' }}>
+          <FilterInput
+            value={filter}
+            onChange={setFilter}
+            placeholder="filter rows"
+            {...(sortedKeyed ? { count: { shown: rows?.length ?? 0, total: sortedKeyed.length } } : {})}
+          />
+        </p>
+      )}
       {!smallTable && (
         <p style={{ opacity: 0.6, fontSize: '0.85em', margin: '0 0 0.4em' }}>
           {fmtSize(total)} — streaming byte ranges; sorting needs the whole file.
