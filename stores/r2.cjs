@@ -42,6 +42,7 @@ function R2Store(bucket, opts = {}) {
     throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(", ")}`);
   };
   return {
+    describe: () => opts.bucketName ? `r2://${opts.bucketName}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : "/") : void 0,
     async list(prefix, opts2 = {}) {
       const p = prefix.endsWith("/") || prefix === "" ? prefix : `${prefix}/`;
       if (p === "" && allowedPrefixes && allowedPrefixes.length > 0 && !allowedPrefixes.some((ap) => ap === "")) {

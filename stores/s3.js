@@ -144,6 +144,9 @@ function S3Store(opts) {
     list: core.list,
     get: core.get,
     capabilities: { range: true },
+    // Names the bucket in the breadcrumb root, which otherwise reads
+    // "root" and hides the one thing the page can't otherwise tell you.
+    describe: () => `s3://${opts.bucket}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : "/"),
     // Static URL works for unsigned (public) buckets only — signed
     // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
     ...signer ? {} : { getUrl: (p) => core.buildUrl(p) },

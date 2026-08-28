@@ -26,6 +26,8 @@ interface MockStoreOptions {
     pageSize?: number;
     /** Default `lastModified` for files that don't specify one. */
     defaultLastModified?: string;
+    /** Label for the breadcrumb root (`Store.describe`). */
+    describe?: string;
 }
 type MockStoreInput = Record<string, string | Uint8Array | MockStoreFile>;
 declare function MockStore(input: MockStoreInput, opts?: MockStoreOptions): Store;

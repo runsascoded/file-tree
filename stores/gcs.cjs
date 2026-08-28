@@ -177,6 +177,9 @@ function GcsStore(opts) {
     list: core.list,
     get: core.get,
     capabilities: { range: true },
+    // Names the bucket in the breadcrumb root, which otherwise reads
+    // "root" and hides the one thing the page can't otherwise tell you.
+    describe: () => `gs://${opts.bucket}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : "/"),
     // Unsigned/public: browser can hit the URL directly. Bearer & HMAC
     // both need per-request auth (bearer can't go in a URL safely;
     // HMAC uses presign via `getDownloadUrl`).

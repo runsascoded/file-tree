@@ -21,6 +21,9 @@ function HttpStore(apiBase, opts = {}) {
       if (!res.ok) throw new Error(`list ${prefix}: ${res.status} ${await res.text()}`);
       return res.json();
     },
+    describe() {
+      return opts.describe;
+    },
     async get(path, range) {
       const params = new URLSearchParams({ path });
       const reqHeaders = { ...headers };

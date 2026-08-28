@@ -18,6 +18,7 @@ function R2Store(bucket, opts = {}) {
     throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(", ")}`);
   };
   return {
+    describe: () => opts.bucketName ? `r2://${opts.bucketName}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : "/") : void 0,
     async list(prefix, opts2 = {}) {
       const p = prefix.endsWith("/") || prefix === "" ? prefix : `${prefix}/`;
       if (p === "" && allowedPrefixes && allowedPrefixes.length > 0 && !allowedPrefixes.some((ap) => ap === "")) {
@@ -114,6 +115,9 @@ function HttpStore(apiBase, opts = {}) {
       if (!res.ok) throw new Error(`list ${prefix}: ${res.status} ${await res.text()}`);
       return res.json();
     },
+    describe() {
+      return opts.describe;
+    },
     async get(path, range) {
       const params = new URLSearchParams({ path });
       const reqHeaders = { ...headers };
@@ -175,6 +179,7 @@ function MockStore(input, opts = {}) {
     Object.entries(input).map(([k, v]) => [k, toFile(v, defaultLM)])
   );
   return {
+    describe: () => opts.describe,
     async list(prefix, listOpts = {}) {
       const p = prefix === "" || prefix.endsWith("/") ? prefix : `${prefix}/`;
       const dirs = /* @__PURE__ */ new Set();
@@ -426,6 +431,9 @@ function S3Store(opts) {
     list: core.list,
     get: core.get,
     capabilities: { range: true },
+    // Names the bucket in the breadcrumb root, which otherwise reads
+    // "root" and hides the one thing the page can't otherwise tell you.
+    describe: () => `s3://${opts.bucket}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : "/"),
     // Static URL works for unsigned (public) buckets only — signed
     // buckets need SigV4 presigning, surfaced via `getDownloadUrl` below.
     ...signer ? {} : { getUrl: (p) => core.buildUrl(p) },
@@ -492,6 +500,9 @@ function GcsStore(opts) {
     list: core.list,
     get: core.get,
     capabilities: { range: true },
+    // Names the bucket in the breadcrumb root, which otherwise reads
+    // "root" and hides the one thing the page can't otherwise tell you.
+    describe: () => `gs://${opts.bucket}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : "/"),
     // Unsigned/public: browser can hit the URL directly. Bearer & HMAC
     // both need per-request auth (bearer can't go in a URL safely;
     // HMAC uses presign via `getDownloadUrl`).

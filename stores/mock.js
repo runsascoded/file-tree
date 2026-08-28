@@ -22,6 +22,7 @@ function MockStore(input, opts = {}) {
     Object.entries(input).map(([k, v]) => [k, toFile(v, defaultLM)])
   );
   return {
+    describe: () => opts.describe,
     async list(prefix, listOpts = {}) {
       const p = prefix === "" || prefix.endsWith("/") ? prefix : `${prefix}/`;
       const dirs = /* @__PURE__ */ new Set();

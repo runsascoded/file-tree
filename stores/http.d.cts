@@ -19,6 +19,12 @@ interface HttpStoreOptions {
      *  store can mint signed URLs, so consumers must opt in deliberately
      *  to avoid stalling the UI's download icon against a 404 endpoint. */
     presign?: boolean;
+    /** What the API is fronting, for the breadcrumb root —
+     *  `r2://my-bucket/gbfs/`. A browser client can't discover this: it
+     *  has an API base and no idea what's behind it. Supplied rather than
+     *  fetched because it's a *label*, and a label that arrives a render
+     *  late shows "root" and then jumps. */
+    describe?: string;
 }
 declare function HttpStore(apiBase: string, opts?: HttpStoreOptions): Store;
 

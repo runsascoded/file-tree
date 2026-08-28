@@ -50,6 +50,19 @@ interface Store {
     /** Optional metadata. UI can use this to disable features the store
      *  doesn't support (e.g. zip preview when `range` is false). */
     capabilities?: StoreCapabilities;
+    /** Where this store's data actually lives, for display —
+     *  `r2://my-bucket/prefix/`, `s3://…`, `gs://…`.
+     *
+     *  The breadcrumb's root reads "root" otherwise, which obscures the
+     *  one thing a reader can't infer from the page: *which* bucket they
+     *  are looking at. Only the store knows — an `HttpStore` client sees
+     *  an API base and nothing about what's behind it, so this has to come
+     *  from the store rather than be guessed by the UI.
+     *
+     *  Display only. It isn't parsed, isn't a URL to fetch, and stores
+     *  that would rather not disclose their backing location simply omit
+     *  it — in which case the root crumb stays "root". */
+    describe?(): string | undefined;
     /** Direct downloadable URL for `path`, when the store can produce one.
      *  The UI uses this to render a `<a href download>` link (browser
      *  streams the bytes — no client buffering). Stores that can't expose a
