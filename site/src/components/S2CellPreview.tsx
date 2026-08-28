@@ -22,6 +22,7 @@ import {
   type LatLng,
 } from '../lib/s2geo'
 import { REGION_POINTS } from '../fixtures/parquet'
+import { coastFor } from '../fixtures/coastlines'
 
 const { min, max, abs } = Math
 
@@ -32,8 +33,11 @@ const MARK = '#e53935'
 /** Cell footprint over the region's points. At L13 the cell is a few px
  *  across, so anything under ~14px also gets a ring — otherwise the
  *  thing you hovered to find is invisible against the scatter. */
-function Locator({ token, points }: { token: string; points: LatLng[] }) {
+function Locator({ token, points, region }: { token: string; points: LatLng[]; region: string }) {
   if (!points.length) return null
+  const coast = coastFor(region)
+  // Fit to the points, not the coastline: the question is "where in
+  // this cluster", and framing to the coast would zoom out past it.
   const proj = projector(boundsOf(points), W, H)
   const b = s2CellBounds(token)
   const x0 = proj.x(b.lngMin), x1 = proj.x(b.lngMax)
@@ -42,6 +46,12 @@ function Locator({ token, points }: { token: string; points: LatLng[] }) {
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
   return (
     <svg width={W} height={H} style={{ display: 'block' }} role="img" aria-label={`location of ${token}`}>
+      {/* Coastline first, so it reads as ground under the data. */}
+      <g fill="none" stroke="currentColor" strokeWidth={1} opacity={0.35}>
+        {coast.map((line, i) => (
+          <polyline key={i} points={line.map(([lat, lng]) => `${proj.x(lng)},${proj.y(lat)}`).join(' ')} />
+        ))}
+      </g>
       <g fill="currentColor" opacity={0.3}>
         {points.map(([lat, lng], i) => <circle key={i} cx={proj.x(lng)} cy={proj.y(lat)} r={1.1} />)}
       </g>
@@ -125,7 +135,7 @@ export function S2Cell({ token, region }: { token: string; region: string }): Re
             {...getFloatingProps()}
           >
             <Meta rows={[['token', token], ['level', `L${level}`], ['~edge', fmtMeters(s2CellEdgeMeters(token))]]} />
-            <Locator token={token} points={REGION_POINTS[region] ?? []} />
+            <Locator token={token} points={REGION_POINTS[region] ?? []} region={region} />
           </div>
         </FloatingPortal>
       )}

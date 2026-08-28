@@ -176,39 +176,49 @@ test.describe('MockDemo', () => {
     // Header names, with the per-column raw/formatted toggle stripped —
     // `renderHeader` is gated on `path`, so this is also the assertion
     // that `path` reaches the ctx.
-    expect((await parquetRow(page, 'header')).map(h => h.replace(/⌗|raw$/, '').trim())).toEqual([
-      'dt', 'event_ts', 'recorded', 'id', 'region', 's2_cell', 'value',
-    ])
+    // Header text minus the per-column format control. Only four
+    // columns have one: an id is what it is, and `region`/`s2_cell` are
+    // already a link and a widget.
+    // Header names with the format control excised — `textContent` on a
+    // `<select>` concatenates every option, not the selected one.
+    const names = await page.locator('table').last().locator('thead th').evaluateAll(ths =>
+      ths.map(th => {
+        const c = th.cloneNode(true) as HTMLElement
+        c.querySelectorAll('select').forEach(sel => sel.remove())
+        return c.textContent!.trim()
+      }))
+    expect(names).toEqual(['dt', 'event_ts', 'recorded', 'id', 'region', 's2_cell', 'value'])
+    expect(await page.locator('thead select').count()).toBe(4)
 
     // `dt` / `event_ts` are bare INT64s read as epochs; `recorded` is
     // annotated. `id` stays a *number* — it's a bare INT64 sitting
     // inside the epoch window, and only the name gate keeps it from
-    // being read as a date. Its `◆` and the `$` on `value` come from
-    // the demo's `renderCell`, so this row pins the hook too.
+    // being read as a date. The `$` on `value` comes from the demo's
+    // `renderCell`, so this row pins the hook too.
     expect(await parquetRow(page, 0)).toEqual([
       '2026-04-25 00:00Z', '2026-04-25 00:00:00Z', '2026-04-25 00:00:00Z',
-      '◆ 1777075200000', 'nyc', '89c259c413', '$0.00',
+      '1777075200000', 'nyc', '89c259c413', '$0.00',
     ])
   })
 
-  test('the raw/formatted toggle survives paging, and does not remount', async ({ page }) => {
+  test('a format change survives paging, and does not remount', async ({ page }) => {
     await page.goto('/mock/samples/events.parquet')
     const pager = page.getByText(/^rows /)
 
     await page.getByRole('button', { name: '\u203a', exact: true }).first().click()
     await expect(pager).toHaveText('rows 100\u2013200 / 240 \u00b7 page 2/3 of RG')
 
-    // `dt` renders as an inferred epoch; the toggle puts the integer back.
-    await page.getByTitle('show raw dt').click()
+    // `dt` renders as an inferred epoch; `epoch` puts the integer back.
+    await page.getByTitle('dt format').selectOption('epoch')
     expect((await parquetRow(page, 0))[0]).toBe('1777420800000')
 
     // The point of `parquetOptions`: options arrive as props on a stable
-    // component type, so flipping one re-renders the table rather than
+    // component type, so changing one re-renders the table rather than
     // remounting it. A remount would reset the pager to page 1/3 and
     // drop the row-group cache.
     await expect(pager).toHaveText('rows 100\u2013200 / 240 \u00b7 page 2/3 of RG')
 
-    // Only the toggled column changes — `event_ts` is still formatted.
+    // Only the chosen column changes — `event_ts` is still formatted.
     expect((await parquetRow(page, 0))[1]).toBe('2026-04-25 01:01:40Z')
   })
 
@@ -226,7 +236,12 @@ test.describe('MockDemo', () => {
     expect((await tip.innerText()).split('\n')).toEqual([
       'token', '89c259c4', 'level', 'L13', '~edge', '1.1 km',
     ])
-    await expect(tip.getByRole('img', { name: 'location of 89c259c4' })).toBeVisible()
+    const svg = tip.getByRole('img', { name: 'location of 89c259c4' })
+    await expect(svg).toBeVisible()
+    // Coastline under the points: bundled Natural Earth vectors, so the
+    // locator reads as a place rather than a scatter — and no tiles, so
+    // no key, no rate limit, no network.
+    expect(await svg.locator('polyline').count()).toBeGreaterThan(0)
 
     // Portalled: an absolutely-positioned child would be clipped by the
     // table's scroll container, so the preview must not live inside it.

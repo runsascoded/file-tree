@@ -84,18 +84,71 @@ function rawText(value: unknown): string {
  *  it. (The other way to do this is a React context the renderers read
  *  from — then only the cells re-render. Worth it once the state is
  *  shared with more than the table.) */
+/** Per-column format choices.
+ *
+ *  The realistic shape, which a uniform raw/formatted toggle on every
+ *  column is not: **most columns need no control at all** (a control
+ *  everywhere is noise that stops meaning anything), and the ones that
+ *  do want *different* controls — a temporal column's options aren't a
+ *  float's. Several renderings are equally defensible, so it's a choice
+ *  rather than a boolean; the honest end state is a typed format
+ *  expression (d3-format, strftime), which this is one step short of.
+ *
+ *  None of this needs library support: `renderHeader` returns whatever
+ *  control you want, and the state is the consumer's. */
+const TEMPORAL_FORMATS = ['auto', 'ISO', 'epoch'] as const
+const NUMBER_FORMATS = ['USD', 'raw', 'SI'] as const
+
+const COLUMN_FORMATS: Record<string, readonly string[]> = {
+  dt: TEMPORAL_FORMATS,
+  event_ts: TEMPORAL_FORMATS,
+  recorded: TEMPORAL_FORMATS,
+  value: NUMBER_FORMATS,
+  // `id`, `region` and `s2_cell` deliberately have none: an id is what
+  // it is, and the other two are already links/widgets.
+}
+
+const si = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
+
+function applyFormat(fmt: string, value: unknown, defaultNode: ReactNode): ReactNode {
+  switch (fmt) {
+    case 'epoch': return rawText(value)
+    case 'ISO': {
+      const ms = value instanceof Date ? value.getTime() : Number(value)
+      return Number.isFinite(ms) ? new Date(ms).toISOString() : defaultNode
+    }
+    case 'raw': return rawText(value)
+    case 'SI': {
+      const n = typeof value === 'number' ? value : Number(value)
+      return Number.isFinite(n) ? si.format(n) : defaultNode
+    }
+    default: return null   // `auto`/`USD` — fall through to the demo's own rendering
+  }
+}
+
+/** This is the case `parquetOptions` exists for: the chosen formats
+ *  change as you click, and the hooks have to see the current value.
+ *  Rebinding `makeParquetViewer` per change would mint a new component
+ *  type and remount the table, dropping its row-group cache — so the
+ *  options go through props on a stable type instead.
+ *
+ *  `useMemo`'d on `formats`: a new options object every parent render
+ *  would re-render the table for reasons unrelated to it. */
 function useParquetOptions(): ParquetViewerOptions {
-  const [rawCols, setRawCols] = useState<ReadonlySet<string>>(() => new Set())
-  const toggle = useCallback((col: string) => setRawCols(prev => {
-    const next = new Set(prev)
-    next.delete(col) || next.add(col)
-    return next
-  }), [])
+  const [formats, setFormats] = useState<Readonly<Record<string, string>>>({})
+  const pick = useCallback(
+    (col: string, fmt: string) => setFormats(prev => ({ ...prev, [col]: fmt })),
+    [])
 
   return useMemo((): ParquetViewerOptions => ({
   renderCell: ({ column, value, row, rowIndex, path, defaultNode }) => {
     if (path !== EVENTS) return defaultNode
-    if (rawCols.has(column.name)) return rawText(value)
+
+    const chosen = formats[column.name]
+    if (chosen) {
+      const out = applyFormat(chosen, value, defaultNode)
+      if (out !== null) return out
+    }
 
     // FK link — the cell becomes a link to another file in this same
     // tree, so clicking `nyc` opens `docs/regions/nyc.md`. This is the
@@ -105,9 +158,9 @@ function useParquetOptions(): ParquetViewerOptions {
       return <Link to={`/mock/docs/regions/${value}.md`} title={`about ${value}`}>{defaultNode}</Link>
     }
 
-    // A cell can be a whole widget. `s2_cell` holds S2 tokens, which
-    // are unreadable on their own, so hovering draws the footprint over
-    // the region's points — see `S2CellPreview` for why it's tile-free.
+    // A cell can be a whole widget — and one that reads a *sibling*
+    // column: the preview needs `row.region` to know which points to
+    // draw the footprint over. `row` is the whole row for exactly this.
     // Guarded on the value, not just the column: a non-token falls
     // through to the default rather than rendering blank.
     if (column.name === 's2_cell' && isS2Cell(value)) {
@@ -120,38 +173,33 @@ function useParquetOptions(): ParquetViewerOptions {
     // viewer, which takes the same hook.
     if (column.name === 'value') return renderMoney({ column, value, row, rowIndex, path, defaultNode })
 
-    // Decorating a *neighbouring* column's meaning: `row` is the whole
-    // row, so a cell can render against a sibling it doesn't own.
-    if (column.name === 'id' && row['region'] === 'nyc') {
-      return <><span style={{ opacity: 0.45 }}>◆ </span>{defaultNode}</>
-    }
-
     return defaultNode
   },
   renderHeader: ({ column, stats, path, defaultNode }) => {
     if (path !== EVENTS) return defaultNode
-    const isRaw = rawCols.has(column.name)
+    const choices = COLUMN_FORMATS[column.name]
     return (
       <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.35em' }}>
         {defaultNode}
         {stats?.nullCount ? <span style={{ opacity: 0.5, fontWeight: 400 }}>∅</span> : null}
-        <button
-          type="button"
-          onClick={() => toggle(column.name)}
-          aria-pressed={isRaw}
-          title={isRaw ? `show formatted ${column.name}` : `show raw ${column.name}`}
-          style={{
-            font: 'inherit', fontSize: '0.85em', lineHeight: 1, cursor: 'pointer',
-            padding: '0.1em 0.35em', borderRadius: 3,
-            border: '1px solid rgba(127,127,127,0.4)',
-            background: isRaw ? 'rgba(127,127,127,0.25)' : 'transparent',
-            color: 'inherit', opacity: isRaw ? 1 : 0.55,
-          }}
-        >{isRaw ? 'raw' : '⌗'}</button>
+        {choices && (
+          <select
+            value={formats[column.name] ?? choices[0]}
+            onChange={e => pick(column.name, e.target.value)}
+            title={`${column.name} format`}
+            style={{
+              font: 'inherit', fontSize: '0.85em', padding: '0 0.1em',
+              background: 'transparent', color: 'inherit',
+              border: '1px solid rgba(127,127,127,0.4)', borderRadius: 3,
+            }}
+          >
+            {choices.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
       </span>
     )
   },
-  }), [rawCols, toggle])
+  }), [formats, pick])
 }
 
 /** The viewer registry. `.log` is a format the library knows nothing
@@ -260,9 +308,9 @@ export function MockDemo() {
           In <code>samples/events.parquet</code>: <code>region</code> cells are{' '}
           <em>FK links</em> into <code>docs/regions/</code>, <code>value</code> is reformatted as
           currency (which is also what hides float noise), and <code>id</code> is marked on rows
-          whose <code>region</code> is <code>nyc</code> — a cell rendering against a sibling
-          column, and <code>s2_cell</code> is a <em>whole widget</em> — hover a token to see its
-          footprint drawn over the region's points. In <code>data/2024/</code>, the listing's own{' '}
+          currency, and <code>s2_cell</code> is a <em>whole widget</em> — hover a token to see its
+          footprint drawn over the region's coastline and points. That preview also reads a{' '}
+          <em>sibling</em> column: it needs <code>row.region</code> to know which place to draw. In <code>data/2024/</code>, the listing's own{' '}
           <code>renderCell</code> appends a quarter label to each key.
         </p>
         <p>
@@ -273,10 +321,12 @@ export function MockDemo() {
           hands you <code>renderCell</code>; what you decode in it is your business.
         </p>
         <p>
-          Every header carries a <strong>raw/formatted toggle</strong> (<code>⌗</code>) — each
-          rendering above is a guess about intent, so the honest complement is flipping a column
-          back to its literal value in place. Page forward, then toggle: the table <em>keeps its
-          page</em>, because the toggle's state reaches the hooks as props via{' '}
+          <strong>Format controls</strong> sit on the columns that have a real choice, and only
+          those: a temporal column offers <code>auto / ISO / epoch</code>, <code>value</code> offers{' '}
+          <code>USD / raw / SI</code>, and <code>id</code> offers nothing — a control on every
+          column is noise that stops meaning anything. (The honest end state is a typed format
+          expression; this is one step short.) Page forward, then change one: the table{' '}
+          <em>keeps its page</em>, because the choice reaches the hooks as props via{' '}
           <code>parquetOptions</code>. Rebinding <code>makeParquetViewer</code> per toggle would
           mint a new component type and remount the table, resetting the pager and dropping its
           row-group cache.
