@@ -1,5 +1,5 @@
-import { Store } from './index.js';
-import { TableColumn } from './renderers/table.js';
+import { Store } from './index.cjs';
+import { a as TableColumn } from './table-Bhl7BV7o.cjs';
 
 /** Temporal inference + formatting for tabular cells.
  *
@@ -139,5 +139,15 @@ declare function useRowGroup(store: Store, path: string, meta: ParquetMeta | nul
     rows: Record<string, unknown>[] | null;
     error: string | null;
 };
+/** Every row of every row group, for small-table mode.
+ *
+ *  Only runs when `enabled`; the caller decides from `meta.byteSize`
+ *  whether the file is small enough. One `parquetRead` over the whole
+ *  file rather than per-group, so hyparquet can plan it.
+ */
+declare function useAllRows(store: Store, path: string, meta: ParquetMeta | null, enabled: boolean): {
+    rows: Record<string, unknown>[] | null;
+    error: string | null;
+};
 
-export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, formatTemporal as i, inferColumnFormats as j, inferTemporalFormat as k, useRowGroup as l, toMillis as t, useParquetMeta as u };
+export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, formatTemporal as i, inferColumnFormats as j, inferTemporalFormat as k, useRowGroup as l, useAllRows as m, toMillis as t, useParquetMeta as u };

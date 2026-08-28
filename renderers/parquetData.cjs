@@ -23,6 +23,7 @@ __export(parquetData_exports, {
   NUMERIC_TYPES: () => NUMERIC_TYPES,
   RG_CACHE_SIZE: () => RG_CACHE_SIZE,
   coarseKind: () => coarseKind,
+  useAllRows: () => useAllRows,
   useParquetMeta: () => useParquetMeta,
   useRowGroup: () => useRowGroup
 });
@@ -189,11 +190,45 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
   }, [store, path, index, meta, cacheSize]);
   return { rows, error };
 }
+function useAllRows(store, path, meta, enabled) {
+  const [rows, setRows] = (0, import_react.useState)(null);
+  const [error, setError] = (0, import_react.useState)(null);
+  (0, import_react.useEffect)(() => {
+    if (!enabled || !meta) {
+      setRows(null);
+      return;
+    }
+    let cancelled = false;
+    setRows(null);
+    setError(null);
+    (async () => {
+      try {
+        const file = await asyncBufferFromStore(store, path);
+        const out = [];
+        await (0, import_hyparquet.parquetRead)({
+          file,
+          rowFormat: "object",
+          onComplete: (data) => {
+            if (Array.isArray(data)) for (const r of data) out.push(r);
+          }
+        });
+        if (!cancelled) setRows(out);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path, meta, enabled]);
+  return { rows, error };
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   NUMERIC_TYPES,
   RG_CACHE_SIZE,
   coarseKind,
+  useAllRows,
   useParquetMeta,
   useRowGroup
 });

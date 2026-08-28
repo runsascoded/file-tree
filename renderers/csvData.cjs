@@ -23,6 +23,7 @@ __export(csvData_exports, {
   HEADER_PROBE_BYTES: () => HEADER_PROBE_BYTES,
   PAGE_BYTES: () => PAGE_BYTES,
   parseLine: () => parseLine,
+  useAllCsvRows: () => useAllCsvRows,
   useCsvHeader: () => useCsvHeader,
   useCsvPage: () => useCsvPage
 });
@@ -131,11 +132,38 @@ function useCsvPage(store, path, delimiter, page, total) {
   }, [store, path, delimiter, page, total]);
   return { rows, error };
 }
+function useAllCsvRows(store, path, delimiter, enabled) {
+  const [rows, setRows] = (0, import_react.useState)(null);
+  const [error, setError] = (0, import_react.useState)(null);
+  (0, import_react.useEffect)(() => {
+    if (!enabled) {
+      setRows(null);
+      return;
+    }
+    let cancelled = false;
+    setRows(null);
+    setError(null);
+    store.get(path).then((r) => {
+      if (cancelled) return;
+      const lines = new TextDecoder().decode(r.bytes).split("\n");
+      lines.shift();
+      while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+      setRows(lines.map((line) => parseLine(line.replace(/\r$/, ""), delimiter)));
+    }).catch((e) => {
+      if (!cancelled) setError(String(e));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path, delimiter, enabled]);
+  return { rows, error };
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   HEADER_PROBE_BYTES,
   PAGE_BYTES,
   parseLine,
+  useAllCsvRows,
   useCsvHeader,
   useCsvPage
 });

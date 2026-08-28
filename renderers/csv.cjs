@@ -30,7 +30,7 @@ __export(csv_exports, {
   useCsvPage: () => useCsvPage
 });
 module.exports = __toCommonJS(csv_exports);
-var import_react4 = require("react");
+var import_react5 = require("react");
 
 // src/react/fmt.ts
 function fmtSize(n) {
@@ -146,6 +146,32 @@ function useCsvPage(store, path, delimiter, page, total) {
   }, [store, path, delimiter, page, total]);
   return { rows, error };
 }
+function useAllCsvRows(store, path, delimiter, enabled) {
+  const [rows, setRows] = (0, import_react.useState)(null);
+  const [error, setError] = (0, import_react.useState)(null);
+  (0, import_react.useEffect)(() => {
+    if (!enabled) {
+      setRows(null);
+      return;
+    }
+    let cancelled = false;
+    setRows(null);
+    setError(null);
+    store.get(path).then((r) => {
+      if (cancelled) return;
+      const lines = new TextDecoder().decode(r.bytes).split("\n");
+      lines.shift();
+      while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+      setRows(lines.map((line) => parseLine(line.replace(/\r$/, ""), delimiter)));
+    }).catch((e) => {
+      if (!cancelled) setError(String(e));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path, delimiter, enabled]);
+  return { rows, error };
+}
 
 // src/renderers/tableControls.tsx
 var import_react3 = require("react");
@@ -252,6 +278,45 @@ function ColumnPicker({ columns, vis }) {
   );
 }
 
+// src/renderers/tableSort.ts
+var import_react4 = require("react");
+var DEFAULT_FULL_LOAD_MAX_BYTES = 5 * 1024 * 1024;
+function useSort(usePersistedState) {
+  const use = usePersistedState ?? defaultUseState;
+  const [raw, setRaw] = use("sort", "");
+  const column = raw ? raw.replace(/^-/, "") : null;
+  const dir = raw.startsWith("-") ? "desc" : "asc";
+  const toggle = (0, import_react4.useCallback)((name) => {
+    setRaw(raw === name ? `-${name}` : raw === `-${name}` ? "" : name);
+  }, [raw, setRaw]);
+  return { column, dir, toggle };
+}
+function compareValues(a, b) {
+  const aNull = a === null || a === void 0 || a === "";
+  const bNull = b === null || b === void 0 || b === "";
+  if (aNull || bNull) return aNull && bNull ? 0 : aNull ? 1 : -1;
+  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
+  const an = typeof a === "bigint" ? Number(a) : Number(a);
+  const bn = typeof b === "bigint" ? Number(b) : Number(b);
+  if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+  if (Number.isFinite(an) && Number.isFinite(bn)) return 0;
+  return String(a).localeCompare(String(b));
+}
+function useSortedRows(rows, sort, comparators, columns) {
+  return (0, import_react4.useMemo)(() => {
+    if (!rows || !sort.column) return rows;
+    const col = columns?.find((c) => c.name === sort.column);
+    const cmp = (col && comparators?.(col)) ?? compareValues;
+    const key = sort.column;
+    const sign = sort.dir === "desc" ? -1 : 1;
+    return [...rows].sort((x, y) => sign * cmp(x[key], y[key]));
+  }, [rows, sort.column, sort.dir, comparators, columns]);
+}
+function sortGlyph(column, sort) {
+  if (sort.column !== column) return "\u2195";
+  return sort.dir === "asc" ? "\u25B2" : "\u25BC";
+}
+
 // src/renderers/table.ts
 var TD_STYLE = {
   padding: "0.2em 0.6em",
@@ -290,19 +355,31 @@ function makeCsvViewer(opts = {}) {
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CsvViewer, { ...props, ...opts });
   };
 }
-function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns }) {
+function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter);
-  const [page, setPage] = (0, import_react4.useState)(0);
-  const { rows, error: pageError } = useCsvPage(store, path, delimiter, page, total);
-  const error = headerError ?? pageError;
-  const allColumns = (0, import_react4.useMemo)(() => (header ?? []).map((name) => ({ name })), [header]);
+  const [page, setPage] = (0, import_react5.useState)(0);
+  const smallTable = total !== null && total <= fullLoadMaxBytes;
+  const { rows: pageRows, error: pageError } = useCsvPage(store, path, delimiter, page, smallTable ? null : total);
+  const { rows: allRaw, error: allError } = useAllCsvRows(store, path, delimiter, smallTable);
+  const sort = useSort(usePersistedState);
+  const error = headerError ?? (smallTable ? allError : pageError);
+  const allColumns = (0, import_react5.useMemo)(() => (header ?? []).map((name) => ({ name })), [header]);
   const { visible, ...vis } = useColumnVisibility(allColumns, usePersistedState, hiddenColumns);
-  const columns = (0, import_react4.useMemo)(() => allColumns.filter((c) => visible.includes(c.name)), [allColumns, visible]);
-  const colIndex = (0, import_react4.useMemo)(
+  const columns = (0, import_react5.useMemo)(() => allColumns.filter((c) => visible.includes(c.name)), [allColumns, visible]);
+  const colIndex = (0, import_react5.useMemo)(
     () => new Map(allColumns.map((c, i) => [c.name, i])),
     [allColumns]
   );
-  const colStyles = (0, import_react4.useMemo)(
+  const keyed = (0, import_react5.useMemo)(
+    () => allRaw?.map((r) => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? ""]))) ?? null,
+    [allRaw, allColumns]
+  );
+  const sortedKeyed = useSortedRows(keyed, sort, sortComparators, allColumns);
+  const allSorted = (0, import_react5.useMemo)(
+    () => sortedKeyed?.map((o) => allColumns.map((c) => String(o[c.name] ?? ""))) ?? null,
+    [sortedKeyed, allColumns]
+  );
+  const colStyles = (0, import_react5.useMemo)(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
     [columns, path, cellProps, headerProps]
   );
@@ -311,18 +388,30 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
     error
   ] });
   if (total === null || header === null) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
-  const pages = Math.max(1, Math.ceil(total / PAGE_BYTES));
+  const rows = smallTable ? allSorted : pageRows;
+  const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES));
   const offsetStart = page * PAGE_BYTES;
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES);
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em", position: "relative", zIndex: 2 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: allColumns.length }),
-      " columns \xB7 ",
+      " columns",
+      smallTable && rows ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+        " \xB7 ",
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: rows.length.toLocaleString() }),
+        " rows"
+      ] }) : null,
+      " ",
+      "\xB7 ",
       fmtSize(total),
       columnPicker && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
         " \xB7 ",
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
       ] })
+    ] }),
+    !smallTable && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { opacity: 0.6, fontSize: "0.85em", margin: "0 0 0.4em" }, children: [
+      fmtSize(total),
+      " \u2014 streaming byte ranges; sorting needs the whole file."
     ] }),
     pages > 1 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em", flexWrap: "wrap" }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === 0, onClick: () => setPage(0), children: "\xAB" }),
@@ -345,7 +434,27 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
     /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "Canvas" }, children: columns.map((c) => {
         const st = colStyles.get(c.name);
-        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap" }, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, path, defaultNode: c.name }) : c.name }, c.name);
+        const defaultNode = smallTable ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+          "span",
+          {
+            role: "button",
+            tabIndex: 0,
+            onClick: () => sort.toggle(c.name),
+            onKeyDown: (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                sort.toggle(c.name);
+              }
+            },
+            title: `Sort by ${c.name}`,
+            style: { cursor: "pointer", userSelect: "none" },
+            children: [
+              c.name,
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: "0.3em", fontSize: "0.85em" }, children: sortGlyph(c.name, sort) })
+            ]
+          }
+        ) : c.name;
+        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap" }, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, path, defaultNode }) : defaultNode }, c.name);
       }) }) }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { colSpan: columns.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
         let asRow = null;

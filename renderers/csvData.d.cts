@@ -25,5 +25,16 @@ declare function useCsvPage(store: Store, path: string, delimiter: string, page:
     rows: string[][] | null;
     error: string | null;
 };
+/** Every row, for small-table mode.
+ *
+ *  Only runs when `enabled` — the caller decides from `total` whether
+ *  the file is small enough, since it's the one that knows the
+ *  threshold. One read, no paging: below a few MB the whole point is
+ *  that streaming buys nothing.
+ */
+declare function useAllCsvRows(store: Store, path: string, delimiter: string, enabled: boolean): {
+    rows: string[][] | null;
+    error: string | null;
+};
 
-export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage };
+export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useAllCsvRows, useCsvHeader, useCsvPage };

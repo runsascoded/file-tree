@@ -161,10 +161,44 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
   }, [store, path, index, meta, cacheSize]);
   return { rows, error };
 }
+function useAllRows(store, path, meta, enabled) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    if (!enabled || !meta) {
+      setRows(null);
+      return;
+    }
+    let cancelled = false;
+    setRows(null);
+    setError(null);
+    (async () => {
+      try {
+        const file = await asyncBufferFromStore(store, path);
+        const out = [];
+        await parquetRead({
+          file,
+          rowFormat: "object",
+          onComplete: (data) => {
+            if (Array.isArray(data)) for (const r of data) out.push(r);
+          }
+        });
+        if (!cancelled) setRows(out);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path, meta, enabled]);
+  return { rows, error };
+}
 export {
   NUMERIC_TYPES,
   RG_CACHE_SIZE,
   coarseKind,
+  useAllRows,
   useParquetMeta,
   useRowGroup
 };

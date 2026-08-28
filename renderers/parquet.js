@@ -1,5 +1,5 @@
 // src/renderers/parquet.tsx
-import { useEffect as useEffect2, useMemo as useMemo2, useState as useState4 } from "react";
+import { useEffect as useEffect2, useMemo as useMemo3, useState as useState4 } from "react";
 
 // src/renderers/parquetData.ts
 import { useEffect, useRef, useState } from "react";
@@ -162,6 +162,39 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
       cancelled = true;
     };
   }, [store, path, index, meta, cacheSize]);
+  return { rows, error };
+}
+function useAllRows(store, path, meta, enabled) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    if (!enabled || !meta) {
+      setRows(null);
+      return;
+    }
+    let cancelled = false;
+    setRows(null);
+    setError(null);
+    (async () => {
+      try {
+        const file = await asyncBufferFromStore(store, path);
+        const out = [];
+        await parquetRead({
+          file,
+          rowFormat: "object",
+          onComplete: (data) => {
+            if (Array.isArray(data)) for (const r of data) out.push(r);
+          }
+        });
+        if (!cancelled) setRows(out);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path, meta, enabled]);
   return { rows, error };
 }
 
@@ -418,6 +451,45 @@ function ColumnPicker({ columns, vis }) {
   );
 }
 
+// src/renderers/tableSort.ts
+import { useCallback as useCallback2, useMemo as useMemo2 } from "react";
+var DEFAULT_FULL_LOAD_MAX_BYTES = 5 * 1024 * 1024;
+function useSort(usePersistedState) {
+  const use = usePersistedState ?? defaultUseState;
+  const [raw, setRaw] = use("sort", "");
+  const column = raw ? raw.replace(/^-/, "") : null;
+  const dir = raw.startsWith("-") ? "desc" : "asc";
+  const toggle = useCallback2((name) => {
+    setRaw(raw === name ? `-${name}` : raw === `-${name}` ? "" : name);
+  }, [raw, setRaw]);
+  return { column, dir, toggle };
+}
+function compareValues(a, b) {
+  const aNull = a === null || a === void 0 || a === "";
+  const bNull = b === null || b === void 0 || b === "";
+  if (aNull || bNull) return aNull && bNull ? 0 : aNull ? 1 : -1;
+  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
+  const an = typeof a === "bigint" ? Number(a) : Number(a);
+  const bn = typeof b === "bigint" ? Number(b) : Number(b);
+  if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+  if (Number.isFinite(an) && Number.isFinite(bn)) return 0;
+  return String(a).localeCompare(String(b));
+}
+function useSortedRows(rows, sort, comparators, columns) {
+  return useMemo2(() => {
+    if (!rows || !sort.column) return rows;
+    const col = columns?.find((c) => c.name === sort.column);
+    const cmp = (col && comparators?.(col)) ?? compareValues;
+    const key = sort.column;
+    const sign = sort.dir === "desc" ? -1 : 1;
+    return [...rows].sort((x, y) => sign * cmp(x[key], y[key]));
+  }, [rows, sort.column, sort.dir, comparators, columns]);
+}
+function sortGlyph(column, sort) {
+  if (sort.column !== column) return "\u2195";
+  return sort.dir === "asc" ? "\u25B2" : "\u25BC";
+}
+
 // src/renderers/table.ts
 var TD_STYLE = {
   padding: "0.2em 0.6em",
@@ -457,7 +529,7 @@ function makeParquetViewer(opts = {}) {
     return /* @__PURE__ */ jsx2(ParquetViewer, { ...props, ...opts });
   };
 }
-function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns }) {
+function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }) {
   const { meta, error: metaError } = useParquetMeta(store, path);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
@@ -465,17 +537,22 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   useEffect2(() => {
     setRgPage(0);
   }, [page]);
-  const { rows, error: rowsError } = useRowGroup(store, path, meta, page);
+  const smallTable = meta !== null && meta.byteSize <= fullLoadMaxBytes;
+  const { rows: rgRows, error: rgError } = useRowGroup(store, path, meta, page);
+  const { rows: allRows, error: allError } = useAllRows(store, path, meta, smallTable);
+  const sort = useSort(usePersistedState);
   const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns);
-  const error = metaError ?? rowsError;
+  const error = metaError ?? (smallTable ? allError : rgError);
   useEffect2(() => {
     if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0);
   }, [meta, page, setPage]);
-  const temporal = useMemo2(
+  const sortedAll = useSortedRows(smallTable ? allRows : null, sort, sortComparators, meta?.schema);
+  const rows = smallTable ? sortedAll : rgRows;
+  const temporal = useMemo3(
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
   );
-  const colStyles = useMemo2(
+  const colStyles = useMemo3(
     // Numeric alignment keys off the *rendered* meaning, not the
     // physical type: a column read as temporal prints as text, so
     // right-aligning it would just detach it from its header.
@@ -500,21 +577,22 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   }
   const rgIndex = Math.min(Math.max(page, 0), rowGroups.length - 1);
   const rg = rowGroups[rgIndex];
+  const rowBase = smallTable ? 0 : rg.rowStart;
   const rgPageCount = rows ? Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE)) : 0;
   const clampedRgPage = Math.min(Math.max(rgPage, 0), Math.max(0, rgPageCount - 1));
-  const pageRowStart = rg.rowStart + clampedRgPage * ROWS_PER_PAGE;
-  const pageRowEnd = rows ? rg.rowStart + Math.min((clampedRgPage + 1) * ROWS_PER_PAGE, rows.length) : pageRowStart;
+  const pageRowStart = rowBase + clampedRgPage * ROWS_PER_PAGE;
+  const pageRowEnd = rows ? rowBase + Math.min((clampedRgPage + 1) * ROWS_PER_PAGE, rows.length) : pageRowStart;
   const visibleRows = rows ? rows.slice(clampedRgPage * ROWS_PER_PAGE, (clampedRgPage + 1) * ROWS_PER_PAGE) : null;
   const goPrevPage = () => {
     if (clampedRgPage > 0) setRgPage(clampedRgPage - 1);
-    else if (rgIndex > 0) setPage(rgIndex - 1);
+    else if (!smallTable && rgIndex > 0) setPage(rgIndex - 1);
   };
   const goNextPage = () => {
     if (clampedRgPage < rgPageCount - 1) setRgPage(clampedRgPage + 1);
-    else if (rgIndex < rowGroups.length - 1) setPage(rgIndex + 1);
+    else if (!smallTable && rgIndex < rowGroups.length - 1) setPage(rgIndex + 1);
   };
-  const canGoPrev = clampedRgPage > 0 || rgIndex > 0;
-  const canGoNext = rows !== null && clampedRgPage < rgPageCount - 1 || rgIndex < rowGroups.length - 1;
+  const canGoPrev = clampedRgPage > 0 || !smallTable && rgIndex > 0;
+  const canGoNext = rows !== null && clampedRgPage < rgPageCount - 1 || !smallTable && rgIndex < rowGroups.length - 1;
   return /* @__PURE__ */ jsxs2(Fragment, { children: [
     /* @__PURE__ */ jsxs2("p", { style: { opacity: 0.7, fontSize: "0.95em", display: "flex", alignItems: "center", gap: "0.6em", flexWrap: "wrap", position: "relative", zIndex: 2 }, children: [
       /* @__PURE__ */ jsxs2("span", { children: [
@@ -571,6 +649,7 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         totalRows,
         pageIdx: clampedRgPage,
         pageCount: rgPageCount,
+        smallTable,
         rows
       }
     ),
@@ -579,7 +658,31 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         const st = colStyles.get(c.name);
         const stats = rg.stats.get(c.name);
         const title = statsTitle(stats, temporal.get(c.name));
-        const defaultNode = title ? /* @__PURE__ */ jsx2("span", { title, children: c.name }) : c.name;
+        const label = title ? /* @__PURE__ */ jsx2("span", { title, children: c.name }) : c.name;
+        const defaultNode = smallTable ? /* @__PURE__ */ jsxs2(
+          "span",
+          {
+            role: "button",
+            tabIndex: 0,
+            onClick: () => {
+              sort.toggle(c.name);
+              setRgPage(0);
+            },
+            onKeyDown: (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                sort.toggle(c.name);
+                setRgPage(0);
+              }
+            },
+            title: `Sort by ${c.name}`,
+            style: { cursor: "pointer", userSelect: "none" },
+            children: [
+              label,
+              /* @__PURE__ */ jsx2("span", { style: { opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: "0.3em", fontSize: "0.85em" }, children: sortGlyph(c.name, sort) })
+            ]
+          }
+        ) : label;
         return /* @__PURE__ */ jsx2("th", { style: st?.header ?? TH_STYLE, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, ...stats ? { stats } : {}, path, defaultNode }) : defaultNode }, c.name);
       }) }) }),
       /* @__PURE__ */ jsx2("tbody", { children: visibleRows === null ? /* @__PURE__ */ jsx2("tr", { children: /* @__PURE__ */ jsxs2("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
@@ -595,7 +698,7 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
     ] }) })
   ] });
 }
-function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, totalRows, pageIdx, pageCount, rows }) {
+function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, totalRows, pageIdx, pageCount, rows, smallTable }) {
   if (rows === null) {
     return /* @__PURE__ */ jsx2("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.5 }, children: /* @__PURE__ */ jsx2("span", { children: "rows \u2014" }) });
   }
@@ -613,7 +716,7 @@ function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, tota
         pageIdx + 1,
         "/",
         pageCount,
-        " of RG"
+        smallTable ? "" : " of RG"
       ] })
     ] }),
     /* @__PURE__ */ jsx2("button", { disabled: !canGoNext, onClick: goNext, children: "\u203A" })
