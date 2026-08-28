@@ -58,7 +58,7 @@ function renderMoney({ column, value, defaultNode }: TableCellCtx): ReactNode {
 
 /** `data/*.csv` gets the shared money rule and nothing else — proof the
  *  hook isn't parquet's. */
-const CsvViewer = makeCsvViewer({ renderCell: renderMoney })
+const CsvViewer = makeCsvViewer({ renderCell: renderMoney, columnPicker: true })
 
 /** What the column holds underneath whatever we render. `hyparquet`
  *  resolves an annotated `TIMESTAMP` to a `Date` before the renderer
@@ -141,6 +141,7 @@ function useParquetOptions(): ParquetViewerOptions {
     [])
 
   return useMemo((): ParquetViewerOptions => ({
+  columnPicker: true,
   renderCell: ({ column, value, row, rowIndex, path, defaultNode }) => {
     if (path !== EVENTS) return defaultNode
 

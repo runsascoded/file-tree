@@ -248,6 +248,37 @@ test.describe('MockDemo', () => {
     expect(await tip.evaluate(el => el.closest('table') === null)).toBe(true)
   })
 
+  test('columns can be hidden, and the choice is in the URL', async ({ page }) => {
+    await page.goto('/mock/samples/events.parquet')
+    await page.getByTitle('Show or hide columns').click()
+
+    const group = page.getByRole('group', { name: 'Columns' })
+    await group.getByRole('checkbox', { name: 'id' }).uncheck()
+    await group.getByRole('checkbox', { name: 'recorded' }).uncheck()
+
+    // Shareable: the point of routing this through `usePersistedState`.
+    await expect(page).toHaveURL(/[?&]hide=id%2Crecorded/)
+    await expect(page.getByTitle('Show or hide columns')).toHaveText('columns 5/7')
+
+    const names = await page.locator('table').last().locator('thead th').evaluateAll(ths =>
+      ths.map(th => {
+        const c = th.cloneNode(true) as HTMLElement
+        c.querySelectorAll('select').forEach(sel => sel.remove())
+        return c.textContent!.trim()
+      }))
+    expect(names).toEqual(['dt', 'event_ts', 'region', 's2_cell', 'value'])
+  })
+
+  test('hiding a csv column does not shift the others', async ({ page }) => {
+    // The regression this guards: cells are indexed by position in the
+    // *source* row, so dropping a column from the render must not slide
+    // the rest left. `value` has to still be `value`.
+    await page.goto('/mock/data/2024/q1.csv?hide=date')
+    const t = page.locator('table').last()
+    expect(await t.locator('thead th').allTextContents()).toEqual(['value'])
+    expect(await t.locator('tbody tr td').allTextContents()).toEqual(['$100.00', '$150.00', '$200.00'])
+  })
+
   test('a parquet cell can link to another file in the tree', async ({ page }) => {
     await page.goto('/mock/samples/events.parquet')
 

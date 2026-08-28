@@ -438,6 +438,10 @@ makeParquetViewer({
 })
 ```
 
+**Hiding columns.** `columnPicker: true` adds a `columns 5/7` control; `hiddenColumns` sets the initial set without offering the control. Both are on `TableViewerOptions`, so parquet and CSV share them. State goes through `usePersistedState`, so with `useUrlPersistedState` you get `?hide=a,b` and can paste a link to a column subset.
+
+It's stored as the *hidden* set, not the visible one: an allow-list would silently hide any column a file gains after the URL was shared. The control is table-level rather than per-header — a hide button on a `<th>` removes the very header you'd click to bring it back.
+
 **Numeric columns right-align by default**, with `tabular-nums`, so digits line up down the column and magnitudes are comparable at a glance — headers follow their column. Columns read as temporal are excluded (they render as text, not quantities), as are `BOOLEAN` and the byte-array types. Turn it off with `alignNumeric: false`, or override per column with `cellProps`.
 
 The default header also carries a `title` summarising the current row group's range (`row group: 0 … 70578`, or `= 626` for a constant column) whenever the writer recorded statistics — a cheap orientation cue in a file with millions of rows.

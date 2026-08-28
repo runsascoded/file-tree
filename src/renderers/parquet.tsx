@@ -33,6 +33,7 @@ export type { ParquetColumn, ParquetColumnStats, ParquetMeta, RowGroupInfo } fro
 import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
+import { ColumnPicker, useColumnVisibility } from './tableControls'
 import {
   resolveColStyles, TD_STYLE, TH_STYLE,
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
@@ -120,7 +121,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -136,6 +137,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   useEffect(() => { setRgPage(0) }, [page])
 
   const { rows, error: rowsError } = useRowGroup(store, path, meta, page)
+  const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns)
   const error = metaError ?? rowsError
 
   // Clamp `page` to row-group count once metadata is loaded. Survives
@@ -170,7 +172,8 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // `kind` is finalised here rather than at parse time: a `TIMESTAMP`
   // is physically an `INT64`, so whether a column reads as temporal
   // isn't known until inference has run over the sampled values.
-  const schema = rawSchema.map(c => (temporal.has(c.name) ? { ...c, kind: 'temporal' as const } : c))
+  const allColumns = rawSchema.map(c => (temporal.has(c.name) ? { ...c, kind: 'temporal' as const } : c))
+  const schema = allColumns.filter(c => visible.includes(c.name))
   if (rowGroups.length === 0) {
     return <div style={{ opacity: 0.7 }}>parquet file has no row groups</div>
   }
@@ -202,15 +205,25 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
 
   return (
     <>
-      <p style={{ opacity: 0.7, fontSize: '0.95em' }}>
-        <b>{totalRows.toLocaleString()}</b> rows · <b>{schema.length}</b> columns · <b>{rowGroups.length}</b> row group{rowGroups.length === 1 ? '' : 's'} · {fmtSize(byteSize)}
+      {/* Positioned with a z-index because the column picker's panel
+          drops down over the table below it. The picker's own z-index
+          can't do this: it's a flex item of this line, so it's painted
+          in this line's place in the root stacking order — which is
+          before the table, sticky header and all. */}
+      <p style={{ opacity: 0.7, fontSize: '0.95em', display: 'flex', alignItems: 'center', gap: '0.6em', flexWrap: 'wrap', position: 'relative', zIndex: 2 }}>
+        {/* `allColumns.length` deliberately — the file's shape shouldn't
+            change because you hid a column to read it. */}
+        <span>
+          <b>{totalRows.toLocaleString()}</b> rows · <b>{allColumns.length}</b> columns · <b>{rowGroups.length}</b> row group{rowGroups.length === 1 ? '' : 's'} · {fmtSize(byteSize)}
+        </span>
+        {columnPicker && <ColumnPicker columns={allColumns} vis={{ visible, ...vis }} />}
       </p>
 
       <details style={{ marginBottom: '0.5em' }}>
         <summary style={{ cursor: 'pointer', fontSize: '0.9em', opacity: 0.8 }}>schema</summary>
         <table style={{ borderCollapse: 'collapse', marginTop: '0.3em', fontSize: '0.85em' }}>
           <tbody>
-            {schema.map(c => (
+            {allColumns.map(c => (
               <tr key={c.name}>
                 <td style={{ padding: '0.1em 0.6em 0.1em 0', fontFamily: 'ui-monospace, monospace' }}>{c.name}</td>
                 <td style={{ padding: '0.1em 0', opacity: 0.7 }}>{typeLabel(c, temporal.get(c.name))}</td>

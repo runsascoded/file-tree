@@ -67,6 +67,11 @@
       "import": "./dist/renderers/table.js",
       "require": "./dist/renderers/table.cjs"
     },
+"./renderers/tableControls": {
+      "types": "./dist/renderers/tableControls.d.ts",
+      "import": "./dist/renderers/tableControls.js",
+      "require": "./dist/renderers/tableControls.cjs"
+    },
     "./renderers/yaml": {
       "types": "./dist/renderers/yaml.d.ts",
       "import": "./dist/renderers/yaml.js",
