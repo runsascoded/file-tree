@@ -7,15 +7,17 @@
  *  line quoted fields (a quote opening on one line and closing on the
  *  next) — those would need a streaming parser since byte-paginated
  *  chunks can split mid-row. */
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
+import { PAGE_BYTES, useCsvHeader, useCsvPage } from './csvData'
+
+// Re-exported so the public subpath keeps every name it had; the
+// plumbing now lives in `./csvData` and is importable on its own.
+export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
 import { resolveColStyles, TD_STYLE, TH_STYLE, type TableColumn, type TableViewerOptions } from './table'
 
 export type { TableCellCtx, TableCellRenderer, TableColumn, TableViewerOptions } from './table'
-
-const PAGE_BYTES = 256 * 1024
-const HEADER_PROBE_BYTES = 32 * 1024
 
 /** Note `rowIndex` in `renderCell` is **page-relative** here: pages are
  *  byte ranges, so the viewer never learns how many rows preceded them.
@@ -39,51 +41,10 @@ export function makeCsvViewer(opts: CsvViewerOptions = {}) {
 export function CsvViewer({ store, path, delimiter, renderCell, renderHeader, cellProps, headerProps }: {
   store: Store; path: string; delimiter: string
 } & CsvViewerOptions) {
-  const [total, setTotal] = useState<number | null>(null)
-  const [header, setHeader] = useState<string[] | null>(null)
+  const { header, total, error: headerError } = useCsvHeader(store, path, delimiter)
   const [page, setPage] = useState(0)
-  const [rows, setRows] = useState<string[][] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setTotal(null); setHeader(null); setRows(null); setError(null); setPage(0)
-    store.get(path, { offset: 0, length: HEADER_PROBE_BYTES }).then(r => {
-      if (cancelled) return
-      const text = new TextDecoder().decode(r.bytes)
-      const nl = text.indexOf('\n')
-      if (nl < 0) { setError(`no newline in first ${HEADER_PROBE_BYTES} bytes — not a CSV?`); return }
-      setHeader(parseLine(text.slice(0, nl).replace(/\r$/, ''), delimiter))
-      const ts = r.totalSize
-      if (ts == null) { setError('CSV viewer needs total file size; store did not report it'); return }
-      setTotal(ts)
-    }).catch(e => {
-      if (!cancelled) setError(String(e))
-    })
-    return () => { cancelled = true }
-  }, [store, path, delimiter])
-
-  useEffect(() => {
-    if (total === null || header === null) return
-    let cancelled = false
-    setRows(null)
-    const offset = page * PAGE_BYTES
-    const length = Math.min(PAGE_BYTES, total - offset)
-    if (length <= 0) { setRows([]); return }
-    store.get(path, { offset, length }).then(r => {
-      if (cancelled) return
-      const text = new TextDecoder().decode(r.bytes)
-      let lines = text.split('\n')
-      lines = lines.slice(1)
-      const atEof = offset + length >= total
-      if (!atEof && lines.length > 0) lines = lines.slice(0, -1)
-      while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-      setRows(lines.map(line => parseLine(line.replace(/\r$/, ''), delimiter)))
-    }).catch(e => {
-      if (!cancelled) setError(String(e))
-    })
-    return () => { cancelled = true }
-  }, [store, path, delimiter, page, total, header])
+  const { rows, error: pageError } = useCsvPage(store, path, delimiter, page, total)
+  const error = headerError ?? pageError
 
   const columns: TableColumn[] = useMemo(() => (header ?? []).map(name => ({ name })), [header])
   const colStyles = useMemo(
@@ -162,35 +123,6 @@ export function CsvViewer({ store, path, delimiter, renderCell, renderHeader, ce
       </div>
     </>
   )
-}
-
-/** Minimal CSV/TSV line parser. Handles quoted fields with embedded
- *  delimiters and escaped quotes (`""` → `"`). Does NOT handle
- *  multi-line quoted fields (rare; would need a streaming parser). */
-function parseLine(line: string, delimiter: string): string[] {
-  const out: string[] = []
-  let cur = ''
-  let inQuotes = false
-  let i = 0
-  while (i < line.length) {
-    const c = line[i]
-    if (inQuotes) {
-      if (c === '"') {
-        if (line[i + 1] === '"') { cur += '"'; i += 2; continue }
-        inQuotes = false
-        i++
-      } else {
-        cur += c
-        i++
-      }
-    } else {
-      if (c === delimiter) { out.push(cur); cur = ''; i++ }
-      else if (c === '"' && cur === '') { inQuotes = true; i++ }
-      else { cur += c; i++ }
-    }
-  }
-  out.push(cur)
-  return out
 }
 
 /** Default export so the viewer registry can `load: () => import(…)`

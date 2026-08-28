@@ -99,11 +99,19 @@ export interface JsonTreeOptions {
    *  constant: 0 disables (useful in tests, where a debounce is just
    *  latency). */
   jqDebounceMs?: number
+  /** How a jq expression is applied. Defaults to `jq-web` (an optional
+   *  peer, dynamically imported on first use).
+   *
+   *  A strategy rather than a flag: `jq-web` is a ~2.8 MB wasm module,
+   *  and a consumer may already ship a jq build, prefer `jaq`, or want
+   *  to run the filter server-side where the document lives. Hard-wiring
+   *  it left them no way in. */
+  runJq?: (value: unknown, expr: string) => Promise<unknown>
 }
 
 /** Build a `jsonRenderer` with per-value decoration. `renderJsonTree` is
  *  this with no options; both take `(source, usePersistedState?)`. */
-export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, parse, label = 'JSON', jqDebounceMs = 300 }: JsonTreeOptions = {}) {
+export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, parse, label = 'JSON', jqDebounceMs = 300, runJq = defaultRunJq }: JsonTreeOptions = {}) {
   return function renderJson(source: string, usePersistedState?: PersistedState) {
     return (
       <JsonViewer
@@ -115,6 +123,7 @@ export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth 
         {...(parse ? { parse } : {})}
         label={label}
         jqDebounceMs={jqDebounceMs}
+        runJq={runJq}
       />
     )
   }
@@ -126,10 +135,10 @@ export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth 
  *  `jsonRenderer` and forward it. */
 export const renderJsonTree = makeJsonTreeRenderer()
 
-function JsonViewer({ source, usePersistedState, renderValue, renderKey, initialOpenDepth, parse, label, jqDebounceMs }: {
+function JsonViewer({ source, usePersistedState, renderValue, renderKey, initialOpenDepth, parse, label, jqDebounceMs, runJq }: {
   source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer; renderKey?: JsonKeyRenderer
   initialOpenDepth: number; parse?: (source: string) => unknown | Promise<unknown>; label: string
-  jqDebounceMs: number
+  jqDebounceMs: number; runJq: (value: unknown, expr: string) => Promise<unknown>
 }) {
   const use = usePersistedState ?? defaultUseState
   // `q` is shared with the directory listing's filter deliberately: they
@@ -207,7 +216,7 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
       setJqError(String(e)); setJqResult(null); setJqLoading(false)
     })
     return () => { cancelled = true }
-  }, [source, jq, parseError, parsing])
+  }, [source, jq, parseError, parsing, runJq])
 
   const value = jqResult ? jqResult.value : parsed
   const matches = useMemo(() => q.trim() === '' || value === undefined ? null : collectMatchPaths(value, q), [value, q])
@@ -603,7 +612,10 @@ interface JqModule { json: (value: unknown, expr: string) => unknown }
  *
  *  `jq-web` ships its default export as a Promise that resolves once
  *  the WASM module is initialized — hence the double-await. */
-async function runJq(value: unknown, expr: string): Promise<unknown> {
+/** Default `runJq`: the `jq-web` optional peer, imported on first use.
+ *  Exported so a consumer wrapping it (caching, a worker) doesn't have
+ *  to reimplement the import + error message. */
+export async function defaultRunJq(value: unknown, expr: string): Promise<unknown> {
   let mod: { default: Promise<JqModule> | JqModule }
   try {
     // @ts-expect-error jq-web has no types; treat as untyped.

@@ -527,6 +527,30 @@ const VIEWERS: readonly ViewerEntry<never>[] = [
 
 Registry entries win over the `*Renderer` props, so registering a `.parquet` viewer overrides the built-in one. Directories and zip entries are excluded (the first isn't a file; container formats are still specced, not built — see `specs/viewer-registry.md`).
 
+## Customizing a viewer — four rungs
+
+Each rung costs more than the last; take the lowest one that reaches.
+
+1. **Options** — `initialOpenDepth`, `alignNumeric`, `inferTimestamps`, `jqDebounceMs`.
+2. **Render hooks** — `renderCell` / `renderHeader` / `renderValue` / `renderKey` / `cellProps`. These are the workhorse: each receives `defaultNode`, so you override a *decision* without reimplementing what surrounds it.
+3. **Strategies** — swap a whole behaviour rather than tune a constant. `parse` (how text becomes a value), `runJq` (how a filter is applied — `jq-web` is only the default, and it's a 2.8 MB wasm module you may not want).
+4. **Compose from the plumbing** — build your own viewer over the library's data layer:
+
+```tsx
+import { useParquetMeta, useRowGroup } from '@rdub/file-tree/renderers/parquetData'
+import { useCsvHeader, useCsvPage, parseLine } from '@rdub/file-tree/renderers/csvData'
+
+function MyParquetTable({ store, path }) {
+  const { meta } = useParquetMeta(store, path)          // footer, schema, row groups, stats
+  const { rows } = useRowGroup(store, path, meta, page) // decoded + LRU-cached
+  return <MyVirtualisedTable columns={meta?.schema} rows={rows} />
+}
+```
+
+Then register it (`viewers`) and yours wins over the built-in. The split is deliberate: fetching and format decoding stay shared — that's where the bugs and the tests are — and the markup is entirely yours. A virtualised parquet table shouldn't have to think about `hyparquet`.
+
+Site code in `site/src/components/` (`S2CellPreview`, `LogViewer`, `YamlViewer`) is meant to be read and copied, not imported.
+
 ## Subpath exports
 
 | Path | What |

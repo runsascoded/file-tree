@@ -77,6 +77,11 @@
       "import": "./dist/renderers/parquet.js",
       "require": "./dist/renderers/parquet.cjs"
     },
+"./renderers/parquetData": {
+      "types": "./dist/renderers/parquetData.d.ts",
+      "import": "./dist/renderers/parquetData.js",
+      "require": "./dist/renderers/parquetData.cjs"
+    },
     "./renderers/markdown": {
       "types": "./dist/renderers/markdown.d.ts",
       "import": "./dist/renderers/markdown.js",
@@ -86,6 +91,11 @@
       "types": "./dist/renderers/csv.d.ts",
       "import": "./dist/renderers/csv.js",
       "require": "./dist/renderers/csv.cjs"
+    },
+"./renderers/csvData": {
+      "types": "./dist/renderers/csvData.d.ts",
+      "import": "./dist/renderers/csvData.js",
+      "require": "./dist/renderers/csvData.cjs"
     },
     "./renderers/notebook": {
       "types": "./dist/renderers/notebook.d.ts",

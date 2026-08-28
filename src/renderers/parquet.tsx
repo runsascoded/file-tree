@@ -17,10 +17,19 @@
  *  Uses `hyparquet` (optional peer) for footer/metadata + row-range
  *  reads, fed via `asyncBufferFromStore` so it works against any
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { parquetMetadataAsync, parquetRead, parquetSchema } from 'hyparquet'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Store } from '../types'
-import { asyncBufferFromStore } from '../react/asyncBuffer'
+import {
+  NUMERIC_TYPES, useParquetMeta, useRowGroup,
+  type ParquetColumn, type ParquetColumnStats, type ParquetMeta, type RowGroupInfo,
+} from './parquetData'
+
+// Re-exported so the public subpath keeps every name it had; the
+// plumbing now lives in `./parquetData` and is importable on its own.
+export {
+  coarseKind, NUMERIC_TYPES, RG_CACHE_SIZE, useParquetMeta, useRowGroup,
+} from './parquetData'
+export type { ParquetColumn, ParquetColumnStats, ParquetMeta, RowGroupInfo } from './parquetData'
 import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
@@ -44,23 +53,10 @@ export type {
 export { formatTemporal, inferColumnFormats, inferTemporalFormat, toMillis } from './temporal'
 export type { TemporalColumn, TemporalFormat, TemporalPrecision, TemporalSource, TemporalUnit } from './temporal'
 
-/** A leaf column of the file's schema. Passed to `renderCell` so a
- *  consumer can key off type as well as name — the parquet-specific
- *  detail (`physicalType`, `logicalType`, …) rides on top of the
- *  format-neutral `TableColumn` every table viewer shares. */
-export interface ParquetColumn extends TemporalColumn, TableColumn {}
 
 export type ParquetCellCtx = TableCellCtx<ParquetColumn>
 export type ParquetCellRenderer = TableCellRenderer<ParquetColumn>
 
-/** Per-column statistics from the current row group's footer metadata.
- *  Not reconstructible from the decoded rows a consumer sees — the
- *  footer is only ever read here. Absent when the writer omitted it. */
-export interface ParquetColumnStats {
-  min?: unknown
-  max?: unknown
-  nullCount?: number
-}
 
 /** Parquet's header ctx adds row-group statistics — not reconstructible
  *  from the decoded rows a consumer sees, since only the viewer reads
@@ -89,23 +85,7 @@ export interface ParquetViewerOptions extends TableViewerOptions<ParquetColumn> 
   alignNumeric?: boolean
 }
 
-interface RowGroupInfo {
-  index: number
-  numRows: number
-  rowStart: number  // cumulative row index (inclusive)
-  rowEnd: number    // exclusive
-  uncompressedBytes: number
-  compressedBytes: number | null
-  /** Keyed by column name; empty when the writer wrote no statistics. */
-  stats: Map<string, ParquetColumnStats>
-}
 
-interface Meta {
-  schema: ParquetColumn[]
-  totalRows: number
-  byteSize: number
-  rowGroups: RowGroupInfo[]
-}
 
 /** In-RG render page size. 100 rows keeps `<tr>` count well below
  *  freeze territory on any device — the whole RG stays decoded in
@@ -121,22 +101,7 @@ const ROWS_PER_PAGE = 100
  *  a stroll through a 40-RG shard doesn't accumulate a decoded copy
  *  of the entire file in memory — the last 4 RGs give roughly-linear
  *  scan enough runway to feel free. */
-const RG_CACHE_SIZE = 4
 
-/** Physical types that read as quantities, and so right-align by
- *  default. `BOOLEAN` and the byte-array types are excluded. */
-/** Parquet's physical type collapsed to the coarse reading every table
- *  viewer speaks. Temporal isn't decidable here — a `TIMESTAMP` is an
- *  `INT64` until inference runs — so it's applied below, once the
- *  column's format is known. */
-function coarseKind(physicalType: string): TableColumn['kind'] {
-  if (NUMERIC_TYPES.has(physicalType)) return 'number'
-  if (physicalType === 'BOOLEAN') return 'boolean'
-  if (physicalType === 'BYTE_ARRAY' || physicalType === 'FIXED_LEN_BYTE_ARRAY') return 'string'
-  return undefined
-}
-
-const NUMERIC_TYPES = new Set(['INT32', 'INT64', 'INT96', 'FLOAT', 'DOUBLE'])
 
 /** Base cell/header styling, hoisted so per-column overrides merge over
  *  a single source of truth rather than a literal inlined in JSX. */
@@ -156,142 +121,28 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
 }
 
 export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
-  const [meta, setMeta] = useState<Meta | null>(null)
+  const { meta, error: metaError } = useParquetMeta(store, path)
+
   // 0-indexed row-group pagination. Default `useState` (in-memory);
   // when `usePersistedState` is the URL hook, binds to `?page=N` with
   // `page=0` omitted from URL.
   const use = usePersistedState ?? defaultUseState
   const [page, setPage] = use<number>('page', 0)
-  const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
   // In-RG page index (0-based). Deliberately in-memory-only — shared
   // URLs open at the top of the linked RG, which is a saner
   // "here's-the-row-group" entry point than restoring a mid-RG scroll
-  // position across paste. Reset happens implicitly via `rgPage=0` in
-  // the cross-RG-advance handlers, and explicitly here on `page`
-  // change (covers clicks in the "row groups (N)" table).
+  // position across paste.
   const [rgPage, setRgPage] = useState(0)
   useEffect(() => { setRgPage(0) }, [page])
-  // LRU cache of decoded rows, keyed by RG index within the current
-  // `(store, path)`. Wiped in the metadata effect below when the
-  // file changes. JS `Map` preserves insertion order — we `.delete` +
-  // `.set` on hit to bump-to-most-recent, and evict `keys().next()`
-  // on overflow.
-  const rgCache = useRef<Map<number, Record<string, unknown>[]>>(new Map())
 
-  useEffect(() => {
-    let cancelled = false
-    setMeta(null); setRows(null); setError(null)
-    // New file → drop the RG cache; the old entries are keyed by
-    // RG index within the previous file's structure and would
-    // silently mis-render if reused.
-    rgCache.current = new Map()
-    ;(async () => {
-      try {
-        const file = await asyncBufferFromStore(store, path)
-        const md = await parquetMetadataAsync(file)
-        if (cancelled) return
-        const schema: ParquetColumn[] = parquetSchema(md).children.map(c => {
-          const el = c.element
-          const lt = el.logical_type
-          const physicalType = el.type ? String(el.type) : undefined
-          return {
-            name: el.name,
-            ...(physicalType ? { physicalType, kind: coarseKind(physicalType) } : {}),
-            ...(lt ? { logicalType: lt.type } : {}),
-            ...(lt && 'unit' in lt ? { timeUnit: lt.unit } : {}),
-            ...(el.converted_type ? { convertedType: String(el.converted_type) } : {}),
-          }
-        })
-        const rowGroups: RowGroupInfo[] = []
-        let cum = 0
-        md.row_groups.forEach((rg, i) => {
-          const numRows = Number(rg.num_rows)
-          const stats = new Map<string, ParquetColumnStats>()
-          for (const chunk of rg.columns) {
-            const cm = chunk.meta_data
-            const s = cm?.statistics
-            if (!cm || !s) continue
-            // `min_value`/`max_value` are the modern (correctly-ordered)
-            // fields; `min`/`max` are the deprecated ones, kept as a
-            // fallback for older writers.
-            const min = s.min_value ?? s.min
-            const max = s.max_value ?? s.max
-            const nullCount = s.null_count != null ? Number(s.null_count) : undefined
-            if (min === undefined && max === undefined && nullCount === undefined) continue
-            stats.set(cm.path_in_schema.join('.'), {
-              ...(min !== undefined ? { min } : {}),
-              ...(max !== undefined ? { max } : {}),
-              ...(nullCount !== undefined ? { nullCount } : {}),
-            })
-          }
-          rowGroups.push({
-            index: i,
-            numRows,
-            rowStart: cum,
-            rowEnd: cum + numRows,
-            uncompressedBytes: Number(rg.total_byte_size),
-            compressedBytes: rg.total_compressed_size != null ? Number(rg.total_compressed_size) : null,
-            stats,
-          })
-          cum += numRows
-        })
-        setMeta({ schema, totalRows: Number(md.num_rows), byteSize: file.byteLength, rowGroups })
-      } catch (e) {
-        if (!cancelled) setError(String(e))
-      }
-    })()
-    return () => { cancelled = true }
-  }, [store, path])
+  const { rows, error: rowsError } = useRowGroup(store, path, meta, page)
+  const error = metaError ?? rowsError
 
   // Clamp `page` to row-group count once metadata is loaded. Survives
   // stale `?page=N` URLs pasted across files with different rg counts.
   useEffect(() => {
     if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0)
   }, [meta, page, setPage])
-
-  useEffect(() => {
-    if (!meta || meta.rowGroups.length === 0) return
-    const rgIdx = Math.min(page, meta.rowGroups.length - 1)
-    const rg = meta.rowGroups[rgIdx]
-    // Cache hit → skip fetch + decode, bump to most-recent.
-    const cached = rgCache.current.get(rgIdx)
-    if (cached) {
-      rgCache.current.delete(rgIdx)
-      rgCache.current.set(rgIdx, cached)
-      setRows(cached)
-      return
-    }
-    let cancelled = false
-    setRows(null)
-    ;(async () => {
-      try {
-        const file = await asyncBufferFromStore(store, path)
-        const out: Record<string, unknown>[] = []
-        await parquetRead({
-          file,
-          rowStart: rg.rowStart,
-          rowEnd: rg.rowEnd,
-          rowFormat: 'object',
-          onComplete: (data: unknown) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r as Record<string, unknown>)
-          },
-        })
-        if (cancelled) return
-        // Insert + evict oldest past bound.
-        rgCache.current.set(rgIdx, out)
-        while (rgCache.current.size > RG_CACHE_SIZE) {
-          const oldest = rgCache.current.keys().next().value
-          if (oldest === undefined) break
-          rgCache.current.delete(oldest)
-        }
-        setRows(out)
-      } catch (e) {
-        if (!cancelled) setError(String(e))
-      }
-    })()
-    return () => { cancelled = true }
-  }, [store, path, page, meta])
 
   // Temporal reading per column, from the decoded rows of the current
   // row group. Recomputed per RG rather than per file: a later RG can
