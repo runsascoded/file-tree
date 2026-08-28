@@ -52,8 +52,28 @@ export interface JsonValueCtx {
  *  the disclosure carets and child layout. */
 export type JsonValueRenderer = (ctx: JsonValueCtx) => ReactNode
 
+/** A key line, before the `:`. Separate from `renderValue` because
+ *  `renderValue` only fires for scalars, and the things worth hanging
+ *  off a key — a YAML comment, a schema description, a unit — belong on
+ *  containers too. */
+export interface JsonKeyCtx {
+  key: string
+  /** jq-style path to the *value* under this key. */
+  path: string
+  /** The whole parsed document. A renderer keyed on side-band data —
+   *  YAML comments, a JSON Schema — needs something to look it up
+   *  against, and the root is the only stable handle it has. */
+  root: unknown
+  /** What the tree would have rendered for the key. */
+  defaultNode: ReactNode
+}
+
+export type JsonKeyRenderer = (ctx: JsonKeyCtx) => ReactNode
+
 export interface JsonTreeOptions {
   renderValue?: JsonValueRenderer
+  /** Decorate key labels (see `JsonKeyRenderer`). */
+  renderKey?: JsonKeyRenderer
   /** How many container levels start expanded. 1 (default) opens the
    *  root and nothing else; 2 also opens its immediate children, etc.
    *  `Infinity` opens everything. Depth counts containers, so a
@@ -73,13 +93,14 @@ export interface JsonTreeOptions {
 
 /** Build a `jsonRenderer` with per-value decoration. `renderJsonTree` is
  *  this with no options; both take `(source, usePersistedState?)`. */
-export function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1, parse, label = 'JSON' }: JsonTreeOptions = {}) {
+export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, parse, label = 'JSON' }: JsonTreeOptions = {}) {
   return function renderJson(source: string, usePersistedState?: PersistedState) {
     return (
       <JsonViewer
         source={source}
         usePersistedState={usePersistedState}
         renderValue={renderValue}
+        renderKey={renderKey}
         initialOpenDepth={initialOpenDepth}
         {...(parse ? { parse } : {})}
         label={label}
@@ -94,8 +115,8 @@ export function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1, parse,
  *  `jsonRenderer` and forward it. */
 export const renderJsonTree = makeJsonTreeRenderer()
 
-function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth, parse, label }: {
-  source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer
+function JsonViewer({ source, usePersistedState, renderValue, renderKey, initialOpenDepth, parse, label }: {
+  source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer; renderKey?: JsonKeyRenderer
   initialOpenDepth: number; parse?: (source: string) => unknown | Promise<unknown>; label: string
 }) {
   const use = usePersistedState ?? defaultUseState
@@ -241,6 +262,8 @@ function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth, 
           forceOpenVersion={expandVersion}
           copyPath={copyPath}
           renderValue={renderValue}
+          renderKey={renderKey}
+          root={value}
         />
       </div>
     </div>
@@ -297,6 +320,8 @@ interface NodeProps {
   matches: Set<string> | null
   forceDepth: number | null
   forceOpenVersion: number
+  renderKey?: JsonKeyRenderer
+  root: unknown
   copyPath: (path: string) => void
   renderValue?: JsonValueRenderer
 }
@@ -311,13 +336,13 @@ function scalarNode(value: unknown, q: string): ReactNode {
   return null
 }
 
-function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue }: NodeProps) {
+function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue, renderKey, root }: NodeProps) {
   const scalar = scalarNode(value, q)
   if (scalar !== null) {
     if (!renderValue) return <>{scalar}</>
     return <>{renderValue({ value, path, key: keyName, defaultNode: scalar })}</>
   }
-  const rest = { path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue, initialOpen: depth < initialOpenDepth }
+  const rest = { path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue, renderKey, root, initialOpen: depth < initialOpenDepth }
   if (Array.isArray(value)) {
     return <ArrayNode value={value} {...rest} />
   }
@@ -327,7 +352,7 @@ function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, force
   return <span>{String(value)}</span>
 }
 
-function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: unknown[]; initialOpen: boolean }) {
+function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, initialOpen, copyPath, renderValue, renderKey, root }: NodeProps & { value: unknown[]; initialOpen: boolean }) {
   const matchedHere = matches?.has(path) ?? false
   // Resolved per container: the force is expressed as a depth, so
   // each node decides for itself whether it's inside it.
@@ -343,7 +368,7 @@ function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceDept
             const childPath = `${path}[${i}]`
             return (
               <div key={i}>
-                <Node value={v} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} q={q} matches={matches} forceDepth={forceDepth} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
+                <Node value={v} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} q={q} matches={matches} forceDepth={forceDepth} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} renderKey={renderKey} root={root} />
                 {i < value.length - 1 && <span style={{ color: COLORS.punct }}>,</span>}
               </div>
             )
@@ -357,7 +382,7 @@ function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceDept
   )
 }
 
-function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: Record<string, unknown>; initialOpen: boolean }) {
+function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, initialOpen, copyPath, renderValue, renderKey, root }: NodeProps & { value: Record<string, unknown>; initialOpen: boolean }) {
   const matchedHere = matches?.has(path) ?? false
   // Resolved per container: the force is expressed as a depth, so
   // each node decides for itself whether it's inside it.
@@ -374,9 +399,11 @@ function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceDep
             const childPath = `${path}${jqKeySegment(k)}`
             return (
               <div key={k}>
-                <KeyLabel keyName={k} q={q} path={childPath} copyPath={copyPath} />
+                {renderKey
+                  ? renderKey({ key: k, path: childPath, root, defaultNode: <KeyLabel keyName={k} q={q} path={childPath} copyPath={copyPath} /> })
+                  : <KeyLabel keyName={k} q={q} path={childPath} copyPath={copyPath} />}
                 <span style={{ color: COLORS.punct }}>: </span>
-                <Node value={value[k]} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} keyName={k} q={q} matches={matches} forceDepth={forceDepth} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
+                <Node value={value[k]} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} keyName={k} q={q} matches={matches} forceDepth={forceDepth} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} renderKey={renderKey} root={root} />
                 {i < keys.length - 1 && <span style={{ color: COLORS.punct }}>,</span>}
               </div>
             )

@@ -36,7 +36,41 @@ export const DEMO_FIXTURE = {
       tls: { enabled: false, ciphers: ['aes', 'chacha'] },
     },
   }, null, 2) + '\n',
-  'config.yaml': 'version: 0.0.1\ndemo: true\nsources:\n  - mock\n  - http\n',
+  // Exercises what YAML has that JSON doesn't: comments, anchors and
+  // aliases, block scalars, and native dates. The comments are the
+  // interesting ones — `yaml.parse()` drops them, since they aren't in
+  // the data model, so a tree of parsed values loses them silently
+  // unless the renderer goes out of its way.
+  'config.yaml': [
+    '# Demo config — the tree viewer parses this, so YAML gets the same',
+    '# collapsible nodes, search, depth controls and jq as JSON.',
+    'version: 0.0.1   # inline comments attach to the line above them',
+    'demo: true',
+    '',
+    '# Anchors let a block be named once and reused. `defaults` is the',
+    '# anchor; the two servers below alias it.',
+    'defaults: &defaults',
+    '  retries: 3',
+    '  timeout: 30',
+    '',
+    'servers:',
+    '  - <<: *defaults',
+    '    name: mock',
+    '  - <<: *defaults',
+    '    name: http',
+    '    timeout: 60   # overrides the alias',
+    '',
+    '# Block scalars keep newlines (|) or fold them (>).',
+    'notes: |',
+    '  A literal block.',
+    '  Newlines are preserved.',
+    '',
+    'released: 2026-04-25   # a native date, not a string',
+    'sources:',
+    '  - mock',
+    '  - http',
+    '',
+  ].join('\n'),
   // Exercises the parquet viewer's timestamp inference — see
   // `./parquet.ts` for what each column is meant to prove.
   'samples/events.parquet': EVENTS_PARQUET,

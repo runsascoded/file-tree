@@ -182,12 +182,52 @@ const VIEWERS: readonly ViewerEntry<never>[] = [
 
 /** Directory-listing hooks, the same `defaultNode` convention one level
  *  up: decorate a key whose name encodes something the listing can't
- *  know (here, a quarter), without reimplementing the icon + `<Link>`. */
+ *  know, without reimplementing the icon + `<Link>`.
+ *
+ *  Two things here. A quarter label parsed out of `data/YYYY/qN.csv`,
+ *  and — more useful — a summary of what's *inside* each directory, so
+ *  the tree says which formats live where instead of making you open
+ *  every one to find out. The library can't do this itself: it lists one
+ *  prefix at a time and has no business walking the whole store. A
+ *  consumer who knows their own layout can. */
 const QUARTER = /^data\/(\d{4})\/(q[1-4])\.csv$/
 const label = (s: string) => <span style={{ opacity: 0.5, fontWeight: 400 }}> {s}</span>
 
+const EXT_LABEL: Record<string, string> = {
+  md: 'markdown', csv: 'csv', log: 'log', parquet: 'parquet',
+  json: 'json', yaml: 'yaml',
+}
+
+/** `prefix` → what's under it, as `2 dirs · markdown`. Built once from
+ *  the fixture's keys: the demo's store is an object literal, so this is
+ *  a `Object.keys` walk, not a crawl. */
+const DIR_SUMMARY: Record<string, string> = (() => {
+  const dirs: Record<string, { subdirs: Set<string>; exts: Set<string> }> = {}
+  for (const key of Object.keys(DEMO_FIXTURE)) {
+    const parts = key.split('/')
+    for (let i = 0; i < parts.length - 1; i++) {
+      const prefix = parts.slice(0, i + 1).join('/') + '/'
+      const d = (dirs[prefix] ??= { subdirs: new Set(), exts: new Set() })
+      if (i + 2 < parts.length) d.subdirs.add(parts[i + 1]!)
+      // Extensions are counted *recursively* — `data/` holds only
+      // subdirectories, and "2 dirs" alone doesn't answer the question
+      // you opened it to answer.
+      d.exts.add(parts[parts.length - 1]!.split('.').pop()!.toLowerCase())
+    }
+  }
+  return Object.fromEntries(Object.entries(dirs).map(([prefix, { subdirs, exts }]) => {
+    const bits: string[] = []
+    if (subdirs.size) bits.push(`${subdirs.size} dir${subdirs.size === 1 ? '' : 's'}`)
+    const named = [...exts].map(e => EXT_LABEL[e] ?? e).sort()
+    if (named.length) bits.push(named.join(', '))
+    return [prefix, bits.join(' · ')]
+  }))
+})()
+
 const renderCell: CellRenderer = ({ entry, column, defaultNode }) => {
   if (column !== 'name') return defaultNode
+  const summary = entry.key.endsWith('/') ? DIR_SUMMARY[entry.key] : undefined
+  if (summary) return <>{defaultNode}{label(summary)}</>
   const m = QUARTER.exec(entry.key)
   return m ? <>{defaultNode}{label(`${m[2].toUpperCase()} ${m[1]}`)}</> : defaultNode
 }

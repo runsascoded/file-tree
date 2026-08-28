@@ -115,12 +115,35 @@ test.describe('MockDemo', () => {
     // same collapsible nodes, search, depth controls and jq — the parser
     // is lazily imported, hence the retrying assertion.
     await expect(page.locator('.rdub-file-tree-json-tree')).toBeVisible()
+
+    // Anchors/aliases are resolved (`servers` carries the merged
+    // `defaults`), block scalars keep their newlines, and — the point —
+    // comments survive. `yaml.parse()` drops them, so the renderer walks
+    // the document and puts them back via `renderKey`.
     expect(await jsonTree(page)).toBe(
-      '▾{"version": "0.0.1","demo": true,"sources": ▸[ 2 items ]}',
+      '▾{'
+      + '# Demo config — the tree viewer parses this, so YAML gets the same collapsible nodes,'
+      + ' search, depth controls and jq as JSON. — inline comments attach to the line above them'
+      + '"version": "0.0.1",'
+      + '"demo": true,'
+      + '# Anchors let a block be named once and reused. `defaults` is the anchor;'
+      + ' the two servers below alias it.'
+      + '"defaults": ▸{ 2 keys },'
+      + '"servers": ▸[ 2 items ],'
+      + '# Block scalars keep newlines (|) or fold them (>).'
+      + '"notes": "A literal block. Newlines are preserved. ",'
+      + '# a native date, not a string'
+      + '"released": "2026-04-25",'
+      + '"sources": ▸[ 2 items ]}',
     )
+
+    // Depth 2 resolves the anchor: `defaults` is `&defaults`, and both
+    // `servers` entries merged it (the second has 3 keys, having
+    // overridden `timeout`).
     await page.getByTitle('Expand to depth 2').click()
-    expect(await jsonTree(page)).toBe(
-      '▾{"version": "0.0.1","demo": true,"sources": ▾["mock","http"]}',
+    const at2 = await jsonTree(page)
+    expect(at2.slice(at2.indexOf('"defaults"'), at2.indexOf('# Block'))).toBe(
+      '"defaults": ▾{"retries": 3,"timeout": 30},"servers": ▾[▸{ 2 keys },▸{ 3 keys }],',
     )
   })
 

@@ -276,6 +276,10 @@ import { renderViewerActions } from './viewerActions'                 // ↗ SQL
 
 The `yaml` parser is an optional peer, dynamically imported on first use — register the viewer (rather than passing a prop) and neither it nor the parser reaches your main bundle. Same bargain as `jq-web`.
 
+**Comments survive.** They're the reason to write YAML instead of JSON, and they are *not in the data model* — `yaml.parse()` drops them, so a tree of parsed values loses exactly what the author cared about. The renderer parses to a document instead, walks it once collecting jq-path → comment, and puts them back above their keys via the tree's `renderKey` hook. Anchors and aliases resolve (a merged `<<: *defaults` shows the merged keys), block scalars keep their newlines.
+
+`renderKey` is a general hook, not a YAML one — `{ key, path, root, defaultNode }`, called for every object key. `renderValue` only fires for *scalars*, so anything you want to hang off a key whose value is a container (a comment, a schema description, a unit) needs this instead.
+
 ```tsx
 import { makeJsonTreeRenderer } from '@rdub/file-tree/renderers/json'
 
