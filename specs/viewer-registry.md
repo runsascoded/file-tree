@@ -147,8 +147,12 @@ against a real consumer, not the same day it lands. Likewise `csvOptions` was
 skipped — the registry's `options` covers it, so adding a prop about to be
 deleted would be churn.
 
-**3. Container registry — not started.** Still wants a second real
-implementation before generalising from zip.
+**3. Container registry — deferred, and reframed.** Calling this a
+prerequisite for SQLite had it backwards: it put a speculative refactor in front
+of a feature. SQLite is worth building on its own
+(`specs/sqlite-and-table-sources.md`); whether zip + a multi-table `.db` then
+justify a shared "file that browses like a directory" abstraction is a smaller
+question, answerable from two real instances instead of one.
 
 ## Sequencing
 
