@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.5a84045",
+  "version": "0.0.1-dist.1efc90b",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -113,6 +113,11 @@
       "types": "./renderers/csvData.d.ts",
       "import": "./renderers/csvData.js",
       "require": "./renderers/csvData.cjs"
+    },
+    "./renderers/tableControls": {
+      "types": "./renderers/tableControls.d.ts",
+      "import": "./renderers/tableControls.js",
+      "require": "./renderers/tableControls.cjs"
     }
   },
   "keywords": [

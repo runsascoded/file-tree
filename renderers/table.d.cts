@@ -75,6 +75,17 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
     /** Per-column `<th>` attributes. Separate from `cellProps` so
      *  overriding one doesn't silently change the other. */
     headerProps?: TableColumnProps<C>;
+    /** Show a `columns (5/7)` control for hiding columns. Wide tables are
+     *  common and horizontal scrolling is a poor way to read one; hiding
+     *  needs no extra data, so it works at any file size.
+     *
+     *  Off by default — it adds chrome, and a viewer shouldn't grow a
+     *  control the host didn't ask for. Bind `usePersistedState` to the
+     *  URL and the choice becomes shareable (`?hide=a,b`). */
+    columnPicker?: boolean;
+    /** Columns hidden initially, by name. Independent of `columnPicker`:
+     *  set this alone to drop columns the reader can't restore. */
+    hiddenColumns?: readonly string[];
 }
 /** Shared `<td>` / `<th>` styling, so the table viewers look like each
  *  other rather than merely similar. */

@@ -51,7 +51,7 @@ declare function makeParquetViewer(opts?: ParquetViewerOptions): (props: {
     path: string;
     usePersistedState?: PersistedState;
 } & ParquetViewerOptions) => react_jsx_runtime.JSX.Element;
-declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric }: {
+declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric, columnPicker, hiddenColumns }: {
     store: Store;
     path: string;
     usePersistedState?: PersistedState;

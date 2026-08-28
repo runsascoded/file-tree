@@ -30,7 +30,7 @@ __export(csv_exports, {
   useCsvPage: () => useCsvPage
 });
 module.exports = __toCommonJS(csv_exports);
-var import_react2 = require("react");
+var import_react4 = require("react");
 
 // src/react/fmt.ts
 function fmtSize(n) {
@@ -147,6 +147,111 @@ function useCsvPage(store, path, delimiter, page, total) {
   return { rows, error };
 }
 
+// src/renderers/tableControls.tsx
+var import_react3 = require("react");
+
+// src/react/persistedState.ts
+var import_react2 = require("react");
+var defaultUseState = (_key, defaultValue) => (0, import_react2.useState)(defaultValue);
+
+// src/renderers/tableControls.tsx
+var import_jsx_runtime = require("react/jsx-runtime");
+var BTN = {
+  font: "inherit",
+  fontSize: "0.85em",
+  lineHeight: 1.4,
+  cursor: "pointer",
+  padding: "0.15em 0.5em",
+  borderRadius: 3,
+  color: "inherit",
+  border: "1px solid rgba(127,127,127,0.4)",
+  background: "transparent"
+};
+function useColumnVisibility(columns, usePersistedState, initialHidden = []) {
+  const use = usePersistedState ?? defaultUseState;
+  const [raw, setRaw] = use("hide", initialHidden.join(","));
+  const hidden = (0, import_react3.useMemo)(
+    () => new Set(raw.split(",").map((s) => s.trim()).filter(Boolean)),
+    [raw]
+  );
+  const toggle = (0, import_react3.useCallback)((name) => {
+    const next = new Set(hidden);
+    next.delete(name) || next.add(name);
+    setRaw([...next].join(","));
+  }, [hidden, setRaw]);
+  const showAll = (0, import_react3.useCallback)(() => setRaw(""), [setRaw]);
+  const visible = (0, import_react3.useMemo)(
+    () => columns.map((c) => c.name).filter((n) => !hidden.has(n)),
+    [columns, hidden]
+  );
+  return { visible, toggle, showAll, hidden };
+}
+function ColumnPicker({ columns, vis }) {
+  const [open, setOpen] = (0, import_react3.useState)(false);
+  const { visible, toggle, showAll, hidden } = vis;
+  return (
+    // Note the *host* has to be positioned with a z-index for the panel
+    // to paint over the table — see the summary line in `parquet.tsx` /
+    // `csv.tsx`. A z-index here can't do it alone: this span is a flex
+    // item of that line, so it paints in the line's place in the root
+    // stacking order, which is before the table.
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { position: "relative", display: "inline-block" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+        "button",
+        {
+          type: "button",
+          onClick: () => setOpen((o) => !o),
+          style: BTN,
+          "aria-expanded": open,
+          title: "Show or hide columns",
+          children: [
+            "columns ",
+            visible.length,
+            "/",
+            columns.length
+          ]
+        }
+      ),
+      open && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+        "span",
+        {
+          role: "group",
+          "aria-label": "Columns",
+          style: {
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            zIndex: 5,
+            marginTop: "0.25em",
+            padding: "0.4em 0.6em",
+            borderRadius: 4,
+            whiteSpace: "nowrap",
+            border: "1px solid rgba(127,127,127,0.4)",
+            background: "Canvas",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            display: "block"
+          },
+          children: [
+            columns.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "input",
+                {
+                  type: "checkbox",
+                  checked: !hidden.has(c.name),
+                  onChange: () => toggle(c.name)
+                }
+              ),
+              " ",
+              c.name
+            ] }, c.name)),
+            hidden.size > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
+          ]
+        }
+      )
+    ] })
+  );
+}
+
 // src/renderers/table.ts
 var TD_STYLE = {
   padding: "0.2em 0.6em",
@@ -179,42 +284,52 @@ function resolveColStyles(columns, path, opts, isNumeric) {
 }
 
 // src/renderers/csv.tsx
-var import_jsx_runtime = require("react/jsx-runtime");
+var import_jsx_runtime2 = require("react/jsx-runtime");
 function makeCsvViewer(opts = {}) {
   return function BoundCsvViewer(props) {
-    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CsvViewer, { ...props, ...opts });
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CsvViewer, { ...props, ...opts });
   };
 }
-function CsvViewer({ store, path, delimiter, renderCell, renderHeader, cellProps, headerProps }) {
+function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns }) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter);
-  const [page, setPage] = (0, import_react2.useState)(0);
+  const [page, setPage] = (0, import_react4.useState)(0);
   const { rows, error: pageError } = useCsvPage(store, path, delimiter, page, total);
   const error = headerError ?? pageError;
-  const columns = (0, import_react2.useMemo)(() => (header ?? []).map((name) => ({ name })), [header]);
-  const colStyles = (0, import_react2.useMemo)(
+  const allColumns = (0, import_react4.useMemo)(() => (header ?? []).map((name) => ({ name })), [header]);
+  const { visible, ...vis } = useColumnVisibility(allColumns, usePersistedState, hiddenColumns);
+  const columns = (0, import_react4.useMemo)(() => allColumns.filter((c) => visible.includes(c.name)), [allColumns, visible]);
+  const colIndex = (0, import_react4.useMemo)(
+    () => new Map(allColumns.map((c, i) => [c.name, i])),
+    [allColumns]
+  );
+  const colStyles = (0, import_react4.useMemo)(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
     [columns, path, cellProps, headerProps]
   );
-  if (error) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (total === null || header === null) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
+  if (total === null || header === null) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
   const pages = Math.max(1, Math.ceil(total / PAGE_BYTES));
   const offsetStart = page * PAGE_BYTES;
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES);
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: header.length }),
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em", position: "relative", zIndex: 2 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: allColumns.length }),
       " columns \xB7 ",
-      fmtSize(total)
+      fmtSize(total),
+      columnPicker && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+        " \xB7 ",
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
+      ] })
     ] }),
-    pages > 1 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em", flexWrap: "wrap" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { disabled: page === 0, onClick: () => setPage(0), children: "\xAB" }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039" }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { opacity: 0.8 }, children: [
+    pages > 1 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em", flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === 0, onClick: () => setPage(0), children: "\xAB" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { opacity: 0.8 }, children: [
         "page ",
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: page + 1 }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: page + 1 }),
         " / ",
         pages.toLocaleString(),
         " \xB7 bytes ",
@@ -224,21 +339,22 @@ function CsvViewer({ store, path, delimiter, renderCell, renderHeader, cellProps
         " / ",
         total.toLocaleString()
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(page + 1), children: "\u203A" }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(pages - 1), children: "\xBB" })
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(page + 1), children: "\u203A" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(pages - 1), children: "\xBB" })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "Canvas" }, children: columns.map((c) => {
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "Canvas" }, children: columns.map((c) => {
         const st = colStyles.get(c.name);
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap" }, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, path, defaultNode: c.name }) : c.name }, c.name);
+        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap" }, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, path, defaultNode: c.name }) : c.name }, c.name);
       }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { colSpan: header.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { colSpan: columns.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
         let asRow = null;
-        const row = () => asRow ??= Object.fromEntries(columns.map((c, j) => [c.name, r[j] ?? ""]));
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: columns.map((c, j) => {
+        const row = () => asRow ??= Object.fromEntries(allColumns.map((c, j) => [c.name, r[j] ?? ""]));
+        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: columns.map((c) => {
           const st = colStyles.get(c.name);
+          const j = colIndex.get(c.name);
           const value = r[j] ?? "";
-          return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value }, c.name);
+          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value }, c.name);
         }) }, i);
       }) })
     ] }) })

@@ -1,5 +1,5 @@
 // src/renderers/parquet.tsx
-import { useEffect as useEffect2, useMemo, useState as useState3 } from "react";
+import { useEffect as useEffect2, useMemo as useMemo2, useState as useState4 } from "react";
 
 // src/renderers/parquetData.ts
 import { useEffect, useRef, useState } from "react";
@@ -319,6 +319,105 @@ function inferColumnFormats(cols, rows, opts = {}) {
   return out;
 }
 
+// src/renderers/tableControls.tsx
+import { useCallback, useMemo, useState as useState3 } from "react";
+import { jsx, jsxs } from "react/jsx-runtime";
+var BTN = {
+  font: "inherit",
+  fontSize: "0.85em",
+  lineHeight: 1.4,
+  cursor: "pointer",
+  padding: "0.15em 0.5em",
+  borderRadius: 3,
+  color: "inherit",
+  border: "1px solid rgba(127,127,127,0.4)",
+  background: "transparent"
+};
+function useColumnVisibility(columns, usePersistedState, initialHidden = []) {
+  const use = usePersistedState ?? defaultUseState;
+  const [raw, setRaw] = use("hide", initialHidden.join(","));
+  const hidden = useMemo(
+    () => new Set(raw.split(",").map((s) => s.trim()).filter(Boolean)),
+    [raw]
+  );
+  const toggle = useCallback((name) => {
+    const next = new Set(hidden);
+    next.delete(name) || next.add(name);
+    setRaw([...next].join(","));
+  }, [hidden, setRaw]);
+  const showAll = useCallback(() => setRaw(""), [setRaw]);
+  const visible = useMemo(
+    () => columns.map((c) => c.name).filter((n) => !hidden.has(n)),
+    [columns, hidden]
+  );
+  return { visible, toggle, showAll, hidden };
+}
+function ColumnPicker({ columns, vis }) {
+  const [open, setOpen] = useState3(false);
+  const { visible, toggle, showAll, hidden } = vis;
+  return (
+    // Note the *host* has to be positioned with a z-index for the panel
+    // to paint over the table — see the summary line in `parquet.tsx` /
+    // `csv.tsx`. A z-index here can't do it alone: this span is a flex
+    // item of that line, so it paints in the line's place in the root
+    // stacking order, which is before the table.
+    /* @__PURE__ */ jsxs("span", { style: { position: "relative", display: "inline-block" }, children: [
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          type: "button",
+          onClick: () => setOpen((o) => !o),
+          style: BTN,
+          "aria-expanded": open,
+          title: "Show or hide columns",
+          children: [
+            "columns ",
+            visible.length,
+            "/",
+            columns.length
+          ]
+        }
+      ),
+      open && /* @__PURE__ */ jsxs(
+        "span",
+        {
+          role: "group",
+          "aria-label": "Columns",
+          style: {
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            zIndex: 5,
+            marginTop: "0.25em",
+            padding: "0.4em 0.6em",
+            borderRadius: 4,
+            whiteSpace: "nowrap",
+            border: "1px solid rgba(127,127,127,0.4)",
+            background: "Canvas",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            display: "block"
+          },
+          children: [
+            columns.map((c) => /* @__PURE__ */ jsxs("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "checkbox",
+                  checked: !hidden.has(c.name),
+                  onChange: () => toggle(c.name)
+                }
+              ),
+              " ",
+              c.name
+            ] }, c.name)),
+            hidden.size > 0 && /* @__PURE__ */ jsx("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
+          ]
+        }
+      )
+    ] })
+  );
+}
+
 // src/renderers/table.ts
 var TD_STYLE = {
   padding: "0.2em 0.6em",
@@ -351,31 +450,32 @@ function resolveColStyles(columns, path, opts, isNumeric) {
 }
 
 // src/renderers/parquet.tsx
-import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import { Fragment, jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
 var ROWS_PER_PAGE = 100;
 function makeParquetViewer(opts = {}) {
   return function BoundParquetViewer(props) {
-    return /* @__PURE__ */ jsx(ParquetViewer, { ...props, ...opts });
+    return /* @__PURE__ */ jsx2(ParquetViewer, { ...props, ...opts });
   };
 }
-function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true }) {
+function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns }) {
   const { meta, error: metaError } = useParquetMeta(store, path);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
-  const [rgPage, setRgPage] = useState3(0);
+  const [rgPage, setRgPage] = useState4(0);
   useEffect2(() => {
     setRgPage(0);
   }, [page]);
   const { rows, error: rowsError } = useRowGroup(store, path, meta, page);
+  const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns);
   const error = metaError ?? rowsError;
   useEffect2(() => {
     if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0);
   }, [meta, page, setPage]);
-  const temporal = useMemo(
+  const temporal = useMemo2(
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
   );
-  const colStyles = useMemo(
+  const colStyles = useMemo2(
     // Numeric alignment keys off the *rendered* meaning, not the
     // physical type: a column read as temporal prints as text, so
     // right-aligning it would just detach it from its header.
@@ -387,15 +487,16 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
     ),
     [meta, temporal, alignNumeric, cellProps, headerProps, path]
   );
-  if (error) return /* @__PURE__ */ jsxs("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ jsxs2("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!meta) return /* @__PURE__ */ jsx("div", { style: { opacity: 0.6 }, children: "reading parquet metadata\u2026" });
+  if (!meta) return /* @__PURE__ */ jsx2("div", { style: { opacity: 0.6 }, children: "reading parquet metadata\u2026" });
   const { schema: rawSchema, totalRows, byteSize, rowGroups } = meta;
-  const schema = rawSchema.map((c) => temporal.has(c.name) ? { ...c, kind: "temporal" } : c);
+  const allColumns = rawSchema.map((c) => temporal.has(c.name) ? { ...c, kind: "temporal" } : c);
+  const schema = allColumns.filter((c) => visible.includes(c.name));
   if (rowGroups.length === 0) {
-    return /* @__PURE__ */ jsx("div", { style: { opacity: 0.7 }, children: "parquet file has no row groups" });
+    return /* @__PURE__ */ jsx2("div", { style: { opacity: 0.7 }, children: "parquet file has no row groups" });
   }
   const rgIndex = Math.min(Math.max(page, 0), rowGroups.length - 1);
   const rg = rowGroups[rgIndex];
@@ -414,48 +515,51 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   };
   const canGoPrev = clampedRgPage > 0 || rgIndex > 0;
   const canGoNext = rows !== null && clampedRgPage < rgPageCount - 1 || rgIndex < rowGroups.length - 1;
-  return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs("p", { style: { opacity: 0.7, fontSize: "0.95em" }, children: [
-      /* @__PURE__ */ jsx("b", { children: totalRows.toLocaleString() }),
-      " rows \xB7 ",
-      /* @__PURE__ */ jsx("b", { children: schema.length }),
-      " columns \xB7 ",
-      /* @__PURE__ */ jsx("b", { children: rowGroups.length }),
-      " row group",
-      rowGroups.length === 1 ? "" : "s",
-      " \xB7 ",
-      fmtSize(byteSize)
+  return /* @__PURE__ */ jsxs2(Fragment, { children: [
+    /* @__PURE__ */ jsxs2("p", { style: { opacity: 0.7, fontSize: "0.95em", display: "flex", alignItems: "center", gap: "0.6em", flexWrap: "wrap", position: "relative", zIndex: 2 }, children: [
+      /* @__PURE__ */ jsxs2("span", { children: [
+        /* @__PURE__ */ jsx2("b", { children: totalRows.toLocaleString() }),
+        " rows \xB7 ",
+        /* @__PURE__ */ jsx2("b", { children: allColumns.length }),
+        " columns \xB7 ",
+        /* @__PURE__ */ jsx2("b", { children: rowGroups.length }),
+        " row group",
+        rowGroups.length === 1 ? "" : "s",
+        " \xB7 ",
+        fmtSize(byteSize)
+      ] }),
+      columnPicker && /* @__PURE__ */ jsx2(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
     ] }),
-    /* @__PURE__ */ jsxs("details", { style: { marginBottom: "0.5em" }, children: [
-      /* @__PURE__ */ jsx("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: "schema" }),
-      /* @__PURE__ */ jsx("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: /* @__PURE__ */ jsx("tbody", { children: schema.map((c) => /* @__PURE__ */ jsxs("tr", { children: [
-        /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: c.name }),
-        /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0", opacity: 0.7 }, children: typeLabel(c, temporal.get(c.name)) })
+    /* @__PURE__ */ jsxs2("details", { style: { marginBottom: "0.5em" }, children: [
+      /* @__PURE__ */ jsx2("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: "schema" }),
+      /* @__PURE__ */ jsx2("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: /* @__PURE__ */ jsx2("tbody", { children: allColumns.map((c) => /* @__PURE__ */ jsxs2("tr", { children: [
+        /* @__PURE__ */ jsx2("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: c.name }),
+        /* @__PURE__ */ jsx2("td", { style: { padding: "0.1em 0", opacity: 0.7 }, children: typeLabel(c, temporal.get(c.name)) })
       ] }, c.name)) }) })
     ] }),
-    rowGroups.length > 1 && /* @__PURE__ */ jsxs("details", { style: { marginBottom: "0.5em" }, children: [
-      /* @__PURE__ */ jsxs("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: [
+    rowGroups.length > 1 && /* @__PURE__ */ jsxs2("details", { style: { marginBottom: "0.5em" }, children: [
+      /* @__PURE__ */ jsxs2("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: [
         "row groups (",
         rowGroups.length,
         ")"
       ] }),
-      /* @__PURE__ */ jsxs("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: [
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
-          /* @__PURE__ */ jsx("th", { style: { padding: "0.1em 0.6em 0.1em 0", fontWeight: 400 }, children: "#" }),
-          /* @__PURE__ */ jsx("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "rows" }),
-          /* @__PURE__ */ jsx("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "compressed" }),
-          /* @__PURE__ */ jsx("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "uncompressed" })
+      /* @__PURE__ */ jsxs2("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: [
+        /* @__PURE__ */ jsx2("thead", { children: /* @__PURE__ */ jsxs2("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
+          /* @__PURE__ */ jsx2("th", { style: { padding: "0.1em 0.6em 0.1em 0", fontWeight: 400 }, children: "#" }),
+          /* @__PURE__ */ jsx2("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "rows" }),
+          /* @__PURE__ */ jsx2("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "compressed" }),
+          /* @__PURE__ */ jsx2("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "uncompressed" })
         ] }) }),
-        /* @__PURE__ */ jsx("tbody", { children: rowGroups.map((g) => /* @__PURE__ */ jsxs("tr", { style: { background: g.index === rgIndex ? "rgba(127,127,127,0.12)" : void 0, cursor: "pointer" }, onClick: () => setPage(g.index), children: [
-          /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: g.index }),
-          /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: g.numRows.toLocaleString() }),
-          /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.8 }, children: g.compressedBytes != null ? fmtSize(g.compressedBytes) : "\u2014" }),
-          /* @__PURE__ */ jsx("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6 }, children: fmtSize(g.uncompressedBytes) })
+        /* @__PURE__ */ jsx2("tbody", { children: rowGroups.map((g) => /* @__PURE__ */ jsxs2("tr", { style: { background: g.index === rgIndex ? "rgba(127,127,127,0.12)" : void 0, cursor: "pointer" }, onClick: () => setPage(g.index), children: [
+          /* @__PURE__ */ jsx2("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: g.index }),
+          /* @__PURE__ */ jsx2("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: g.numRows.toLocaleString() }),
+          /* @__PURE__ */ jsx2("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.8 }, children: g.compressedBytes != null ? fmtSize(g.compressedBytes) : "\u2014" }),
+          /* @__PURE__ */ jsx2("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6 }, children: fmtSize(g.uncompressedBytes) })
         ] }, g.index)) })
       ] })
     ] }),
-    /* @__PURE__ */ jsx(Pager, { rg, rgCount: rowGroups.length, setPage, totalRows }),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx2(Pager, { rg, rgCount: rowGroups.length, setPage, totalRows }),
+    /* @__PURE__ */ jsx2(
       RowPager,
       {
         canGoPrev,
@@ -470,41 +574,41 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         rows
       }
     ),
-    /* @__PURE__ */ jsx("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ jsxs("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas" }, children: schema.map((c) => {
+    /* @__PURE__ */ jsx2("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ jsxs2("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ jsx2("thead", { children: /* @__PURE__ */ jsx2("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas" }, children: schema.map((c) => {
         const st = colStyles.get(c.name);
         const stats = rg.stats.get(c.name);
         const title = statsTitle(stats, temporal.get(c.name));
-        const defaultNode = title ? /* @__PURE__ */ jsx("span", { title, children: c.name }) : c.name;
-        return /* @__PURE__ */ jsx("th", { style: st?.header ?? TH_STYLE, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, ...stats ? { stats } : {}, path, defaultNode }) : defaultNode }, c.name);
+        const defaultNode = title ? /* @__PURE__ */ jsx2("span", { title, children: c.name }) : c.name;
+        return /* @__PURE__ */ jsx2("th", { style: st?.header ?? TH_STYLE, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, ...stats ? { stats } : {}, path, defaultNode }) : defaultNode }, c.name);
       }) }) }),
-      /* @__PURE__ */ jsx("tbody", { children: visibleRows === null ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsxs("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
+      /* @__PURE__ */ jsx2("tbody", { children: visibleRows === null ? /* @__PURE__ */ jsx2("tr", { children: /* @__PURE__ */ jsxs2("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
         "loading row group ",
         rgIndex,
         "\u2026"
-      ] }) }) : visibleRows.map((r, i) => /* @__PURE__ */ jsx("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => {
+      ] }) }) : visibleRows.map((r, i) => /* @__PURE__ */ jsx2("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => {
         const value = r[c.name];
         const defaultNode = fmtCell(value, temporal.get(c.name));
         const st = colStyles.get(c.name);
-        return /* @__PURE__ */ jsx("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode }, c.name);
+        return /* @__PURE__ */ jsx2("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode }, c.name);
       }) }, clampedRgPage * ROWS_PER_PAGE + i)) })
     ] }) })
   ] });
 }
 function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, totalRows, pageIdx, pageCount, rows }) {
   if (rows === null) {
-    return /* @__PURE__ */ jsx("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.5 }, children: /* @__PURE__ */ jsx("span", { children: "rows \u2014" }) });
+    return /* @__PURE__ */ jsx2("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.5 }, children: /* @__PURE__ */ jsx2("span", { children: "rows \u2014" }) });
   }
-  return /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.9 }, children: [
-    /* @__PURE__ */ jsx("button", { disabled: !canGoPrev, onClick: goPrev, children: "\u2039" }),
-    /* @__PURE__ */ jsxs("span", { style: { fontVariantNumeric: "tabular-nums" }, children: [
+  return /* @__PURE__ */ jsxs2("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.9 }, children: [
+    /* @__PURE__ */ jsx2("button", { disabled: !canGoPrev, onClick: goPrev, children: "\u2039" }),
+    /* @__PURE__ */ jsxs2("span", { style: { fontVariantNumeric: "tabular-nums" }, children: [
       "rows ",
-      /* @__PURE__ */ jsx("b", { children: rowStart.toLocaleString() }),
+      /* @__PURE__ */ jsx2("b", { children: rowStart.toLocaleString() }),
       "\u2013",
-      /* @__PURE__ */ jsx("b", { children: rowEnd.toLocaleString() }),
+      /* @__PURE__ */ jsx2("b", { children: rowEnd.toLocaleString() }),
       " / ",
       totalRows.toLocaleString(),
-      pageCount > 1 && /* @__PURE__ */ jsxs("span", { style: { opacity: 0.6 }, children: [
+      pageCount > 1 && /* @__PURE__ */ jsxs2("span", { style: { opacity: 0.6 }, children: [
         " \xB7 page ",
         pageIdx + 1,
         "/",
@@ -512,18 +616,18 @@ function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, tota
         " of RG"
       ] })
     ] }),
-    /* @__PURE__ */ jsx("button", { disabled: !canGoNext, onClick: goNext, children: "\u203A" })
+    /* @__PURE__ */ jsx2("button", { disabled: !canGoNext, onClick: goNext, children: "\u203A" })
   ] });
 }
 function Pager({ rg, rgCount, setPage, totalRows }) {
   if (rgCount <= 1) return null;
   const sizeLabel = rg.compressedBytes != null ? fmtSize(rg.compressedBytes) : fmtSize(rg.uncompressedBytes);
-  return /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em" }, children: [
-    /* @__PURE__ */ jsx("button", { disabled: rg.index === 0, onClick: () => setPage(0), children: "\xAB" }),
-    /* @__PURE__ */ jsx("button", { disabled: rg.index === 0, onClick: () => setPage(rg.index - 1), children: "\u2039" }),
-    /* @__PURE__ */ jsxs("span", { style: { opacity: 0.8 }, children: [
+  return /* @__PURE__ */ jsxs2("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em" }, children: [
+    /* @__PURE__ */ jsx2("button", { disabled: rg.index === 0, onClick: () => setPage(0), children: "\xAB" }),
+    /* @__PURE__ */ jsx2("button", { disabled: rg.index === 0, onClick: () => setPage(rg.index - 1), children: "\u2039" }),
+    /* @__PURE__ */ jsxs2("span", { style: { opacity: 0.8 }, children: [
       "row group ",
-      /* @__PURE__ */ jsx("b", { children: rg.index + 1 }),
+      /* @__PURE__ */ jsx2("b", { children: rg.index + 1 }),
       " / ",
       rgCount,
       " \xB7 rows ",
@@ -535,8 +639,8 @@ function Pager({ rg, rgCount, setPage, totalRows }) {
       " \xB7 ",
       sizeLabel
     ] }),
-    /* @__PURE__ */ jsx("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rg.index + 1), children: "\u203A" }),
-    /* @__PURE__ */ jsx("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rgCount - 1), children: "\xBB" })
+    /* @__PURE__ */ jsx2("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rg.index + 1), children: "\u203A" }),
+    /* @__PURE__ */ jsx2("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rgCount - 1), children: "\xBB" })
   ] });
 }
 function rawText(v) {
@@ -546,10 +650,10 @@ function rawText(v) {
   return String(v);
 }
 function fmtCell(v, temporal) {
-  if (v === null || v === void 0) return /* @__PURE__ */ jsx("span", { style: { opacity: 0.3 }, children: "\xB7" });
+  if (v === null || v === void 0) return /* @__PURE__ */ jsx2("span", { style: { opacity: 0.3 }, children: "\xB7" });
   if (temporal) {
     const s = formatTemporal(v, temporal);
-    if (s !== null) return /* @__PURE__ */ jsx("span", { title: rawText(v), style: { fontVariantNumeric: "tabular-nums" }, children: s });
+    if (s !== null) return /* @__PURE__ */ jsx2("span", { title: rawText(v), style: { fontVariantNumeric: "tabular-nums" }, children: s });
   }
   return rawText(v);
 }

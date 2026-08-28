@@ -3,6 +3,7 @@ import { Store } from '../index.cjs';
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.cjs';
 import { TableViewerOptions, TableColumn } from './table.cjs';
 export { TableCellCtx, TableCellRenderer } from './table.cjs';
+import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
 import 'react';
 
 /** Note `rowIndex` in `renderCell` is **page-relative** here: pages are
@@ -22,11 +23,13 @@ declare function makeCsvViewer(opts?: CsvViewerOptions): (props: {
     store: Store;
     path: string;
     delimiter: string;
+    usePersistedState?: PersistedState;
 }) => react_jsx_runtime.JSX.Element;
-declare function CsvViewer({ store, path, delimiter, renderCell, renderHeader, cellProps, headerProps }: {
+declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns }: {
     store: Store;
     path: string;
     delimiter: string;
+    usePersistedState?: PersistedState;
 } & CsvViewerOptions): react_jsx_runtime.JSX.Element;
 
 export { CsvViewer, type CsvViewerOptions, TableColumn, TableViewerOptions, CsvViewer as default, makeCsvViewer };
