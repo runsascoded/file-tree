@@ -115,10 +115,11 @@ test.describe('MockDemo', () => {
 
     await expect(page.getByText('240 rows · 6 columns · 1 row group · 5.4 KB')).toBeVisible()
 
-    // `region` picks up `renderHeader` — and the hook is gated on `path`,
-    // so this is also the assertion that `path` reaches the ctx.
-    expect(await parquetRow(page, 'header')).toEqual([
-      'dt', 'event_ts', 'recorded', 'id', 'region (hooked)', 'value',
+    // Header names, with the per-column raw/formatted toggle stripped —
+    // `renderHeader` is gated on `path`, so this is also the assertion
+    // that `path` reaches the ctx.
+    expect((await parquetRow(page, 'header')).map(h => h.replace(/⌗|raw$/, '').trim())).toEqual([
+      'dt', 'event_ts', 'recorded', 'id', 'region', 'value',
     ])
 
     // `dt` / `event_ts` are bare INT64s read as epochs; `recorded` is
@@ -130,6 +131,27 @@ test.describe('MockDemo', () => {
       '2026-04-25 00:00Z', '2026-04-25 00:00:00Z', '2026-04-25 00:00:00Z',
       '◆ 1777075200000', 'nyc', '$0.00',
     ])
+  })
+
+  test('the raw/formatted toggle survives paging, and does not remount', async ({ page }) => {
+    await page.goto('/mock/samples/events.parquet')
+    const pager = page.getByText(/^rows /)
+
+    await page.getByRole('button', { name: '\u203a', exact: true }).first().click()
+    await expect(pager).toHaveText('rows 100\u2013200 / 240 \u00b7 page 2/3 of RG')
+
+    // `dt` renders as an inferred epoch; the toggle puts the integer back.
+    await page.getByTitle('show raw dt').click()
+    expect((await parquetRow(page, 0))[0]).toBe('1777420800000')
+
+    // The point of `parquetOptions`: options arrive as props on a stable
+    // component type, so flipping one re-renders the table rather than
+    // remounting it. A remount would reset the pager to page 1/3 and
+    // drop the row-group cache.
+    await expect(pager).toHaveText('rows 100\u2013200 / 240 \u00b7 page 2/3 of RG')
+
+    // Only the toggled column changes — `event_ts` is still formatted.
+    expect((await parquetRow(page, 0))[1]).toBe('2026-04-25 01:01:40Z')
   })
 
   test('a parquet cell can link to another file in the tree', async ({ page }) => {

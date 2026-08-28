@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FileTree, type CellRenderer } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
@@ -32,16 +32,44 @@ const ParquetViewer = makeParquetViewer({
   headerProps: (col, path) => (path === EVENTS && col.name === 'region' ? { style: { textAlign: 'center' } } : undefined),
 })
 
-/** The other way in: `<FileTree parquetOptions>` reaches the same hooks
- *  without a bound component, which is what you want once a hook closes
- *  over live state — the renderer type stays stable, so the table isn't
- *  remounted. Merged under whatever `makeParquetViewer` already baked
- *  in, so the two compose as long as they don't set the same key. */
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
-const parquetOptions: ParquetViewerOptions = {
+/** What the column holds underneath whatever we render. `hyparquet`
+ *  resolves an annotated `TIMESTAMP` to a `Date` before the renderer
+ *  sees it, so "raw" for that column is the epoch it came from, not
+ *  `Date.prototype.toString`. */
+function rawText(value: unknown): string {
+  return value instanceof Date ? String(value.getTime()) : String(value)
+}
+
+/** Every formatting decision below is a guess about intent — an epoch
+ *  read out of a bare `INT64`, a `DOUBLE` shown as currency. The honest
+ *  complement is letting a reader flip any column back to its literal
+ *  value in place, so the header carries a per-column toggle.
+ *
+ *  This is the case `parquetOptions` exists for: `rawCols` changes as
+ *  you click, and a hook has to see the current value. Rebinding
+ *  `makeParquetViewer` per toggle would mint a new component type and
+ *  remount the table, dropping its row-group cache — so the options go
+ *  through props on a stable type instead.
+ *
+ *  `useMemo`'d on `rawCols`: a new options object every parent render
+ *  would re-render the table for reasons that have nothing to do with
+ *  it. (The other way to do this is a React context the renderers read
+ *  from — then only the cells re-render. Worth it once the state is
+ *  shared with more than the table.) */
+function useParquetOptions(): ParquetViewerOptions {
+  const [rawCols, setRawCols] = useState<ReadonlySet<string>>(() => new Set())
+  const toggle = useCallback((col: string) => setRawCols(prev => {
+    const next = new Set(prev)
+    next.delete(col) || next.add(col)
+    return next
+  }), [])
+
+  return useMemo((): ParquetViewerOptions => ({
   renderCell: ({ column, value, row, path, defaultNode }) => {
     if (path !== EVENTS) return defaultNode
+    if (rawCols.has(column.name)) return rawText(value)
 
     // FK link — the cell becomes a link to another file in this same
     // tree, so clicking `nyc` opens `docs/regions/nyc.md`. This is the
@@ -66,12 +94,30 @@ const parquetOptions: ParquetViewerOptions = {
 
     return defaultNode
   },
-  renderHeader: ({ column, stats, path, defaultNode }) =>
-    path === EVENTS && column.name === 'region'
-      ? <>{defaultNode}<span style={{ opacity: 0.5, fontWeight: 400 }}> (hooked)</span></>
-      : stats?.nullCount
-        ? <>{defaultNode}<span style={{ opacity: 0.5, fontWeight: 400 }}> ∅</span></>
-        : defaultNode,
+  renderHeader: ({ column, stats, path, defaultNode }) => {
+    if (path !== EVENTS) return defaultNode
+    const isRaw = rawCols.has(column.name)
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.35em' }}>
+        {defaultNode}
+        {stats?.nullCount ? <span style={{ opacity: 0.5, fontWeight: 400 }}>∅</span> : null}
+        <button
+          type="button"
+          onClick={() => toggle(column.name)}
+          aria-pressed={isRaw}
+          title={isRaw ? `show formatted ${column.name}` : `show raw ${column.name}`}
+          style={{
+            font: 'inherit', fontSize: '0.85em', lineHeight: 1, cursor: 'pointer',
+            padding: '0.1em 0.35em', borderRadius: 3,
+            border: '1px solid rgba(127,127,127,0.4)',
+            background: isRaw ? 'rgba(127,127,127,0.25)' : 'transparent',
+            color: 'inherit', opacity: isRaw ? 1 : 0.55,
+          }}
+        >{isRaw ? 'raw' : '⌗'}</button>
+      </span>
+    )
+  },
+  }), [rawCols, toggle])
 }
 
 /** Directory-listing hooks, the same `defaultNode` convention one level
@@ -88,6 +134,7 @@ const renderCell: CellRenderer = ({ entry, column, defaultNode }) => {
 
 export function MockDemo() {
   const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100 }), [])
+  const parquetOptions = useParquetOptions()
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5em' }}>
       <FileTree
@@ -113,9 +160,17 @@ export function MockDemo() {
           <em>FK links</em> into <code>docs/regions/</code>, <code>value</code> is reformatted as
           currency (which is also what hides float noise), and <code>id</code> is marked on rows
           whose <code>region</code> is <code>nyc</code> — a cell rendering against a sibling
-          column. The <code>region</code> header and column styling come from{' '}
-          <code>renderHeader</code> / <code>cellProps</code>. In <code>data/2024/</code>, the
-          listing's own <code>renderCell</code> appends a quarter label to each key.
+          column. In <code>data/2024/</code>, the listing's own <code>renderCell</code> appends a
+          quarter label to each key.
+        </p>
+        <p>
+          Every header carries a <strong>raw/formatted toggle</strong> (<code>⌗</code>) — each
+          rendering above is a guess about intent, so the honest complement is flipping a column
+          back to its literal value in place. Page forward, then toggle: the table <em>keeps its
+          page</em>, because the toggle's state reaches the hooks as props via{' '}
+          <code>parquetOptions</code>. Rebinding <code>makeParquetViewer</code> per toggle would
+          mint a new component type and remount the table, resetting the pager and dropping its
+          row-group cache.
         </p>
         <p>
           Each hook is handed the node the library <em>would</em> have rendered, as{' '}
