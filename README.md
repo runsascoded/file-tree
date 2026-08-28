@@ -547,6 +547,8 @@ function MyParquetTable({ store, path }) {
 }
 ```
 
+The tree exports its own fiddly parts too — `useOpenState` (the open/closed reconciliation between initial depth, a depth-force, and search), `collectMatchPaths`, `jqKeySegment`, and `defaultRunJq`.
+
 Then register it (`viewers`) and yours wins over the built-in. The split is deliberate: fetching and format decoding stay shared — that's where the bugs and the tests are — and the markup is entirely yours. A virtualised parquet table shouldn't have to think about `hyparquet`.
 
 Site code in `site/src/components/` (`S2CellPreview`, `LogViewer`, `YamlViewer`) is meant to be read and copied, not imported.

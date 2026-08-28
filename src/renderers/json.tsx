@@ -471,7 +471,13 @@ function usePersistedDepth(use: PersistedState): [number | null, (d: number) => 
   return [raw < 0 ? null : (raw === 0 ? 0 : raw), setRaw]
 }
 
-function useOpenState(initialOpen: boolean, forceOpen: boolean | null, forceOpenVersion: number, matchedHere: boolean) {
+/** Open/closed state for one container, reconciling three inputs: its
+ *  initial depth, a standing depth-force (expand/collapse to N), and
+ *  search. Exported because getting the interaction right — search
+ *  closing only what search opened, a force reaching nodes that mount
+ *  *because* of it — is the fiddly part of a tree, and a fork
+ *  shouldn't have to rediscover it. */
+export function useOpenState(initialOpen: boolean, forceOpen: boolean | null, forceOpenVersion: number, matchedHere: boolean) {
   // A node mounts either at first render or because an ancestor just
   // opened — including as a *result* of expand-all. In that second case
   // the version-bump below can't help it (it seeds `lastVersion` to the
@@ -570,7 +576,11 @@ function Toggle({ open, onClick }: { open: boolean; onClick: () => void }) {
 
 /** jq path segment for a key: `.foo` for valid identifiers, `["weird key"]`
  *  otherwise. (jq's own rule.) */
-function jqKeySegment(key: string): string {
+/** jq path segment for an object key — `.foo`, or `["odd key"]` when
+ *  it isn't a bare identifier. Exported because anything keying
+ *  side-band data to tree paths (YAML comments, a JSON Schema) has to
+ *  build the same strings `renderKey`/`renderValue` hand back. */
+export function jqKeySegment(key: string): string {
   if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return `.${key}`
   return `["${key.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`
 }
@@ -579,7 +589,10 @@ function jqKeySegment(key: string): string {
  *  ancestor of a match is also in the set, so the tree auto-expands to
  *  reveal them). Match = case-insensitive substring on a key or a
  *  string-typed value. */
-function collectMatchPaths(value: unknown, q: string): Set<string> {
+/** Paths of every node matching `q`, plus their ancestors — the set
+ *  the tree opens to reveal a match. Exported for a fork implementing
+ *  its own search UI over the same semantics. */
+export function collectMatchPaths(value: unknown, q: string): Set<string> {
   const out = new Set<string>()
   const needle = q.toLowerCase()
   function visit(v: unknown, path: string): boolean {
