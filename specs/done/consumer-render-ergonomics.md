@@ -110,6 +110,16 @@ The site demo exercised only the column-styling hooks, so `renderCell` — the o
 
 The parquet sticky header had a translucent background (`rgba(127,127,127,0.15)` with nothing opaque under it), so scrolled rows showed through it — visible on any file taller than the viewport. Both it and the CSV header now use `Canvas`, which is opaque and tracks `color-scheme`. Unrelated to this spec, but it's the first thing you see in the consumer's own browser.
 
+### Confirmed against the consumer (read after implementing)
+
+ctbk had already built all of this against the pinned build, and independently hit the exact problem `parquetOptions` addresses. From `www/src/components/parquetCells.tsx`:
+
+> `renderHeader` carries a per-column raw/formatted toggle. […] State lives here (URL-bound in `pages/Files.tsx`) and reaches the cells **through context rather than through the options bag — rebinding `makeParquetViewer` per toggle would remount the viewer and drop its row-group cache.**
+
+So the motivating case is real and was arrived at independently — and it's the *format toggle*, the example that survives "what can a cell renderer do that CSS can't".
+
+**But don't oversell the win.** React context was a good answer, not a workaround: it re-renders only the consuming cells, whereas `parquetOptions` re-renders the viewer whenever the parent does, unless the consumer memoizes. ctbk gains nothing by switching and should be left alone. `parquetOptions` **lowers the floor, not the ceiling** — it saves the *next* consumer from discovering the remount trap and building a context to escape it.
+
 ### Follow-ups not done
 
 - `rendererOptions` bag for json/csv/notebook. Nothing asked for it yet; `parquetOptions` can be folded into one later without a break.

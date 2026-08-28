@@ -67,6 +67,13 @@ follow-on and a much bigger design: it means the viewer accepting a filter it
 didn't compute, which touches pagination, row-group choice, and URL state. Worth
 keeping in mind so the `onPage` shape doesn't foreclose it, but not part of this.
 
+## What ctbk actually has today (checked, 2026-08-28)
+
+- **The per-cell preview is built** — `www/src/components/S2CellTip.tsx`, a hover tooltip on the `cell` / `s2_cell` column. Live at
+  <https://ctbk.dev/files/avail-v6/1d/128d/2026-01-27.parquet>.
+- **It uses no maps API.** It projects `/assets/stations-regional.json` into a 190×150 SVG — the station dots draw a recognizable city outline — and marks the S2 footprint as a rect, with a locator ring when the cell is under ~14px. Its docstring: *"no tiles, no map instance per hover, and the asset is one the app already ships."* Stadia is used elsewhere in ctbk (`StationMap`, Leaflet raster, keyless tier), but deliberately not here. A per-hover tiled map would be the "terrible against a maps API" outcome; this sidesteps keys, rate limits, attribution, and cost.
+- **There is no page-level map.** `pages/Files.tsx` is `<FileTree>` inside a `RawColsProvider` and nothing else — so the callback-vs-slot question below is *unforced* by existing layout. Worth re-asking once a real one exists.
+
 ## Prior art in this repo
 
 `specs/done/consumer-render-ergonomics.md` — the inward-facing hooks, and why
