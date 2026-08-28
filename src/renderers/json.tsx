@@ -89,11 +89,21 @@ export interface JsonTreeOptions {
   parse?: (source: string) => unknown | Promise<unknown>
   /** Named in parse errors ("YAML" rather than "JSON"). */
   label?: string
+  /** Milliseconds to wait after typing before running the jq filter and
+   *  writing it to the URL. Default 300.
+   *
+   *  A jq expression is only valid at a few points while you type it, so
+   *  running each keystroke means a stream of `null`s and errors for
+   *  half-written filters. The right value depends on how expensive the
+   *  filter is over *your* documents, so it's a knob rather than a
+   *  constant: 0 disables (useful in tests, where a debounce is just
+   *  latency). */
+  jqDebounceMs?: number
 }
 
 /** Build a `jsonRenderer` with per-value decoration. `renderJsonTree` is
  *  this with no options; both take `(source, usePersistedState?)`. */
-export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, parse, label = 'JSON' }: JsonTreeOptions = {}) {
+export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, parse, label = 'JSON', jqDebounceMs = 300 }: JsonTreeOptions = {}) {
   return function renderJson(source: string, usePersistedState?: PersistedState) {
     return (
       <JsonViewer
@@ -104,6 +114,7 @@ export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth 
         initialOpenDepth={initialOpenDepth}
         {...(parse ? { parse } : {})}
         label={label}
+        jqDebounceMs={jqDebounceMs}
       />
     )
   }
@@ -115,9 +126,10 @@ export function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth 
  *  `jsonRenderer` and forward it. */
 export const renderJsonTree = makeJsonTreeRenderer()
 
-function JsonViewer({ source, usePersistedState, renderValue, renderKey, initialOpenDepth, parse, label }: {
+function JsonViewer({ source, usePersistedState, renderValue, renderKey, initialOpenDepth, parse, label, jqDebounceMs }: {
   source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer; renderKey?: JsonKeyRenderer
   initialOpenDepth: number; parse?: (source: string) => unknown | Promise<unknown>; label: string
+  jqDebounceMs: number
 }) {
   const use = usePersistedState ?? defaultUseState
   // `q` is shared with the directory listing's filter deliberately: they
@@ -132,9 +144,10 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
   useEffect(() => setJqDraft(jq), [jq])
   useEffect(() => {
     if (jqDraft === jq) return
-    const t = setTimeout(() => setJq(jqDraft), 300)
+    if (jqDebounceMs <= 0) { setJq(jqDraft); return }
+    const t = setTimeout(() => setJq(jqDraft), jqDebounceMs)
     return () => clearTimeout(t)
-  }, [jqDraft])
+  }, [jqDraft, jqDebounceMs])
   // Bumped when "expand all" / "collapse all" is clicked. Each `Node`
   // tracks the last version it acted on; when the version changes,
   // re-derive its `open` state from `forceOpen`.

@@ -274,6 +274,8 @@ import { renderViewerActions } from './viewerActions'                 // ↗ SQL
   load: () => import('@rdub/file-tree/renderers/yaml-viewer') }
 ```
 
+The jq input is debounced 300ms (`jqDebounceMs`; `0` disables) — a filter is only valid at a few points while you type it. Expansion depth rides in the URL as `?depth=`, and the search box shares `?q=` with the directory listing's filter.
+
 The `yaml` parser is an optional peer, dynamically imported on first use — register the viewer (rather than passing a prop) and neither it nor the parser reaches your main bundle. Same bargain as `jq-web`.
 
 **Comments survive.** They're the reason to write YAML instead of JSON, and they are *not in the data model* — `yaml.parse()` drops them, so a tree of parsed values loses exactly what the author cared about. The renderer parses to a document instead, walks it once collecting jq-path → comment, and puts them back above their keys via the tree's `renderKey` hook. Block scalars keep their newlines, and merge keys are resolved: `<<: *defaults` yields the merged keys, which needs `merge: true` (they're a YAML 1.1 feature, and `yaml` defaults to 1.2 where `<<` is just a key whose value is an alias).
