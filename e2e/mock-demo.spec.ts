@@ -345,6 +345,28 @@ test.describe('MockDemo', () => {
     await expect(page.getByText(/only comparisons/)).toBeVisible()
   })
 
+  test('publishes the page and the hovered cell to a sibling panel', async ({ page }) => {
+    await page.goto('/mock/samples/events.parquet')
+    const aside = page.locator('aside')
+
+    // `onPage`: the panel plots every row on screen — the thing a
+    // per-cell tooltip structurally cannot show.
+    await expect(aside).toContainText('100 rows of 240')
+    expect(await aside.locator('svg rect').count()).toBe(100)
+
+    // `onCellHover`: exactly one of those is highlighted, and the detail
+    // below identifies it.
+    await page.locator('table').last().locator('tbody tr').first()
+      .locator('td').nth(5).getByText('89c259c4').hover()
+    await expect(aside).toContainText('89c259c4')
+    await expect(aside).toContainText('s2_cell · string')
+    expect(await aside.locator('svg rect[fill-opacity="0.7"]').count()).toBe(1)
+
+    // Paging re-publishes.
+    await page.getByRole('button', { name: '›', exact: true }).first().click()
+    await expect(aside).toContainText('rows 100–200')
+  })
+
   test('a parquet cell can link to another file in the tree', async ({ page }) => {
     await page.goto('/mock/samples/events.parquet')
 

@@ -17,7 +17,7 @@
  *  Uses `hyparquet` (optional peer) for footer/metadata + row-range
  *  reads, fed via `asyncBufferFromStore` so it works against any
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode, useRef } from 'react'
 import type { Store } from '../types'
 import {
   isSortedBy, NUMERIC_TYPES, parsePredicate, pruneRowGroups, useAllRows, useParquetMeta, useRowGroup,
@@ -33,12 +33,12 @@ export type { ParquetColumn, ParquetColumnStats, ParquetMeta, RowGroupInfo } fro
 import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
-import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter } from './tableControls'
+import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, usePageNotify, useStableCallback } from './tableControls'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 import {
   resolveColStyles, TD_STYLE, TH_STYLE,
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
-  type TableHeaderCtx, type TableViewerOptions,
+  type TableHeaderCtx, type TablePageCtx, type TableViewerOptions,
 } from './table'
 
 // Re-exported so a consumer writing one `renderCell` for a mixed tree
@@ -122,7 +122,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -192,6 +192,15 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
       c => alignNumeric && !temporal.has(c.name) && c.physicalType !== undefined && NUMERIC_TYPES.has(c.physicalType)),
     [meta, temporal, alignNumeric, cellProps, headerProps, path])
 
+  // Outward-facing hooks, called before any early return — a hook after
+  // a conditional `return` runs on some renders and not others, which
+  // React rejects outright ("Rendered more hooks than during the
+  // previous render"). The page they describe is derived below, so the
+  // ctx is passed by ref and read when the effect fires.
+  const pageCtxRef = useRef<TablePageCtx<ParquetColumn>>({ rows: [], columns: [], path, pageStart: 0, totalRows: 0 })
+  usePageNotify(onPage, pageCtxRef, [rows, rgPage, page, path, visible.join(',')])
+  const notifyHover = useStableCallback(onCellHover)
+
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (!meta) return <div style={{ opacity: 0.6 }}>reading parquet metadata…</div>
 
@@ -254,6 +263,8 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   const pageRowStart = rowBase + clampedRgPage * ROWS_PER_PAGE
   const pageRowEnd = rows ? rowBase + Math.min((clampedRgPage + 1) * ROWS_PER_PAGE, rows.length) : pageRowStart
   const visibleRows = rows ? rows.slice(clampedRgPage * ROWS_PER_PAGE, (clampedRgPage + 1) * ROWS_PER_PAGE) : null
+  pageCtxRef.current = { rows: visibleRows ?? [], columns: schema, path, pageStart: pageRowStart, totalRows }
+
 
   // Cross-RG page advance: if we're on the last (first) page of the
   // current RG, next (prev) jumps to the next (previous) RG's first
@@ -400,7 +411,15 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                     const defaultNode = fmtCell(value, temporal.get(c.name))
                     const st = colStyles.get(c.name)
                     return (
-                      <td key={c.name} style={st?.cell ?? TD_STYLE} className={st?.cellClass}>
+                      <td
+                        key={c.name}
+                        style={st?.cell ?? TD_STYLE}
+                        className={st?.cellClass}
+                        {...(onCellHover ? {
+                          onMouseEnter: () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }),
+                          onMouseLeave: () => notifyHover(null),
+                        } : {})}
+                      >
                         {renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode}
                       </td>
                     )

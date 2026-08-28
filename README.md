@@ -438,6 +438,17 @@ makeParquetViewer({
 })
 ```
 
+**Publishing the page outward.** A widget beside the table — a map of the rows on screen, a chart, a detail panel — can't be something the viewer renders: consumers lay the table and the widget out as siblings (ctbk's is a full-height flex sibling of a scrolling table column), so the data has to flow *out*.
+
+```tsx
+<FileTree parquetOptions={{
+  onPage:      ({ rows, columns, pageStart, totalRows }) => setPage(rows),
+  onCellHover: cell => setCell(cell),   // `null` on leave
+}} />
+```
+
+Inline arrows are safe: both are held in refs, so an identity change every render doesn't re-fire anything. Neither is throttled — `onPage` fires on a click, `onCellHover` on crossing a cell — and a consumer whose handler is genuinely expensive can wrap it.
+
 **Filtering.** Below the threshold it's a substring match over the visible columns, sharing `?q=` with the directory listing's filter and the JSON tree's search — the same affordance, not a third idiom.
 
 Above it, one thing still works, and it's the one that matters on a large file: a **comparison** — `dt >= 2026-01-01`, `id = 42` — is answered from row-group statistics in the footer, which is already loaded. Groups whose `min`/`max` provably can't contain a match are skipped without decoding any column data, and the pager walks only the survivors. On a file the writer sorted by that column the ranges are disjoint, so a point lookup typically reaches one group out of hundreds; the viewer says so when `sorting_columns` records it.

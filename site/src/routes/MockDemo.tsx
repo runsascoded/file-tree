@@ -13,6 +13,7 @@ import { renderCode } from '@rdub/file-tree/renderers/code'
 import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
 import { isS2Cell, S2Cell } from '../components/S2CellPreview'
+import { PageAside, type AsideState } from '../components/PageAside'
 
 /** Exercises the parquet viewer's presentation hooks. Built at module
  *  scope: `makeParquetViewer` mints a component type, so calling it in
@@ -140,7 +141,7 @@ function applyFormat(fmt: string, value: unknown, defaultNode: ReactNode): React
  *
  *  `useMemo`'d on `formats`: a new options object every parent render
  *  would re-render the table for reasons unrelated to it. */
-function useParquetOptions(): ParquetViewerOptions {
+function useParquetOptions(aside: (s: Partial<AsideState>) => void): ParquetViewerOptions {
   const [formats, setFormats] = useState<Readonly<Record<string, string>>>({})
   const pick = useCallback(
     (col: string, fmt: string) => setFormats(prev => ({ ...prev, [col]: fmt })),
@@ -148,6 +149,11 @@ function useParquetOptions(): ParquetViewerOptions {
 
   return useMemo((): ParquetViewerOptions => ({
   columnPicker: true,
+  // The two outward hooks. Inline arrows are safe — the viewer holds
+  // them in refs, so their identity changing every render doesn't
+  // re-fire anything.
+  onPage: page => aside({ page }),
+  onCellHover: cell => aside({ cell }),
   renderCell: ({ column, value, row, rowIndex, path, defaultNode }) => {
     if (path !== EVENTS) return defaultNode
 
@@ -206,7 +212,7 @@ function useParquetOptions(): ParquetViewerOptions {
       </span>
     )
   },
-  }), [formats, pick])
+  }), [formats, pick, aside])
 }
 
 /** The viewer registry. `.log` is a format the library knows nothing
@@ -301,9 +307,16 @@ const renderCell: CellRenderer = ({ entry, column, defaultNode }) => {
 
 export function MockDemo() {
   const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100 }), [])
-  const parquetOptions = useParquetOptions()
+  // Held here, beside the tree rather than inside it: the panel is a
+  // *sibling* of the table, which is the whole reason these are
+  // callbacks and not a render slot the viewer could fill.
+  const [asideState, setAsideState] = useState<AsideState>({ page: null, cell: null })
+  const aside = useCallback((s: Partial<AsideState>) => setAsideState(prev => ({ ...prev, ...s })), [])
+  const parquetOptions = useParquetOptions(aside)
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5em' }}>
+      <div style={{ display: 'flex', gap: '1em', alignItems: 'flex-start' }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
       <FileTree
         store={store}
         routeBase="/mock"
@@ -320,6 +333,9 @@ export function MockDemo() {
         viewerActions={renderViewerActions}
         usePersistedState={useUrlPersistedState}
       />
+      </div>
+      {asideState.page && <PageAside {...asideState} />}
+      </div>
       <details style={{ marginTop: '2em', fontSize: '0.9em', opacity: 0.85 }}>
         <summary>How this works</summary>
         <p>

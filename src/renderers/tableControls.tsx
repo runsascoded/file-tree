@@ -11,7 +11,7 @@
  *  header the third affordance it was heading for — it already carries
  *  a name, a stats tooltip, and whatever the consumer's `renderHeader`
  *  adds. */
-import { useCallback, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { PersistedState } from '../react/persistedState'
 import { defaultUseState } from '../react/persistedState'
 import type { TableColumn } from './table'
@@ -167,4 +167,46 @@ export function FilterInput({ value, onChange, count, placeholder = 'filter' }: 
       )}
     </span>
   )
+}
+
+
+/** Hold a callback in a ref, and return a stable wrapper.
+ *
+ *  Every outward-facing hook here takes one, because the alternative is
+ *  a footgun: a consumer writing `onPage={rows => setRows(rows)}` passes
+ *  a new function each render, and an effect depending on it would fire
+ *  every render — which, since the callback sets state, never settles.
+ *  Requiring `useCallback` on their side would work and would be
+ *  forgotten. A ref means the identity simply doesn't matter.
+ *
+ *  (This — not event volume — is the reason these hooks need care.
+ *  `onPage` fires on a click; `onCellHover` on crossing a cell, which a
+ *  mouse does a few dozen times a second at most. Neither warrants
+ *  throttling; a consumer whose handler is genuinely expensive can wrap
+ *  it, and the library guessing a delay would only add latency to
+ *  everyone else.) */
+export function useStableCallback<A extends unknown[]>(fn: ((...args: A) => void) | undefined) {
+  const ref = useRef(fn)
+  ref.current = fn
+  return useCallback((...args: A) => ref.current?.(...args), [])
+}
+
+/** Fire `onPage` when the rendered page changes.
+ *
+ *  Takes a *ref* rather than the context itself, because a viewer only
+ *  knows its page well after the guards it has to return early from —
+ *  and a hook may not sit after a conditional `return`. The ref is
+ *  filled during render and read when the effect fires, so `deps` are
+ *  the inputs that decide the page, never the derived rows (a fresh
+ *  slice every render would fire this every render). */
+export function usePageNotify<T>(
+  onPage: ((ctx: T) => void) | undefined,
+  ctxRef: { current: T },
+  deps: readonly unknown[],
+) {
+  const notify = useStableCallback(onPage as ((...a: unknown[]) => void) | undefined)
+  useEffect(() => {
+    notify(ctxRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
 }

@@ -7,17 +7,17 @@
  *  line quoted fields (a quote opening on one line and closing on the
  *  next) — those would need a streaming parser since byte-paginated
  *  chunks can split mid-row. */
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
 import { PAGE_BYTES, useAllCsvRows, useCsvHeader, useCsvPage } from './csvData'
-import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter } from './tableControls'
+import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, usePageNotify, useStableCallback } from './tableControls'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 
 // Re-exported so the public subpath keeps every name it had; the
 // plumbing now lives in `./csvData` and is importable on its own.
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
-import { resolveColStyles, TD_STYLE, TH_STYLE, type TableColumn, type TableViewerOptions } from './table'
+import { resolveColStyles, TD_STYLE, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
 import type { PersistedState } from '../react/persistedState'
 
 export type { TableCellCtx, TableCellRenderer, TableColumn, TableViewerOptions } from './table'
@@ -41,7 +41,7 @@ export function makeCsvViewer(opts: CsvViewerOptions = {}) {
   }
 }
 
-export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }: {
+export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }: {
   store: Store; path: string; delimiter: string; usePersistedState?: PersistedState
 } & CsvViewerOptions) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter)
@@ -82,6 +82,11 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
     [columns, path, cellProps, headerProps])
 
+  // Called before the early returns — see `usePageNotify`.
+  const pageCtxRef = useRef<TablePageCtx>({ rows: [], columns: [], path, pageStart: 0, totalRows: null })
+  usePageNotify(onPage, pageCtxRef, [pageRows, allSorted, columns.length, path, smallTable])
+  const notifyHover = useStableCallback(onCellHover)
+
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (total === null || header === null) return <div style={{ opacity: 0.6 }}>reading CSV header…</div>
 
@@ -89,6 +94,20 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
   // an exact row count to show — which byte-range paging can never give.
   const rows = smallTable ? allSorted : pageRows
   const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES))
+  // `totalRows` is null when streaming: byte-range pages never learn how
+  // many rows preceded them, so the viewer genuinely doesn't know. Rows
+  // go out keyed by name — a positional array would be unusable.
+  pageCtxRef.current = {
+    rows: (rows ?? []).map(r => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? '']))),
+    columns,
+    path,
+    pageStart: 0,
+    totalRows: smallTable ? (rows?.length ?? null) : null,
+  }
+
+  // `totalRows` is null when streaming: byte-range pages never learn how
+  // many rows preceded them, so the viewer genuinely doesn't know.
+
   const offsetStart = page * PAGE_BYTES
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES)
 
@@ -183,7 +202,15 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                       const j = colIndex.get(c.name)!
                       const value = r[j] ?? ''
                       return (
-                        <td key={c.name} style={st?.cell ?? TD_STYLE} className={st?.cellClass}>
+                        <td
+                          key={c.name}
+                          style={st?.cell ?? TD_STYLE}
+                          className={st?.cellClass}
+                          {...(onCellHover ? {
+                            onMouseEnter: () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }),
+                            onMouseLeave: () => notifyHover(null),
+                          } : {})}
+                        >
                           {renderCell
                             ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value })
                             : value}

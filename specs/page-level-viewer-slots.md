@@ -18,7 +18,30 @@ one widget for the whole page has to re-read the row group itself — duplicatin
 the fetch the viewer just did, and re-deriving the pagination maths to know which
 slice is showing.
 
-## Shape options
+## Resolved: the callback, and not the slot
+
+Checked ctbk's actual layout (`www/src/pages/CellsDebug.tsx`), which is their
+established map-plus-table pattern:
+
+```tsx
+<div style={{ display: 'flex', height: '100vh' }}>
+  <aside style={{ width: 320, overflowY: 'auto' }}>…tables…</aside>
+  <MapContainer style={{ flex: 1 }} … />
+</div>
+```
+
+**Side by side, full viewport height.** That rules out `renderAside`: the widget
+is a *sibling* the consumer lays out, not something the viewer could render into.
+So option A is the whole answer and B/C below were never live. Implemented as
+`onPage` + `onCellHover` on `TableViewerOptions`.
+
+Also settled: no throttling. The hazard isn't event volume (`onPage` fires on a
+click; `onCellHover` on crossing a cell) but *callback identity* — an inline
+arrow in an effect's deps re-fires every render, and since the callback sets
+state, never settles. Both are held in refs, so identity doesn't matter and
+`useCallback` isn't required of consumers.
+
+## Shape options (superseded — kept for the reasoning)
 
 **A. Callback.** `onPage?: (rows: Record<string, unknown>[], meta: PageMeta) => void`
 
