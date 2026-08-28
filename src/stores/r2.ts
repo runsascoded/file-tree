@@ -51,6 +51,12 @@ export interface R2PresignOptions {
 }
 
 export interface R2StoreOptions {
+  /** Bucket name, for the breadcrumb root (`r2://<name>/<prefix>`).
+   *  An R2 *binding* carries no name — the Worker config maps it to a
+   *  variable, and the binding object can't say which bucket it is — so
+   *  unlike S3/GCS this has to be supplied. Omitted, the root crumb
+   *  stays "root". */
+  bucketName?: string
   /** Allow-list of key prefixes. Any list/get for paths outside these is
    *  rejected. Use `['']` to allow the whole bucket (escape-hatch). */
   prefixes?: string[]
@@ -87,6 +93,10 @@ export function R2Store(bucket: R2Bucket, opts: R2StoreOptions = {}): Store {
   }
 
   return {
+    describe: () => (opts.bucketName
+      ? `r2://${opts.bucketName}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : '/')
+      : undefined),
+
     async list(prefix, opts: ListOptions = {}) {
       const p = prefix.endsWith('/') || prefix === '' ? prefix : `${prefix}/`
       // Scoped-bucket virtual root: when the store is restricted to a set

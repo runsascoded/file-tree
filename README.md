@@ -26,6 +26,16 @@ interface Store {
 
 `list` + `get` are required; the rest are optional capabilities the UI uses when present (download anchor, server-accelerated zip preview, etc.).
 
+**`describe()`** is optional and display-only: what the store is fronting, for the breadcrumb root. Without it the root crumb reads `root`, which hides the one thing a reader can't infer from the page — *which* bucket they're looking at.
+
+```ts
+S3Store({ bucket: 'my-data', prefixes: ['raw/'] })   // → "s3://my-data/raw/"
+R2Store(env.BUCKET, { bucketName: 'my-data' })       // bindings carry no name, so it's supplied
+HttpStore('/api/files', { describe: 'r2://my-data/gbfs/' })
+```
+
+`HttpStore` takes it as an option rather than learning it from the server: a browser client genuinely can't discover what's behind an API base, and a *label* that arrives a render late shows `root` and then jumps. Stores that would rather not disclose a backing location just omit it.
+
 ## Quick start — R2 + CFW + React
 
 **Worker** (`worker/src/index.ts`):

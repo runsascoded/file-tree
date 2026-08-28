@@ -167,7 +167,7 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
   const parsed = useMemo(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty])
-  const crumbs = useMemo(() => buildCrumbs(parsed, routeBase, rootPrefix), [parsed, routeBase, rootPrefix])
+  const crumbs = useMemo(() => buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? 'root'), [parsed, routeBase, rootPrefix])
   // `zipEntry` would point `getUrl` at the wrapping zip — misleading.
   // Suppress there; entry extraction is the consumer's concern.
   const downloadable = parsed.kind !== 'dir' && parsed.kind !== 'zipEntry'
@@ -328,12 +328,12 @@ function UnsupportedView({ label }: { label: string }) {
   return <div style={{ opacity: 0.7 }}>{label} not yet supported in this version.</div>
 }
 
-function buildCrumbs(parsed: Parsed, routeBase: string, rootPrefix: string): Crumb[] {
+function buildCrumbs(parsed: Parsed, routeBase: string, rootPrefix: string, rootLabel: string): Crumb[] {
   const path = parsed.kind === 'dir' ? parsed.prefix : parsed.kind === 'zipEntry' ? `${parsed.path}!/${parsed.entry}` : parsed.path
   const splat = keyToSplat(path, rootPrefix)
   const parts = splat.split('/').filter(p => p.length > 0)
   const baseTrimmed = routeBase.replace(/\/+$/, '')
-  const crumbs: Crumb[] = [{ label: 'root', to: `${baseTrimmed}/`, path: rootPrefix }]
+  const crumbs: Crumb[] = [{ label: rootLabel, to: `${baseTrimmed}/`, path: rootPrefix }]
   let cum = ''
   for (const p of parts) {
     cum = cum ? `${cum}/${p}` : p

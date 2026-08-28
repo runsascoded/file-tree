@@ -27,6 +27,8 @@ export interface MockStoreOptions {
   pageSize?: number
   /** Default `lastModified` for files that don't specify one. */
   defaultLastModified?: string
+  /** Label for the breadcrumb root (`Store.describe`). */
+  describe?: string
 }
 
 export type MockStoreInput = Record<string, string | Uint8Array | MockStoreFile>
@@ -49,6 +51,8 @@ export function MockStore(input: MockStoreInput, opts: MockStoreOptions = {}): S
   )
 
   return {
+    describe: () => opts.describe,
+
     async list(prefix, listOpts: ListOptions = {}) {
       const p = prefix === '' || prefix.endsWith('/') ? prefix : `${prefix}/`
       // Group keys under `p` by next-segment.

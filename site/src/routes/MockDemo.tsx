@@ -306,7 +306,7 @@ const renderCell: CellRenderer = ({ entry, column, defaultNode }) => {
 }
 
 export function MockDemo() {
-  const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100 }), [])
+  const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100, describe: 'mock://demo-bucket/' }), [])
   // Held here, beside the tree rather than inside it: the panel is a
   // *sibling* of the table, which is the whole reason these are
   // callbacks and not a render slot the viewer could fill.

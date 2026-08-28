@@ -105,3 +105,16 @@ letting them grow shared helpers. ctbk independently wrote a near-identical
    most likely fork.
 3. **Document the ladder** in the README, so a consumer knows which rung they're
    on and what the next one costs.
+
+## Status: implemented (`5fa1469`, `4244cc6`)
+
+Rungs 3 and 4 exist now: `renderers/parquetData` (`useParquetMeta`,
+`useRowGroup`, plus the pruning primitives), `renderers/csvData`
+(`useCsvHeader`, `useCsvPage`, `parseLine`), and the tree's `useOpenState` /
+`collectMatchPaths` / `jqKeySegment`. `runJq` and `parse` are injectable
+strategies.
+
+One decision reversed from the sketch: **no `/internals` entry.** These are
+stable, tested surface — a semver-exempt namespace would hedge on a promise
+worth making. If that proves wrong, moving them behind one is a later,
+smaller break than the reverse.

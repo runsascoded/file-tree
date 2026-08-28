@@ -114,3 +114,22 @@ That's the feature, really — the URL is the shareable artifact.
 - **Sort stability and types.** CSV has no types, so sorting is lexical unless
   the consumer says otherwise — which argues for sort comparators being another
   `TableViewerOptions` hook rather than something the viewer guesses.
+
+## Status: implemented
+
+All three sequenced items landed (`1efc90b`, `713d271`, `4250d11`).
+
+Divergences worth recording:
+
+- **Column picker is table-level, not per-header.** A hide control on a `<th>`
+  removes the very header you'd click to restore it.
+- **Stores the hidden set, not the visible one** — an allow-list would silently
+  hide columns a file gains after a URL was shared.
+- **Parquet gained a fourth mode the spec only listed as "open"**: above the
+  threshold a *comparison* is answered from row-group statistics, pruning groups
+  that provably can't match without decoding any of them. This is the filter that
+  works where a filter is most wanted, and `sorting_columns` makes it sharp.
+  Turned out to be the more valuable half.
+- **The demo forces the streaming branch** (`fullLoadMaxBytes: 0` on CSV, and a
+  `.pqt` route) because no fixture is remotely big enough to reach it — without
+  that, half the feature would have shipped untested.

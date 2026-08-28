@@ -43,8 +43,10 @@ test.describe('MockDemo', () => {
     await expect(page.getByRole('link', { name: /^📁\s*regions\/$/ })).toBeVisible()
     await expect(page.getByText('3 entries')).toBeVisible()
 
+    // The root crumb names the store, not "root" — which bucket you're
+    // looking at is the one thing the page can't otherwise tell you.
     const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' })
-    await expect(breadcrumb.getByRole('link', { name: 'root', exact: true })).toBeVisible()
+    await expect(breadcrumb.getByRole('link', { name: 'mock://demo-bucket/', exact: true })).toBeVisible()
     await expect(breadcrumb).toContainText('docs')
   })
 

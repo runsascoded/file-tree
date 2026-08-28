@@ -179,3 +179,9 @@ The page-level half below is still unbuilt.
 
 `specs/done/consumer-render-ergonomics.md` — the inward-facing hooks, and why
 `parquetOptions` derives its type from the renderer rather than importing it.
+
+## Status: implemented as `onPage` + `onCellHover` (`a7d1dd6`)
+
+The slot half was never built — see "Resolved" above. Checking ctbk's layout
+answered the open question by ruling one option out entirely, which is the
+second time reading a consumer changed a design here rather than confirming it.
