@@ -119,6 +119,37 @@ HDF5 dataset lands in the tabular viewer, a PNG inside a zip in the image
 viewer, and neither needs the container to know about them. This also removes
 `zip`/`zipEntry` from the `kind` union.
 
+## Status
+
+**1. Tabular hooks — done** (`e51d74b`). `src/renderers/table.ts` holds the
+neutral contract; parquet's types are extensions of it and every name consumers
+already used still resolves. CSV gained the four hooks and `makeCsvViewer`. Two
+asymmetries surfaced and are documented rather than papered over: `rowIndex` is
+page-relative in CSV (byte-range pages never learn how many rows preceded them),
+and numeric alignment is off there by default since CSV has no types to infer
+from. `column.kind` landed as the coarse reading; parquet finalises `temporal`
+*after* inference, since a `TIMESTAMP` is an `INT64` until values are sampled.
+
+**2. Viewer registry — done** (`46a430a`). `viewers?: ViewerEntry[]` on
+`<FileTree>`, consulted before the built-ins, `load` a dynamic import. Additive
+— the `*Renderer` props still work. Two things the sketch below got wrong:
+
+- **`id` is required.** Keying the `React.lazy` cache on the entry *object*
+  means an inline `viewers={[…]}` array remounts the viewer every render — the
+  same component-identity trap as `makeParquetViewer`. A string id makes the
+  inline case behave.
+- **Viewers need default exports** so `load` needs no unwrapping. Added to the
+  bundled parquet/csv/notebook viewers.
+
+Not done, deliberately: `<FileTree>` still has a prop per renderer. Removing
+them is a breaking change worth doing once the registry has proven itself
+against a real consumer, not the same day it lands. Likewise `csvOptions` was
+skipped — the registry's `options` covers it, so adding a prop about to be
+deleted would be churn.
+
+**3. Container registry — not started.** Still wants a second real
+implementation before generalising from zip.
+
 ## Sequencing
 
 The three are independent and get less certain as they go:
