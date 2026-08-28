@@ -74,6 +74,16 @@ keeping in mind so the `onPage` shape doesn't foreclose it, but not part of this
 - **It uses no maps API.** It projects `/assets/stations-regional.json` into a 190×150 SVG — the station dots draw a recognizable city outline — and marks the S2 footprint as a rect, with a locator ring when the cell is under ~14px. Its docstring: *"no tiles, no map instance per hover, and the asset is one the app already ships."* Stadia is used elsewhere in ctbk (`StationMap`, Leaflet raster, keyless tier), but deliberately not here. A per-hover tiled map would be the "terrible against a maps API" outcome; this sidesteps keys, rate limits, attribution, and cost.
 - **There is no page-level map.** `pages/Files.tsx` is `<FileTree>` inside a `RawColsProvider` and nothing else — so the callback-vs-slot question below is *unforced* by existing layout. Worth re-asking once a real one exists.
 
+## Demoed here
+
+`site/` now carries the per-cell half: `components/S2CellPreview.tsx` + `lib/s2geo.ts`, over an
+`s2_cell` column in the fixture. Same tile-free approach as ctbk, and a useful reference for what
+the hook can carry — the cell is a floating-ui tooltip with an SVG locator in it. Both files live
+in `site/`, not `src/`: an S2 column is consumer domain knowledge, and the library gains no
+dependency from the demo having one.
+
+The page-level half below is still unbuilt.
+
 ## Prior art in this repo
 
 `specs/done/consumer-render-ergonomics.md` — the inward-facing hooks, and why

@@ -11,6 +11,7 @@ import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
 import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
+import { isS2Cell, S2Cell } from '../components/S2CellPreview'
 
 /** Exercises the parquet viewer's presentation hooks. Built at module
  *  scope: `makeParquetViewer` mints a component type, so calling it in
@@ -77,6 +78,15 @@ function useParquetOptions(): ParquetViewerOptions {
     // route in the surrounding app just as easily as a sibling file.
     if (column.name === 'region') {
       return <Link to={`/mock/docs/regions/${value}.md`} title={`about ${value}`}>{defaultNode}</Link>
+    }
+
+    // A cell can be a whole widget. `s2_cell` holds S2 tokens, which
+    // are unreadable on their own, so hovering draws the footprint over
+    // the region's points — see `S2CellPreview` for why it's tile-free.
+    // Guarded on the value, not just the column: a non-token falls
+    // through to the default rather than rendering blank.
+    if (column.name === 's2_cell' && isS2Cell(value)) {
+      return <S2Cell token={value} region={String(row['region'] ?? '')} />
     }
 
     // Replacing the value rather than wrapping it — note this is what
@@ -160,8 +170,16 @@ export function MockDemo() {
           <em>FK links</em> into <code>docs/regions/</code>, <code>value</code> is reformatted as
           currency (which is also what hides float noise), and <code>id</code> is marked on rows
           whose <code>region</code> is <code>nyc</code> — a cell rendering against a sibling
-          column. In <code>data/2024/</code>, the listing's own <code>renderCell</code> appends a
-          quarter label to each key.
+          column, and <code>s2_cell</code> is a <em>whole widget</em> — hover a token to see its
+          footprint drawn over the region's points. In <code>data/2024/</code>, the listing's own{' '}
+          <code>renderCell</code> appends a quarter label to each key.
+        </p>
+        <p>
+          The S2 preview is deliberately <strong>tile-free</strong>: a map instance per hovered row
+          would mean an API key, rate limits, attribution, and a GL context per cell, to answer a
+          question an inline SVG answers with no network at all. It's also{' '}
+          <em>consumer</em> code — <code>@rdub/file-tree</code> knows nothing about S2. The library
+          hands you <code>renderCell</code>; what you decode in it is your business.
         </p>
         <p>
           Every header carries a <strong>raw/formatted toggle</strong> (<code>⌗</code>) — each

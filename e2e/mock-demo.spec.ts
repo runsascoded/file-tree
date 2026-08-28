@@ -113,13 +113,13 @@ test.describe('MockDemo', () => {
   test('renders a parquet file, with inferred timestamps and column hooks', async ({ page }) => {
     await page.goto('/mock/samples/events.parquet')
 
-    await expect(page.getByText('240 rows · 6 columns · 1 row group · 5.4 KB')).toBeVisible()
+    await expect(page.getByText('240 rows · 7 columns · 1 row group · 6.4 KB')).toBeVisible()
 
     // Header names, with the per-column raw/formatted toggle stripped —
     // `renderHeader` is gated on `path`, so this is also the assertion
     // that `path` reaches the ctx.
     expect((await parquetRow(page, 'header')).map(h => h.replace(/⌗|raw$/, '').trim())).toEqual([
-      'dt', 'event_ts', 'recorded', 'id', 'region', 'value',
+      'dt', 'event_ts', 'recorded', 'id', 'region', 's2_cell', 'value',
     ])
 
     // `dt` / `event_ts` are bare INT64s read as epochs; `recorded` is
@@ -129,7 +129,7 @@ test.describe('MockDemo', () => {
     // the demo's `renderCell`, so this row pins the hook too.
     expect(await parquetRow(page, 0)).toEqual([
       '2026-04-25 00:00Z', '2026-04-25 00:00:00Z', '2026-04-25 00:00:00Z',
-      '◆ 1777075200000', 'nyc', '$0.00',
+      '◆ 1777075200000', 'nyc', '89c259c413', '$0.00',
     ])
   })
 
@@ -152,6 +152,27 @@ test.describe('MockDemo', () => {
 
     // Only the toggled column changes — `event_ts` is still formatted.
     expect((await parquetRow(page, 0))[1]).toBe('2026-04-25 01:01:40Z')
+  })
+
+  test('an s2_cell renders a locator preview, portalled out of the table', async ({ page }) => {
+    await page.goto('/mock/samples/events.parquet')
+
+    // A cell can be a whole widget: the token is unreadable alone, so
+    // hovering draws its footprint over the region's points. No tiles —
+    // the SVG is built from the fixture, so this asserts no network.
+    await page.locator('table').last().locator('tbody tr').first()
+      .locator('td').nth(5).getByText('89c259c4').hover()
+
+    const tip = page.getByRole('tooltip')
+    await expect(tip).toBeVisible()
+    expect((await tip.innerText()).split('\n')).toEqual([
+      'token', '89c259c4', 'level', 'L13', '~edge', '1.1 km',
+    ])
+    await expect(tip.getByRole('img', { name: 'location of 89c259c4' })).toBeVisible()
+
+    // Portalled: an absolutely-positioned child would be clipped by the
+    // table's scroll container, so the preview must not live inside it.
+    expect(await tip.evaluate(el => el.closest('table') === null)).toBe(true)
   })
 
   test('a parquet cell can link to another file in the tree', async ({ page }) => {
