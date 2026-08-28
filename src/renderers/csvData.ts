@@ -101,3 +101,33 @@ export function useCsvPage(
 
   return { rows, error }
 }
+
+/** Every row, for small-table mode.
+ *
+ *  Only runs when `enabled` — the caller decides from `total` whether
+ *  the file is small enough, since it's the one that knows the
+ *  threshold. One read, no paging: below a few MB the whole point is
+ *  that streaming buys nothing.
+ */
+export function useAllCsvRows(
+  store: Store, path: string, delimiter: string, enabled: boolean,
+): { rows: string[][] | null; error: string | null } {
+  const [rows, setRows] = useState<string[][] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!enabled) { setRows(null); return }
+    let cancelled = false
+    setRows(null); setError(null)
+    store.get(path).then(r => {
+      if (cancelled) return
+      const lines = new TextDecoder().decode(r.bytes).split('\n')
+      lines.shift()   // header
+      while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+      setRows(lines.map(line => parseLine(line.replace(/\r$/, ''), delimiter)))
+    }).catch(e => { if (!cancelled) setError(String(e)) })
+    return () => { cancelled = true }
+  }, [store, path, delimiter, enabled])
+
+  return { rows, error }
+}

@@ -15,6 +15,7 @@ export default defineConfig({
     'src/test/conformance.ts',
     'src/renderers/table.ts',
     'src/renderers/tableControls.tsx',
+    'src/renderers/tableSort.ts',
     'src/renderers/yaml.tsx',
     'src/renderers/parquet.tsx',
     'src/renderers/parquetData.ts',

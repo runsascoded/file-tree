@@ -213,3 +213,41 @@ export function useRowGroup(
 
   return { rows, error }
 }
+
+/** Every row of every row group, for small-table mode.
+ *
+ *  Only runs when `enabled`; the caller decides from `meta.byteSize`
+ *  whether the file is small enough. One `parquetRead` over the whole
+ *  file rather than per-group, so hyparquet can plan it.
+ */
+export function useAllRows(
+  store: Store, path: string, meta: ParquetMeta | null, enabled: boolean,
+): { rows: Record<string, unknown>[] | null; error: string | null } {
+  const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!enabled || !meta) { setRows(null); return }
+    let cancelled = false
+    setRows(null); setError(null)
+    ;(async () => {
+      try {
+        const file = await asyncBufferFromStore(store, path)
+        const out: Record<string, unknown>[] = []
+        await parquetRead({
+          file,
+          rowFormat: 'object',
+          onComplete: (data: unknown) => {
+            if (Array.isArray(data)) for (const r of data) out.push(r as Record<string, unknown>)
+          },
+        })
+        if (!cancelled) setRows(out)
+      } catch (e) {
+        if (!cancelled) setError(String(e))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [store, path, meta, enabled])
+
+  return { rows, error }
+}

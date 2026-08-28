@@ -58,7 +58,13 @@ function renderMoney({ column, value, defaultNode }: TableCellCtx): ReactNode {
 
 /** `data/*.csv` gets the shared money rule and nothing else — proof the
  *  hook isn't parquet's. */
-const CsvViewer = makeCsvViewer({ renderCell: renderMoney, columnPicker: true })
+/** `fullLoadMaxBytes: 0` forces **streaming mode**, which every fixture
+ *  here is far too small to reach naturally — the parquet table is 6 KB
+ *  and sorts, so this is the demo of the other half: above the
+ *  threshold the sort controls are *absent* (not greyed out) and a line
+ *  says why. On a real 500 MB shard that's the honest behaviour;
+ *  sorting would need the whole file. */
+const CsvViewer = makeCsvViewer({ renderCell: renderMoney, columnPicker: true, fullLoadMaxBytes: 0 })
 
 /** What the column holds underneath whatever we render. `hyparquet`
  *  resolves an annotated `TIMESTAMP` to a `Date` before the renderer

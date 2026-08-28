@@ -13,6 +13,7 @@
  *
  *  See `specs/viewer-registry.md` for where this is going. */
 import type { CSSProperties, ReactNode } from 'react'
+import type { SortComparators } from './tableSort'
 
 /** What a viewer can say about a column without knowing its format.
  *
@@ -89,6 +90,20 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
   /** Columns hidden initially, by name. Independent of `columnPicker`:
    *  set this alone to drop columns the reader can't restore. */
   hiddenColumns?: readonly string[]
+  /** Load the whole table at or below this many bytes, which unlocks
+   *  sorting and an exact row count. Above it the viewer streams as it
+   *  always has and those controls are *absent* — not disabled.
+   *  Default `DEFAULT_FULL_LOAD_MAX_BYTES` (~5 MB); `0` never loads,
+   *  `Infinity` always does.
+   *
+   *  Bytes rather than rows: it's the number a viewer knows before
+   *  reading anything, and a row count is only knowable after the
+   *  decision it would inform. */
+  fullLoadMaxBytes?: number
+  /** Per-column comparator override, for when the default (numeric if
+   *  both values parse as numbers, else locale string order) reads a
+   *  column wrong — a version string, an ordered enum. */
+  sortComparators?: SortComparators
 }
 
 /** Shared `<td>` / `<th>` styling, so the table viewers look like each

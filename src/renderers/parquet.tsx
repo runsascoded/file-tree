@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Store } from '../types'
 import {
-  NUMERIC_TYPES, useParquetMeta, useRowGroup,
+  NUMERIC_TYPES, useAllRows, useParquetMeta, useRowGroup,
   type ParquetColumn, type ParquetColumnStats, type ParquetMeta, type RowGroupInfo,
 } from './parquetData'
 
@@ -34,6 +34,7 @@ import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
 import { ColumnPicker, useColumnVisibility } from './tableControls'
+import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 import {
   resolveColStyles, TD_STYLE, TH_STYLE,
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
@@ -121,7 +122,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -136,9 +137,16 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   const [rgPage, setRgPage] = useState(0)
   useEffect(() => { setRgPage(0) }, [page])
 
-  const { rows, error: rowsError } = useRowGroup(store, path, meta, page)
+  // Small-table mode: below the threshold the whole file is loaded, and
+  // sorting becomes possible. Above it the viewer streams row groups as
+  // it always has — see `specs/small-table-mode.md` for why this is a
+  // mode switch rather than a feature flag.
+  const smallTable = meta !== null && meta.byteSize <= fullLoadMaxBytes
+  const { rows: rgRows, error: rgError } = useRowGroup(store, path, meta, page)
+  const { rows: allRows, error: allError } = useAllRows(store, path, meta, smallTable)
+  const sort = useSort(usePersistedState)
   const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns)
-  const error = metaError ?? rowsError
+  const error = metaError ?? (smallTable ? allError : rgError)
 
   // Clamp `page` to row-group count once metadata is loaded. Survives
   // stale `?page=N` URLs pasted across files with different rg counts.
@@ -150,6 +158,11 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // row group. Recomputed per RG rather than per file: a later RG can
   // legitimately disagree (a column that's all-null early, say), and
   // re-deriving is cheap next to the fetch + decode that produced them.
+  // The rows in play: everything (sorted) in small-table mode, the
+  // current row group otherwise.
+  const sortedAll = useSortedRows(smallTable ? allRows : null, sort, sortComparators, meta?.schema)
+  const rows = smallTable ? sortedAll : rgRows
+
   const temporal = useMemo(
     () => (meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : new Map<string, TemporalFormat>()),
     [meta, rows, inferTimestamps],
@@ -179,10 +192,15 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   }
   const rgIndex = Math.min(Math.max(page, 0), rowGroups.length - 1)
   const rg = rowGroups[rgIndex]
+  // In small-table mode the page is a slice of the *whole* file, so the
+  // row offsets are absolute and there's no row group to cross. Sorting
+  // makes this necessary as well as simpler: a sort is over every row,
+  // so paging within one group would be meaningless.
+  const rowBase = smallTable ? 0 : rg.rowStart
   const rgPageCount = rows ? Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE)) : 0
   const clampedRgPage = Math.min(Math.max(rgPage, 0), Math.max(0, rgPageCount - 1))
-  const pageRowStart = rg.rowStart + clampedRgPage * ROWS_PER_PAGE
-  const pageRowEnd = rows ? rg.rowStart + Math.min((clampedRgPage + 1) * ROWS_PER_PAGE, rows.length) : pageRowStart
+  const pageRowStart = rowBase + clampedRgPage * ROWS_PER_PAGE
+  const pageRowEnd = rows ? rowBase + Math.min((clampedRgPage + 1) * ROWS_PER_PAGE, rows.length) : pageRowStart
   const visibleRows = rows ? rows.slice(clampedRgPage * ROWS_PER_PAGE, (clampedRgPage + 1) * ROWS_PER_PAGE) : null
 
   // Cross-RG page advance: if we're on the last (first) page of the
@@ -194,14 +212,15 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // worth the complexity for a rare interaction.
   const goPrevPage = () => {
     if (clampedRgPage > 0) setRgPage(clampedRgPage - 1)
-    else if (rgIndex > 0) setPage(rgIndex - 1)
+    else if (!smallTable && rgIndex > 0) setPage(rgIndex - 1)
   }
   const goNextPage = () => {
     if (clampedRgPage < rgPageCount - 1) setRgPage(clampedRgPage + 1)
-    else if (rgIndex < rowGroups.length - 1) setPage(rgIndex + 1)
+    else if (!smallTable && rgIndex < rowGroups.length - 1) setPage(rgIndex + 1)
   }
-  const canGoPrev = clampedRgPage > 0 || rgIndex > 0
-  const canGoNext = (rows !== null && clampedRgPage < rgPageCount - 1) || rgIndex < rowGroups.length - 1
+  const canGoPrev = clampedRgPage > 0 || (!smallTable && rgIndex > 0)
+  const canGoNext = (rows !== null && clampedRgPage < rgPageCount - 1)
+    || (!smallTable && rgIndex < rowGroups.length - 1)
 
   return (
     <>
@@ -271,6 +290,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
         totalRows={totalRows}
         pageIdx={clampedRgPage}
         pageCount={rgPageCount}
+        smallTable={smallTable}
         rows={rows}
       />
 
@@ -286,7 +306,27 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                 const st = colStyles.get(c.name)
                 const stats = rg.stats.get(c.name)
                 const title = statsTitle(stats, temporal.get(c.name))
-                const defaultNode = title ? <span title={title}>{c.name}</span> : c.name
+                // The sort control is *absent* above the threshold, not
+                // disabled: a greyed arrow invites a click and teaches
+                // nothing, while the streaming note explains itself.
+                const label = title ? <span title={title}>{c.name}</span> : c.name
+                const defaultNode = smallTable
+                  ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => { sort.toggle(c.name); setRgPage(0) }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sort.toggle(c.name); setRgPage(0) } }}
+                      title={`Sort by ${c.name}`}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      {label}
+                      <span style={{ opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: '0.3em', fontSize: '0.85em' }}>
+                        {sortGlyph(c.name, sort)}
+                      </span>
+                    </span>
+                  )
+                  : label
                 return (
                   <th key={c.name} style={st?.header ?? TH_STYLE} className={st?.headerClass}>
                     {renderHeader ? renderHeader({ column: c, ...(stats ? { stats } : {}), path, defaultNode }) : defaultNode}
@@ -325,7 +365,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
  *  cross RG boundaries (forward always; backward within-RG only,
  *  falling through to prev-RG page 0 at the start) so linear scan
  *  through a whole file is one-button. */
-function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, totalRows, pageIdx, pageCount, rows }: {
+function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, totalRows, pageIdx, pageCount, rows, smallTable }: {
   canGoPrev: boolean
   canGoNext: boolean
   goPrev: () => void
@@ -336,6 +376,7 @@ function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, tota
   pageIdx: number
   pageCount: number
   rows: unknown[] | null
+  smallTable: boolean
 }) {
   // While the RG is loading, `rows === null` so pageCount === 0.
   // Show a subdued placeholder so the layout doesn't jump.
@@ -351,7 +392,9 @@ function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, tota
       <button disabled={!canGoPrev} onClick={goPrev}>‹</button>
       <span style={{ fontVariantNumeric: 'tabular-nums' }}>
         rows <b>{rowStart.toLocaleString()}</b>–<b>{rowEnd.toLocaleString()}</b> / {totalRows.toLocaleString()}
-        {pageCount > 1 && <span style={{ opacity: 0.6 }}> · page {pageIdx + 1}/{pageCount} of RG</span>}
+        {/* "of RG" only when paging *within* a row group — in
+            small-table mode a page is a slice of the whole file. */}
+        {pageCount > 1 && <span style={{ opacity: 0.6 }}> · page {pageIdx + 1}/{pageCount}{smallTable ? '' : ' of RG'}</span>}
       </span>
       <button disabled={!canGoNext} onClick={goNext}>›</button>
     </div>

@@ -10,8 +10,9 @@
 import { useMemo, useState } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
-import { PAGE_BYTES, useCsvHeader, useCsvPage } from './csvData'
+import { PAGE_BYTES, useAllCsvRows, useCsvHeader, useCsvPage } from './csvData'
 import { ColumnPicker, useColumnVisibility } from './tableControls'
+import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 
 // Re-exported so the public subpath keeps every name it had; the
 // plumbing now lives in `./csvData` and is importable on its own.
@@ -40,13 +41,19 @@ export function makeCsvViewer(opts: CsvViewerOptions = {}) {
   }
 }
 
-export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns }: {
+export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }: {
   store: Store; path: string; delimiter: string; usePersistedState?: PersistedState
 } & CsvViewerOptions) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter)
   const [page, setPage] = useState(0)
-  const { rows, error: pageError } = useCsvPage(store, path, delimiter, page, total)
-  const error = headerError ?? pageError
+  // Small-table mode: below the threshold the whole file is read once
+  // and sorting becomes possible; above it the viewer pages byte ranges
+  // as it always has. See `specs/small-table-mode.md`.
+  const smallTable = total !== null && total <= fullLoadMaxBytes
+  const { rows: pageRows, error: pageError } = useCsvPage(store, path, delimiter, page, smallTable ? null : total)
+  const { rows: allRaw, error: allError } = useAllCsvRows(store, path, delimiter, smallTable)
+  const sort = useSort(usePersistedState)
+  const error = headerError ?? (smallTable ? allError : pageError)
 
   const allColumns: TableColumn[] = useMemo(() => (header ?? []).map(name => ({ name })), [header])
   const { visible, ...vis } = useColumnVisibility(allColumns, usePersistedState, hiddenColumns)
@@ -56,6 +63,17 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
   const colIndex = useMemo(
     () => new Map(allColumns.map((c, i) => [c.name, i])),
     [allColumns])
+  // Sorting works on named values, but a CSV row is positional — so
+  // rows are keyed by column name for the comparator, then rendered
+  // back through the same index map.
+  const keyed = useMemo(
+    () => allRaw?.map(r => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? '']))) ?? null,
+    [allRaw, allColumns])
+  const sortedKeyed = useSortedRows(keyed, sort, sortComparators, allColumns)
+  const allSorted = useMemo(
+    () => sortedKeyed?.map(o => allColumns.map(c => String(o[c.name] ?? ''))) ?? null,
+    [sortedKeyed, allColumns])
+
   const colStyles = useMemo(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
     [columns, path, cellProps, headerProps])
@@ -63,7 +81,10 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (total === null || header === null) return <div style={{ opacity: 0.6 }}>reading CSV header…</div>
 
-  const pages = Math.max(1, Math.ceil(total / PAGE_BYTES))
+  // Small-table mode has the whole file, so there's nothing to page and
+  // an exact row count to show — which byte-range paging can never give.
+  const rows = smallTable ? allSorted : pageRows
+  const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES))
   const offsetStart = page * PAGE_BYTES
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES)
 
@@ -73,9 +94,16 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
           table below, and its own z-index can't lift it past this
           line's place in the paint order. */}
       <p style={{ opacity: 0.7, fontSize: '0.95em', margin: '0 0 0.6em', position: 'relative', zIndex: 2 }}>
-        <b>{allColumns.length}</b> columns · {fmtSize(total)}
+        <b>{allColumns.length}</b> columns
+        {smallTable && rows ? <> · <b>{rows.length.toLocaleString()}</b> rows</> : null}
+        {' '}· {fmtSize(total)}
         {columnPicker && <> · <ColumnPicker columns={allColumns} vis={{ visible, ...vis }} /></>}
       </p>
+      {!smallTable && (
+        <p style={{ opacity: 0.6, fontSize: '0.85em', margin: '0 0 0.4em' }}>
+          {fmtSize(total)} — streaming byte ranges; sorting needs the whole file.
+        </p>
+      )}
       {pages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em', margin: '0.4em 0', fontSize: '0.9em', flexWrap: 'wrap' }}>
           <button disabled={page === 0} onClick={() => setPage(0)}>«</button>
@@ -96,9 +124,27 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
             <tr style={{ position: 'sticky', top: 0, zIndex: 1, background: 'Canvas' }}>
               {columns.map(c => {
                 const st = colStyles.get(c.name)
+                // Sort control absent, not disabled, above the threshold.
+                const defaultNode = smallTable
+                  ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => sort.toggle(c.name)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sort.toggle(c.name) } }}
+                      title={`Sort by ${c.name}`}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      {c.name}
+                      <span style={{ opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: '0.3em', fontSize: '0.85em' }}>
+                        {sortGlyph(c.name, sort)}
+                      </span>
+                    </span>
+                  )
+                  : c.name
                 return (
                   <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), whiteSpace: 'nowrap' }} className={st?.headerClass}>
-                    {renderHeader ? renderHeader({ column: c, path, defaultNode: c.name }) : c.name}
+                    {renderHeader ? renderHeader({ column: c, path, defaultNode }) : defaultNode}
                   </th>
                 )
               })}

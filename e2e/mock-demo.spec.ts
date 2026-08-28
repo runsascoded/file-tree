@@ -185,7 +185,8 @@ test.describe('MockDemo', () => {
       ths.map(th => {
         const c = th.cloneNode(true) as HTMLElement
         c.querySelectorAll('select').forEach(sel => sel.remove())
-        return c.textContent!.trim()
+        // …and the sort glyph, which small-table mode adds to every header.
+        return c.textContent!.replace(/[↕▲▼]/g, '').trim()
       }))
     expect(names).toEqual(['dt', 'event_ts', 'recorded', 'id', 'region', 's2_cell', 'value'])
     expect(await page.locator('thead select').count()).toBe(4)
@@ -206,7 +207,7 @@ test.describe('MockDemo', () => {
     const pager = page.getByText(/^rows /)
 
     await page.getByRole('button', { name: '\u203a', exact: true }).first().click()
-    await expect(pager).toHaveText('rows 100\u2013200 / 240 \u00b7 page 2/3 of RG')
+    await expect(pager).toHaveText('rows 100\u2013200 / 240 \u00b7 page 2/3')
 
     // `dt` renders as an inferred epoch; `epoch` puts the integer back.
     await page.getByTitle('dt format').selectOption('epoch')
@@ -216,7 +217,7 @@ test.describe('MockDemo', () => {
     // component type, so changing one re-renders the table rather than
     // remounting it. A remount would reset the pager to page 1/3 and
     // drop the row-group cache.
-    await expect(pager).toHaveText('rows 100\u2013200 / 240 \u00b7 page 2/3 of RG')
+    await expect(pager).toHaveText('rows 100\u2013200 / 240 \u00b7 page 2/3')
 
     // Only the chosen column changes — `event_ts` is still formatted.
     expect((await parquetRow(page, 0))[1]).toBe('2026-04-25 01:01:40Z')
@@ -264,9 +265,24 @@ test.describe('MockDemo', () => {
       ths.map(th => {
         const c = th.cloneNode(true) as HTMLElement
         c.querySelectorAll('select').forEach(sel => sel.remove())
-        return c.textContent!.trim()
+        // …and the sort glyph, which small-table mode adds to every header.
+        return c.textContent!.replace(/[↕▲▼]/g, '').trim()
       }))
     expect(names).toEqual(['dt', 'event_ts', 'region', 's2_cell', 'value'])
+  })
+
+  test('above the threshold, sort controls are absent and say why', async ({ page }) => {
+    // The demo's CSV viewer sets `fullLoadMaxBytes: 0`, forcing the
+    // streaming branch that no fixture here is big enough to reach.
+    await page.goto('/mock/data/2024/q1.csv')
+    await expect(page.getByText('56 B — streaming byte ranges; sorting needs the whole file.')).toBeVisible()
+    // Absent, not disabled: a greyed arrow invites a click and teaches
+    // nothing.
+    await expect(page.getByTitle('Sort by value')).toHaveCount(0)
+
+    // The parquet table is under the threshold, so it *does* sort.
+    await page.goto('/mock/samples/events.parquet')
+    await expect(page.getByTitle('Sort by value')).toHaveCount(1)
   })
 
   test('hiding a csv column does not shift the others', async ({ page }) => {
@@ -277,6 +293,29 @@ test.describe('MockDemo', () => {
     const t = page.locator('table').last()
     expect(await t.locator('thead th').allTextContents()).toEqual(['value'])
     expect(await t.locator('tbody tr td').allTextContents()).toEqual(['$100.00', '$150.00', '$200.00'])
+  })
+
+  test('a small table sorts, and the sort is in the URL', async ({ page }) => {
+    await page.goto('/mock/samples/events.parquet')
+
+    // The fixture is 6.4 KB, well under `fullLoadMaxBytes`, so the whole
+    // file is loaded and every column is sortable. Above the threshold
+    // these controls are absent — sorting needs the whole table, and on
+    // a large file that isn't a trade-off, it's a hang.
+    await page.getByTitle('Sort by value').click()
+    await expect(page).toHaveURL(/[?&]sort=value/)
+
+    // Ascending: `value` cycles 0…999, so the smallest come first — and
+    // the sort is over *every* row, not just the visible page.
+    expect((await parquetRow(page, 0))[6]).toBe('$0.00')
+
+    await page.getByTitle('Sort by value').click()
+    await expect(page).toHaveURL(/[?&]sort=-value/)
+    expect((await parquetRow(page, 0))[6]).toBe('$999.00')
+
+    // Third click clears it, back to file order.
+    await page.getByTitle('Sort by value').click()
+    expect((await parquetRow(page, 0))[0]).toBe('2026-04-25 00:00Z')
   })
 
   test('a parquet cell can link to another file in the tree', async ({ page }) => {
