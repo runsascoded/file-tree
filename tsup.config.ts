@@ -14,6 +14,7 @@ export default defineConfig({
     'src/server/index.ts',
     'src/test/conformance.ts',
     'src/renderers/table.ts',
+    'src/renderers/yaml.tsx',
     'src/renderers/parquet.tsx',
     'src/renderers/markdown.tsx',
     'src/renderers/csv.tsx',

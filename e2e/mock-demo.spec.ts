@@ -93,6 +93,37 @@ test.describe('MockDemo', () => {
     )
   })
 
+  test('expands to a chosen depth', async ({ page }) => {
+    await page.goto('/mock/config.json')
+    // All-or-nothing is the wrong shape for a big document: "expand" is
+    // unusable and "collapse" hides everything, while the level you
+    // want is usually 2 or 3.
+    await page.getByTitle('Expand to depth 2').click()
+    expect(await jsonTree(page)).toBe(
+      '▾{"version": "0.0.1","demo": true,"server": ▾{"host": "localhost","tls": ▸{ 2 keys }}}',
+    )
+    await page.getByTitle('Expand to depth 3').click()
+    expect(await jsonTree(page)).toBe(
+      '▾{"version": "0.0.1","demo": true,"server": ▾{"host": "localhost",'
+      + '"tls": ▾{"enabled": false,"ciphers": ▸[ 2 items ]}}}',
+    )
+  })
+
+  test('renders yaml as a tree, not highlighted text', async ({ page }) => {
+    await page.goto('/mock/config.yaml')
+    // YAML routes through the JSON tree via the registry, so it gets the
+    // same collapsible nodes, search, depth controls and jq — the parser
+    // is lazily imported, hence the retrying assertion.
+    await expect(page.locator('.rdub-file-tree-json-tree')).toBeVisible()
+    expect(await jsonTree(page)).toBe(
+      '▾{"version": "0.0.1","demo": true,"sources": ▸[ 2 items ]}',
+    )
+    await page.getByTitle('Expand to depth 2').click()
+    expect(await jsonTree(page)).toBe(
+      '▾{"version": "0.0.1","demo": true,"sources": ▾["mock","http"]}',
+    )
+  })
+
   test('expand-all reaches every level in one click', async ({ page }) => {
     await page.goto('/mock/config.json')
     await page.getByTitle('Expand all').click()

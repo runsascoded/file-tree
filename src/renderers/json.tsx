@@ -59,11 +59,21 @@ export interface JsonTreeOptions {
    *  `Infinity` opens everything. Depth counts containers, so a
    *  document of flat records — `[{…}, {…}]` — needs 2 to be legible. */
   initialOpenDepth?: number
+  /** How `source` becomes a value. Defaults to `JSON.parse`; the YAML
+   *  renderer passes a YAML parse and gets the whole viewer — tree,
+   *  search, depth controls, and jq — for free, since everything
+   *  downstream operates on the parsed value rather than the text.
+   *
+   *  Async so a parser can be lazily imported: nobody browsing JSON
+   *  should download a YAML parser. */
+  parse?: (source: string) => unknown | Promise<unknown>
+  /** Named in parse errors ("YAML" rather than "JSON"). */
+  label?: string
 }
 
 /** Build a `jsonRenderer` with per-value decoration. `renderJsonTree` is
  *  this with no options; both take `(source, usePersistedState?)`. */
-export function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1 }: JsonTreeOptions = {}) {
+export function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1, parse, label = 'JSON' }: JsonTreeOptions = {}) {
   return function renderJson(source: string, usePersistedState?: PersistedState) {
     return (
       <JsonViewer
@@ -71,6 +81,8 @@ export function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1 }: Json
         usePersistedState={usePersistedState}
         renderValue={renderValue}
         initialOpenDepth={initialOpenDepth}
+        {...(parse ? { parse } : {})}
+        label={label}
       />
     )
   }
@@ -82,7 +94,10 @@ export function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1 }: Json
  *  `jsonRenderer` and forward it. */
 export const renderJsonTree = makeJsonTreeRenderer()
 
-function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }: { source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer; initialOpenDepth: number }) {
+function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth, parse, label }: {
+  source: string; usePersistedState?: PersistedState; renderValue?: JsonValueRenderer
+  initialOpenDepth: number; parse?: (source: string) => unknown | Promise<unknown>; label: string
+}) {
   const use = usePersistedState ?? defaultUseState
   const [q, setQ] = use<string>('json-q', '')
   const [jq, setJq] = use<string>('jq', '')
@@ -90,12 +105,36 @@ function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }
   // tracks the last version it acted on; when the version changes,
   // re-derive its `open` state from `forceOpen`.
   const [expandVersion, setExpandVersion] = useState(0)
-  const [forceOpen, setForceOpen] = useState<boolean | null>(null)
+  // `null` = no standing force; a number opens every container
+  // shallower than it. Expand-all is `Infinity`, collapse-all is `0`,
+  // and "depth N" is just N — one mechanism instead of three.
+  const [forceDepth, setForceDepth] = useState<number | null>(null)
   const [copyToast, setCopyToast] = useState<string | null>(null)
+
+  // A custom `parse` may be async (lazily-imported parser), so the
+  // parsed value is state rather than derived. `JSON.parse` stays
+  // synchronous — the common case shouldn't flash a loading state.
+  const [asyncParsed, setAsyncParsed] = useState<{ value: unknown } | { error: string } | null>(null)
+  useEffect(() => {
+    if (!parse) return
+    let cancelled = false
+    setAsyncParsed(null)
+    Promise.resolve().then(() => parse(source))
+      .then(value => { if (!cancelled) setAsyncParsed({ value }) })
+      .catch(e => { if (!cancelled) setAsyncParsed({ error: String(e) }) })
+    return () => { cancelled = true }
+  }, [source, parse])
 
   let parsed: unknown
   let parseError: string | null = null
-  try { parsed = JSON.parse(source) } catch (e) { parseError = String(e) }
+  let parsing = false
+  if (parse) {
+    if (asyncParsed === null) parsing = true
+    else if ('error' in asyncParsed) parseError = asyncParsed.error
+    else parsed = asyncParsed.value
+  } else {
+    try { parsed = JSON.parse(source) } catch (e) { parseError = String(e) }
+  }
 
   const [jqResult, setJqResult] = useState<{ value: unknown } | null>(null)
   const [jqError, setJqError] = useState<string | null>(null)
@@ -121,6 +160,7 @@ function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }
   const value = jqResult ? jqResult.value : parsed
   const matches = useMemo(() => q.trim() === '' || value === undefined ? null : collectMatchPaths(value, q), [value, q])
 
+  if (parsing) return <div style={{ opacity: 0.6 }}>parsing {label}…</div>
   if (parseError) {
     return (
       <>
@@ -158,16 +198,25 @@ function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }
           style={{ ...inputStyle, minWidth: '16em' }}
           spellCheck={false}
         />
-        <button
-          onClick={() => { setForceOpen(true); setExpandVersion(v => v + 1) }}
-          title="Expand all"
-          style={btnStyle}
-        >expand</button>
-        <button
-          onClick={() => { setForceOpen(false); setExpandVersion(v => v + 1) }}
-          title="Collapse all"
-          style={btnStyle}
-        >collapse</button>
+        {/* Depth targets, not just all-or-nothing: on a document of any
+            size "expand" is unusable and "collapse" hides everything,
+            while the level you actually want to see is usually 2 or 3. */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25em' }}>
+          <span style={{ opacity: 0.6, fontSize: '0.85em' }}>depth</span>
+          {([0, 1, 2, 3] as const).map(d => (
+            <button
+              key={d}
+              onClick={() => { setForceDepth(d); setExpandVersion(v => v + 1) }}
+              title={d === 0 ? 'Collapse all' : `Expand to depth ${d}`}
+              style={btnStyle}
+            >{d}</button>
+          ))}
+          <button
+            onClick={() => { setForceDepth(Infinity); setExpandVersion(v => v + 1) }}
+            title="Expand all"
+            style={btnStyle}
+          >all</button>
+        </span>
         {copyToast !== null && (
           <span style={{ opacity: 0.7, fontSize: '0.85em' }}>
             copied <code>{copyToast}</code>
@@ -188,7 +237,7 @@ function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }
           initialOpenDepth={initialOpenDepth}
           q={q}
           matches={matches}
-          forceOpen={forceOpen}
+          forceDepth={forceDepth}
           forceOpenVersion={expandVersion}
           copyPath={copyPath}
           renderValue={renderValue}
@@ -246,7 +295,7 @@ interface NodeProps {
   keyName?: string
   q: string
   matches: Set<string> | null
-  forceOpen: boolean | null
+  forceDepth: number | null
   forceOpenVersion: number
   copyPath: (path: string) => void
   renderValue?: JsonValueRenderer
@@ -262,13 +311,13 @@ function scalarNode(value: unknown, q: string): ReactNode {
   return null
 }
 
-function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }: NodeProps) {
+function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue }: NodeProps) {
   const scalar = scalarNode(value, q)
   if (scalar !== null) {
     if (!renderValue) return <>{scalar}</>
     return <>{renderValue({ value, path, key: keyName, defaultNode: scalar })}</>
   }
-  const rest = { path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue, initialOpen: depth < initialOpenDepth }
+  const rest = { path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue, initialOpen: depth < initialOpenDepth }
   if (Array.isArray(value)) {
     return <ArrayNode value={value} {...rest} />
   }
@@ -278,9 +327,11 @@ function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, force
   return <span>{String(value)}</span>
 }
 
-function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: unknown[]; initialOpen: boolean }) {
+function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: unknown[]; initialOpen: boolean }) {
   const matchedHere = matches?.has(path) ?? false
-  const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere)
+  // Resolved per container: the force is expressed as a depth, so
+  // each node decides for itself whether it's inside it.
+  const [open, setOpen] = useOpenState(initialOpen, forceDepth === null ? null : depth < forceDepth, forceOpenVersion, matchedHere)
   if (value.length === 0) return <span style={{ color: COLORS.punct }}>[]</span>
   return (
     <span>
@@ -292,7 +343,7 @@ function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen
             const childPath = `${path}[${i}]`
             return (
               <div key={i}>
-                <Node value={v} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
+                <Node value={v} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} q={q} matches={matches} forceDepth={forceDepth} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
                 {i < value.length - 1 && <span style={{ color: COLORS.punct }}>,</span>}
               </div>
             )
@@ -306,9 +357,11 @@ function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen
   )
 }
 
-function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: Record<string, unknown>; initialOpen: boolean }) {
+function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, initialOpen, copyPath, renderValue }: NodeProps & { value: Record<string, unknown>; initialOpen: boolean }) {
   const matchedHere = matches?.has(path) ?? false
-  const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere)
+  // Resolved per container: the force is expressed as a depth, so
+  // each node decides for itself whether it's inside it.
+  const [open, setOpen] = useOpenState(initialOpen, forceDepth === null ? null : depth < forceDepth, forceOpenVersion, matchedHere)
   const keys = Object.keys(value)
   if (keys.length === 0) return <span style={{ color: COLORS.punct }}>{'{}'}</span>
   return (
@@ -323,7 +376,7 @@ function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceOpe
               <div key={k}>
                 <KeyLabel keyName={k} q={q} path={childPath} copyPath={copyPath} />
                 <span style={{ color: COLORS.punct }}>: </span>
-                <Node value={value[k]} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} keyName={k} q={q} matches={matches} forceOpen={forceOpen} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
+                <Node value={value[k]} path={childPath} depth={depth + 1} initialOpenDepth={initialOpenDepth} keyName={k} q={q} matches={matches} forceDepth={forceDepth} forceOpenVersion={forceOpenVersion} copyPath={copyPath} renderValue={renderValue} />
                 {i < keys.length - 1 && <span style={{ color: COLORS.punct }}>,</span>}
               </div>
             )

@@ -265,6 +265,17 @@ import { renderViewerActions } from './viewerActions'                 // ↗ SQL
 
 `renderJsonTree` also comes in a parameterized form, for annotating domain-specific scalars (epoch timestamps, byte counts, ids) without forking the viewer. Same `defaultNode` convention as `renderCell` below:
 
+### YAML
+
+`@rdub/file-tree/renderers/yaml` is the same tree with a YAML parse in front of it — so a `.yaml` file gets collapsible nodes, substring search, the depth controls, copy-path, **and jq**. There is no separate "yq" to build: jq runs on the parsed value, and by then YAML and JSON are the same value.
+
+```tsx
+{ id: 'yaml', match: ({ ext }) => ext === 'yaml' || ext === 'yml',
+  load: () => import('@rdub/file-tree/renderers/yaml-viewer') }
+```
+
+The `yaml` parser is an optional peer, dynamically imported on first use — register the viewer (rather than passing a prop) and neither it nor the parser reaches your main bundle. Same bargain as `jq-web`.
+
 ```tsx
 import { makeJsonTreeRenderer } from '@rdub/file-tree/renderers/json'
 

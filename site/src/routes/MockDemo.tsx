@@ -168,6 +168,16 @@ const VIEWERS: readonly ViewerEntry<never>[] = [
     match: ({ ext }) => ext === 'log',
     load: () => import('../components/LogViewer'),
   },
+  // YAML gets the JSON tree — same collapsible nodes, search, depth
+  // controls, and jq, because everything downstream works on the parsed
+  // value and by then YAML *is* JSON. Registered rather than passed as
+  // a prop so neither this nor the `yaml` parser reaches the main
+  // bundle: a page that never opens a `.yaml` never downloads one.
+  {
+    id: 'yaml',
+    match: ({ ext }) => ext === 'yaml' || ext === 'yml',
+    load: () => import('../components/YamlViewer'),
+  },
 ]
 
 /** Directory-listing hooks, the same `defaultNode` convention one level

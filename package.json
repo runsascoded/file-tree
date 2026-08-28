@@ -67,7 +67,12 @@
       "import": "./dist/renderers/table.js",
       "require": "./dist/renderers/table.cjs"
     },
-"./renderers/parquet": {
+    "./renderers/yaml": {
+      "types": "./dist/renderers/yaml.d.ts",
+      "import": "./dist/renderers/yaml.js",
+      "require": "./dist/renderers/yaml.cjs"
+    },
+    "./renderers/parquet": {
       "types": "./dist/renderers/parquet.d.ts",
       "import": "./dist/renderers/parquet.js",
       "require": "./dist/renderers/parquet.cjs"
@@ -139,9 +144,13 @@
     "react-markdown": "^9 || ^10",
     "react-router-dom": "^6 || ^7",
     "remark-gfm": "^4",
-    "use-prms": "^0.4"
+    "use-prms": "^0.4",
+    "yaml": "^2"
   },
   "peerDependenciesMeta": {
+    "yaml": {
+      "optional": true
+    },
     "react": {
       "optional": true
     },
@@ -184,7 +193,8 @@
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
     "use-prms": "^0.4.1",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "yaml": "^2.9.0"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20"
