@@ -20,16 +20,24 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/renderers/parquet.tsx
 var parquet_exports = {};
 __export(parquet_exports, {
+  NUMERIC_TYPES: () => NUMERIC_TYPES,
   ParquetViewer: () => ParquetViewer,
+  RG_CACHE_SIZE: () => RG_CACHE_SIZE,
+  coarseKind: () => coarseKind,
   default: () => parquet_default,
   formatTemporal: () => formatTemporal,
   inferColumnFormats: () => inferColumnFormats,
   inferTemporalFormat: () => inferTemporalFormat,
   makeParquetViewer: () => makeParquetViewer,
-  toMillis: () => toMillis
+  toMillis: () => toMillis,
+  useParquetMeta: () => useParquetMeta,
+  useRowGroup: () => useRowGroup
 });
 module.exports = __toCommonJS(parquet_exports);
-var import_react2 = require("react");
+var import_react3 = require("react");
+
+// src/renderers/parquetData.ts
+var import_react = require("react");
 var import_hyparquet = require("hyparquet");
 
 // src/react/asyncBuffer.ts
@@ -64,6 +72,134 @@ async function asyncBufferFromStore(store, path) {
   };
 }
 
+// src/renderers/parquetData.ts
+var NUMERIC_TYPES = /* @__PURE__ */ new Set(["INT32", "INT64", "INT96", "FLOAT", "DOUBLE"]);
+var RG_CACHE_SIZE = 4;
+function coarseKind(physicalType) {
+  if (NUMERIC_TYPES.has(physicalType)) return "number";
+  if (physicalType === "BOOLEAN") return "boolean";
+  if (physicalType === "BYTE_ARRAY" || physicalType === "FIXED_LEN_BYTE_ARRAY") return "string";
+  return void 0;
+}
+function useParquetMeta(store, path) {
+  const [meta, setMeta] = (0, import_react.useState)(null);
+  const [error, setError] = (0, import_react.useState)(null);
+  (0, import_react.useEffect)(() => {
+    let cancelled = false;
+    setMeta(null);
+    setError(null);
+    (async () => {
+      try {
+        const file = await asyncBufferFromStore(store, path);
+        const md = await (0, import_hyparquet.parquetMetadataAsync)(file);
+        if (cancelled) return;
+        const schema = (0, import_hyparquet.parquetSchema)(md).children.map((c) => {
+          const el = c.element;
+          const lt = el.logical_type;
+          const physicalType = el.type ? String(el.type) : void 0;
+          return {
+            name: el.name,
+            ...physicalType ? { physicalType, kind: coarseKind(physicalType) } : {},
+            ...lt ? { logicalType: lt.type } : {},
+            ...lt && "unit" in lt ? { timeUnit: lt.unit } : {},
+            ...el.converted_type ? { convertedType: String(el.converted_type) } : {}
+          };
+        });
+        const rowGroups = [];
+        let cum = 0;
+        md.row_groups.forEach((rg, i) => {
+          const numRows = Number(rg.num_rows);
+          const stats = /* @__PURE__ */ new Map();
+          for (const chunk of rg.columns) {
+            const cm = chunk.meta_data;
+            const s = cm?.statistics;
+            if (!cm || !s) continue;
+            const min = s.min_value ?? s.min;
+            const max = s.max_value ?? s.max;
+            const nullCount = s.null_count != null ? Number(s.null_count) : void 0;
+            if (min === void 0 && max === void 0 && nullCount === void 0) continue;
+            stats.set(cm.path_in_schema.join("."), {
+              ...min !== void 0 ? { min } : {},
+              ...max !== void 0 ? { max } : {},
+              ...nullCount !== void 0 ? { nullCount } : {}
+            });
+          }
+          rowGroups.push({
+            index: i,
+            numRows,
+            rowStart: cum,
+            rowEnd: cum + numRows,
+            uncompressedBytes: Number(rg.total_byte_size),
+            compressedBytes: rg.total_compressed_size != null ? Number(rg.total_compressed_size) : null,
+            stats
+          });
+          cum += numRows;
+        });
+        setMeta({ schema, totalRows: Number(md.num_rows), byteSize: file.byteLength, rowGroups });
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path]);
+  return { meta, error };
+}
+function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
+  const [rows, setRows] = (0, import_react.useState)(null);
+  const [error, setError] = (0, import_react.useState)(null);
+  const cache = (0, import_react.useRef)(/* @__PURE__ */ new Map());
+  (0, import_react.useEffect)(() => {
+    cache.current = /* @__PURE__ */ new Map();
+    setRows(null);
+    setError(null);
+  }, [store, path]);
+  (0, import_react.useEffect)(() => {
+    if (!meta || meta.rowGroups.length === 0) return;
+    const rgIdx = Math.min(index, meta.rowGroups.length - 1);
+    const rg = meta.rowGroups[rgIdx];
+    const cached = cache.current.get(rgIdx);
+    if (cached) {
+      cache.current.delete(rgIdx);
+      cache.current.set(rgIdx, cached);
+      setRows(cached);
+      return;
+    }
+    let cancelled = false;
+    setRows(null);
+    (async () => {
+      try {
+        const file = await asyncBufferFromStore(store, path);
+        const out = [];
+        await (0, import_hyparquet.parquetRead)({
+          file,
+          rowStart: rg.rowStart,
+          rowEnd: rg.rowEnd,
+          rowFormat: "object",
+          onComplete: (data) => {
+            if (Array.isArray(data)) for (const r of data) out.push(r);
+          }
+        });
+        if (cancelled) return;
+        cache.current.set(rgIdx, out);
+        while (cache.current.size > cacheSize) {
+          const oldest = cache.current.keys().next().value;
+          if (oldest === void 0) break;
+          cache.current.delete(oldest);
+        }
+        setRows(out);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path, index, meta, cacheSize]);
+  return { rows, error };
+}
+
 // src/react/fmt.ts
 function fmtSize(n) {
   if (n === void 0) return "";
@@ -74,8 +210,8 @@ function fmtSize(n) {
 }
 
 // src/react/persistedState.ts
-var import_react = require("react");
-var defaultUseState = (_key, defaultValue) => (0, import_react.useState)(defaultValue);
+var import_react2 = require("react");
+var defaultUseState = (_key, defaultValue) => (0, import_react2.useState)(defaultValue);
 
 // src/renderers/temporal.ts
 var WINDOWS = [
@@ -252,142 +388,29 @@ function resolveColStyles(columns, path, opts, isNumeric) {
 // src/renderers/parquet.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
 var ROWS_PER_PAGE = 100;
-var RG_CACHE_SIZE = 4;
-function coarseKind(physicalType) {
-  if (NUMERIC_TYPES.has(physicalType)) return "number";
-  if (physicalType === "BOOLEAN") return "boolean";
-  if (physicalType === "BYTE_ARRAY" || physicalType === "FIXED_LEN_BYTE_ARRAY") return "string";
-  return void 0;
-}
-var NUMERIC_TYPES = /* @__PURE__ */ new Set(["INT32", "INT64", "INT96", "FLOAT", "DOUBLE"]);
 function makeParquetViewer(opts = {}) {
   return function BoundParquetViewer(props) {
     return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ParquetViewer, { ...props, ...opts });
   };
 }
 function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true }) {
-  const [meta, setMeta] = (0, import_react2.useState)(null);
+  const { meta, error: metaError } = useParquetMeta(store, path);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
-  const [rows, setRows] = (0, import_react2.useState)(null);
-  const [error, setError] = (0, import_react2.useState)(null);
-  const [rgPage, setRgPage] = (0, import_react2.useState)(0);
-  (0, import_react2.useEffect)(() => {
+  const [rgPage, setRgPage] = (0, import_react3.useState)(0);
+  (0, import_react3.useEffect)(() => {
     setRgPage(0);
   }, [page]);
-  const rgCache = (0, import_react2.useRef)(/* @__PURE__ */ new Map());
-  (0, import_react2.useEffect)(() => {
-    let cancelled = false;
-    setMeta(null);
-    setRows(null);
-    setError(null);
-    rgCache.current = /* @__PURE__ */ new Map();
-    (async () => {
-      try {
-        const file = await asyncBufferFromStore(store, path);
-        const md = await (0, import_hyparquet.parquetMetadataAsync)(file);
-        if (cancelled) return;
-        const schema2 = (0, import_hyparquet.parquetSchema)(md).children.map((c) => {
-          const el = c.element;
-          const lt = el.logical_type;
-          const physicalType = el.type ? String(el.type) : void 0;
-          return {
-            name: el.name,
-            ...physicalType ? { physicalType, kind: coarseKind(physicalType) } : {},
-            ...lt ? { logicalType: lt.type } : {},
-            ...lt && "unit" in lt ? { timeUnit: lt.unit } : {},
-            ...el.converted_type ? { convertedType: String(el.converted_type) } : {}
-          };
-        });
-        const rowGroups2 = [];
-        let cum = 0;
-        md.row_groups.forEach((rg2, i) => {
-          const numRows = Number(rg2.num_rows);
-          const stats = /* @__PURE__ */ new Map();
-          for (const chunk of rg2.columns) {
-            const cm = chunk.meta_data;
-            const s = cm?.statistics;
-            if (!cm || !s) continue;
-            const min = s.min_value ?? s.min;
-            const max = s.max_value ?? s.max;
-            const nullCount = s.null_count != null ? Number(s.null_count) : void 0;
-            if (min === void 0 && max === void 0 && nullCount === void 0) continue;
-            stats.set(cm.path_in_schema.join("."), {
-              ...min !== void 0 ? { min } : {},
-              ...max !== void 0 ? { max } : {},
-              ...nullCount !== void 0 ? { nullCount } : {}
-            });
-          }
-          rowGroups2.push({
-            index: i,
-            numRows,
-            rowStart: cum,
-            rowEnd: cum + numRows,
-            uncompressedBytes: Number(rg2.total_byte_size),
-            compressedBytes: rg2.total_compressed_size != null ? Number(rg2.total_compressed_size) : null,
-            stats
-          });
-          cum += numRows;
-        });
-        setMeta({ schema: schema2, totalRows: Number(md.num_rows), byteSize: file.byteLength, rowGroups: rowGroups2 });
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [store, path]);
-  (0, import_react2.useEffect)(() => {
+  const { rows, error: rowsError } = useRowGroup(store, path, meta, page);
+  const error = metaError ?? rowsError;
+  (0, import_react3.useEffect)(() => {
     if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0);
   }, [meta, page, setPage]);
-  (0, import_react2.useEffect)(() => {
-    if (!meta || meta.rowGroups.length === 0) return;
-    const rgIdx = Math.min(page, meta.rowGroups.length - 1);
-    const rg2 = meta.rowGroups[rgIdx];
-    const cached = rgCache.current.get(rgIdx);
-    if (cached) {
-      rgCache.current.delete(rgIdx);
-      rgCache.current.set(rgIdx, cached);
-      setRows(cached);
-      return;
-    }
-    let cancelled = false;
-    setRows(null);
-    (async () => {
-      try {
-        const file = await asyncBufferFromStore(store, path);
-        const out = [];
-        await (0, import_hyparquet.parquetRead)({
-          file,
-          rowStart: rg2.rowStart,
-          rowEnd: rg2.rowEnd,
-          rowFormat: "object",
-          onComplete: (data) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r);
-          }
-        });
-        if (cancelled) return;
-        rgCache.current.set(rgIdx, out);
-        while (rgCache.current.size > RG_CACHE_SIZE) {
-          const oldest = rgCache.current.keys().next().value;
-          if (oldest === void 0) break;
-          rgCache.current.delete(oldest);
-        }
-        setRows(out);
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [store, path, page, meta]);
-  const temporal = (0, import_react2.useMemo)(
+  const temporal = (0, import_react3.useMemo)(
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
   );
-  const colStyles = (0, import_react2.useMemo)(
+  const colStyles = (0, import_react3.useMemo)(
     // Numeric alignment keys off the *rendered* meaning, not the
     // physical type: a column read as temporal prints as text, so
     // right-aligning it would just detach it from its header.
@@ -605,11 +628,16 @@ function typeLabel(c, temporal) {
 var parquet_default = ParquetViewer;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  NUMERIC_TYPES,
   ParquetViewer,
+  RG_CACHE_SIZE,
+  coarseKind,
   formatTemporal,
   inferColumnFormats,
   inferTemporalFormat,
   makeParquetViewer,
-  toMillis
+  toMillis,
+  useParquetMeta,
+  useRowGroup
 });
 //# sourceMappingURL=parquet.cjs.map

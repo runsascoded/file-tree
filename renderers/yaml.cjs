@@ -57,7 +57,7 @@ var COLORS = {
 };
 var FONT = "ui-monospace, monospace";
 var INDENT = "1.4em";
-function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, parse, label = "JSON", jqDebounceMs = 300 } = {}) {
+function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, parse, label = "JSON", jqDebounceMs = 300, runJq = defaultRunJq } = {}) {
   return function renderJson(source, usePersistedState) {
     return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       JsonViewer,
@@ -69,13 +69,14 @@ function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, pa
         initialOpenDepth,
         ...parse ? { parse } : {},
         label,
-        jqDebounceMs
+        jqDebounceMs,
+        runJq
       }
     );
   };
 }
 var renderJsonTree = makeJsonTreeRenderer();
-function JsonViewer({ source, usePersistedState, renderValue, renderKey, initialOpenDepth, parse, label, jqDebounceMs }) {
+function JsonViewer({ source, usePersistedState, renderValue, renderKey, initialOpenDepth, parse, label, jqDebounceMs, runJq }) {
   const use = usePersistedState ?? defaultUseState;
   const [q, setQ] = use("q", "");
   const [jq, setJq] = use("jq", "");
@@ -147,7 +148,7 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
     return () => {
       cancelled = true;
     };
-  }, [source, jq, parseError, parsing]);
+  }, [source, jq, parseError, parsing, runJq]);
   const value = jqResult ? jqResult.value : parsed;
   const matches = (0, import_react2.useMemo)(() => q.trim() === "" || value === void 0 ? null : collectMatchPaths(value, q), [value, q]);
   if (parsing) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { opacity: 0.6 }, children: [
@@ -473,7 +474,7 @@ function collectMatchPaths(value, q) {
   visit(value, "");
   return out;
 }
-async function runJq(value, expr) {
+async function defaultRunJq(value, expr) {
   let mod;
   try {
     mod = await import("jq-web");

@@ -70,14 +70,32 @@ interface JsonTreeOptions {
      *  constant: 0 disables (useful in tests, where a debounce is just
      *  latency). */
     jqDebounceMs?: number;
+    /** How a jq expression is applied. Defaults to `jq-web` (an optional
+     *  peer, dynamically imported on first use).
+     *
+     *  A strategy rather than a flag: `jq-web` is a ~2.8 MB wasm module,
+     *  and a consumer may already ship a jq build, prefer `jaq`, or want
+     *  to run the filter server-side where the document lives. Hard-wiring
+     *  it left them no way in. */
+    runJq?: (value: unknown, expr: string) => Promise<unknown>;
 }
 /** Build a `jsonRenderer` with per-value decoration. `renderJsonTree` is
  *  this with no options; both take `(source, usePersistedState?)`. */
-declare function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth, parse, label, jqDebounceMs }?: JsonTreeOptions): (source: string, usePersistedState?: PersistedState) => react_jsx_runtime.JSX.Element;
+declare function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth, parse, label, jqDebounceMs, runJq }?: JsonTreeOptions): (source: string, usePersistedState?: PersistedState) => react_jsx_runtime.JSX.Element;
 /** Accepts an optional `usePersistedState` hook; the default
  *  `renderJsonTree` (no second arg) wires plain `useState`. Consumers
  *  who want URL state pass `useUrlPersistedState` via `<FileTree>`'s
  *  `jsonRenderer` and forward it. */
 declare const renderJsonTree: (source: string, usePersistedState?: PersistedState) => react_jsx_runtime.JSX.Element;
+/** Lazy-load `jq-web` (optional peer) and apply `expr` to `value`.
+ *  Throws a clear error if the peer isn't installed so the consumer
+ *  can act on it (the `?jq=` input is the natural place).
+ *
+ *  `jq-web` ships its default export as a Promise that resolves once
+ *  the WASM module is initialized — hence the double-await. */
+/** Default `runJq`: the `jq-web` optional peer, imported on first use.
+ *  Exported so a consumer wrapping it (caching, a worker) doesn't have
+ *  to reimplement the import + error message. */
+declare function defaultRunJq(value: unknown, expr: string): Promise<unknown>;
 
-export { type JsonKeyCtx, type JsonKeyRenderer, type JsonTreeOptions, type JsonValueCtx, type JsonValueRenderer, makeJsonTreeRenderer, renderJsonTree };
+export { type JsonKeyCtx, type JsonKeyRenderer, type JsonTreeOptions, type JsonValueCtx, type JsonValueRenderer, defaultRunJq, makeJsonTreeRenderer, renderJsonTree };

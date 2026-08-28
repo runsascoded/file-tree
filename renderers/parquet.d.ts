@@ -1,103 +1,14 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode } from 'react';
 import { Store } from '../index.js';
+import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-2ggrNhAU.js';
+export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as formatTemporal, j as inferColumnFormats, k as inferTemporalFormat, t as toMillis, u as useParquetMeta, l as useRowGroup } from '../parquetData-2ggrNhAU.js';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
-import { TableCellCtx, TableColumn, TableCellRenderer, TableColumnProps, TableHeaderCtx, TableViewerOptions } from './table.js';
-export { TableHeaderRenderer } from './table.js';
+import { TableCellCtx, TableCellRenderer, TableColumnProps, TableHeaderCtx, TableViewerOptions } from './table.js';
+export { TableColumn, TableHeaderRenderer } from './table.js';
 
-/** Temporal inference + formatting for tabular cells.
- *
- *  Epoch integers are the single worst-reading thing in a data table:
- *  `1777075200000` is correct, unreadable, and usually the column you
- *  scan most. This module decides whether a column *is* temporal and,
- *  if so, how precisely to print it.
- *
- *  **Signals, strongest first, stop at first hit:**
- *
- *  a. **Type annotation** — `TIMESTAMP(unit)` / `DATE`, via either the
- *     modern `logical_type` or the legacy `converted_type`.
- *     Unambiguous and free, but absent from a lot of real files: a
- *     pyramid/DuckDB-style writer often emits epoch millis as a bare
- *     `INT64` with no annotation at all.
- *  b. **Value range** — every sampled value landing inside one unit's
- *     plausible-epoch window (see `WINDOWS`). The windows sit ~3 orders
- *     of magnitude apart, so cross-*unit* confusion isn't a real risk;
- *     the risk is a non-temporal integer (an id, a byte count) landing
- *     in a window. Hence:
- *  c. **Name as a gate, not a trigger** — (b) only applies to a column
- *     whose name already looks temporal. A large-integer `id` column
- *     must never become a date, and a name alone must never be enough
- *     (a `date` column of strings is already fine as-is).
- *
- *  When the signals disagree, render raw: a silently mis-rendered
- *  timestamp is worse than a visible integer. */
-/** How to interpret a raw numeric value as a point in time. */
-type TemporalUnit = 'DAYS' | 'SECONDS' | 'MILLIS' | 'MICROS' | 'NANOS';
-/** How much of the time to print. Chosen from the sampled values'
- *  alignment, so a column of midnight-aligned days doesn't render as a
- *  wall of zeros. */
-type TemporalPrecision = 'day' | 'min' | 'sec' | 'ms';
-/** Which signal produced the interpretation — `inferred` is the
- *  heuristic (b+c) and is worth surfacing in UI, since it's a guess. */
-type TemporalSource = 'logical' | 'converted' | 'inferred';
-interface TemporalFormat {
-    unit: TemporalUnit;
-    precision: TemporalPrecision;
-    source: TemporalSource;
-}
-/** Structural subset of a column descriptor that inference reads.
- *  Declared here (rather than imported) so this module stays free of
- *  renderer/parquet imports; callers pass any compatible shape. */
-interface TemporalColumn {
-    name: string;
-    /** Parquet physical type, e.g. `INT64`, `DOUBLE`, `BYTE_ARRAY`. */
-    physicalType?: string;
-    /** Logical-type annotation, e.g. `TIMESTAMP`, `DATE`, `STRING`. */
-    logicalType?: string;
-    /** Unit of a `TIMESTAMP` / `TIME` logical type. */
-    timeUnit?: 'MILLIS' | 'MICROS' | 'NANOS';
-    /** Legacy converted-type annotation, e.g. `TIMESTAMP_MILLIS`. */
-    convertedType?: string;
-}
-/** Interpret a raw cell as epoch milliseconds, or `null` if it isn't a
- *  number-like value. `Date`s short-circuit the unit: a reader that
- *  understood the file's annotation (hyparquet does this for
- *  `TIMESTAMP`/`DATE` columns) has already done the conversion. */
-declare function toMillis(v: unknown, unit: TemporalUnit): number | null;
-/** Decide whether `col` is temporal, and how precisely to print it.
- *  `values` must be re-iterable (it's traversed more than once).
- *
- *  `infer` gates only the heuristic — annotated `TIMESTAMP`/`DATE`
- *  columns still format when it's off. */
-declare function inferTemporalFormat(col: TemporalColumn, values: Iterable<unknown>, { infer }?: {
-    infer?: boolean;
-}): TemporalFormat | null;
-/** Render a cell as a UTC instant, or `null` if it isn't one.
- *  Always UTC with an explicit `Z`: these are analytical files, and
- *  coercing to local time invents a timezone the data doesn't carry. */
-declare function formatTemporal(v: unknown, fmt: TemporalFormat): string | null;
-/** Per-column formats for a page of rows, keyed by column name.
- *  Columns with no temporal reading are absent from the map. */
-declare function inferColumnFormats(cols: TemporalColumn[], rows: Record<string, unknown>[] | null, opts?: {
-    infer?: boolean;
-}): Map<string, TemporalFormat>;
-
-/** A leaf column of the file's schema. Passed to `renderCell` so a
- *  consumer can key off type as well as name — the parquet-specific
- *  detail (`physicalType`, `logicalType`, …) rides on top of the
- *  format-neutral `TableColumn` every table viewer shares. */
-interface ParquetColumn extends TemporalColumn, TableColumn {
-}
 type ParquetCellCtx = TableCellCtx<ParquetColumn>;
 type ParquetCellRenderer = TableCellRenderer<ParquetColumn>;
-/** Per-column statistics from the current row group's footer metadata.
- *  Not reconstructible from the decoded rows a consumer sees — the
- *  footer is only ever read here. Absent when the writer omitted it. */
-interface ParquetColumnStats {
-    min?: unknown;
-    max?: unknown;
-    nullCount?: number;
-}
 /** Parquet's header ctx adds row-group statistics — not reconstructible
  *  from the decoded rows a consumer sees, since only the viewer reads
  *  the footer. */
@@ -122,6 +33,13 @@ interface ParquetViewerOptions extends TableViewerOptions<ParquetColumn> {
      *  render as text, not quantities. */
     alignNumeric?: boolean;
 }
+/** LRU cache size for decoded RG rows. Keyed by RG index within the
+ *  current `(store, path)`; on revisit of a recently-viewed RG (e.g.
+ *  bouncing between two neighboring RGs, or the "row groups (N)"
+ *  jump-table), we short-circuit both fetch and decode. Bounded so
+ *  a stroll through a 40-RG shard doesn't accumulate a decoded copy
+ *  of the entire file in memory — the last 4 RGs give roughly-linear
+ *  scan enough runway to feel free. */
 /** Base cell/header styling, hoisted so per-column overrides merge over
  *  a single source of truth rather than a literal inlined in JSX. */
 /** Build a parquet viewer with per-cell decoration and/or the epoch
@@ -139,4 +57,4 @@ declare function ParquetViewer({ store, path, usePersistedState, renderCell, ren
     usePersistedState?: PersistedState;
 } & ParquetViewerOptions): react_jsx_runtime.JSX.Element;
 
-export { type ParquetCellCtx, type ParquetCellRenderer, type ParquetColumn, type ParquetColumnProps, type ParquetColumnStats, type ParquetHeaderCtx, type ParquetHeaderRenderer, ParquetViewer, type ParquetViewerOptions, TableCellCtx, TableCellRenderer, TableColumn, TableColumnProps, TableHeaderCtx, TableViewerOptions, type TemporalColumn, type TemporalFormat, type TemporalPrecision, type TemporalSource, type TemporalUnit, ParquetViewer as default, formatTemporal, inferColumnFormats, inferTemporalFormat, makeParquetViewer, toMillis };
+export { type ParquetCellCtx, type ParquetCellRenderer, ParquetColumn, type ParquetColumnProps, ParquetColumnStats, type ParquetHeaderCtx, type ParquetHeaderRenderer, ParquetViewer, type ParquetViewerOptions, TableCellCtx, TableCellRenderer, TableColumnProps, TableHeaderCtx, TableViewerOptions, ParquetViewer as default, makeParquetViewer };

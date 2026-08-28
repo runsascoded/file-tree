@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.4244cc6",
+  "version": "0.0.1-dist.5fa1469",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -103,6 +103,16 @@
       "types": "./renderers/yaml.d.ts",
       "import": "./renderers/yaml.js",
       "require": "./renderers/yaml.cjs"
+    },
+    "./renderers/parquetData": {
+      "types": "./renderers/parquetData.d.ts",
+      "import": "./renderers/parquetData.js",
+      "require": "./renderers/parquetData.cjs"
+    },
+    "./renderers/csvData": {
+      "types": "./renderers/csvData.d.ts",
+      "import": "./renderers/csvData.js",
+      "require": "./renderers/csvData.cjs"
     }
   },
   "keywords": [

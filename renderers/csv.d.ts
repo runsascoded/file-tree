@@ -1,5 +1,6 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { Store } from '../index.js';
+export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.js';
 import { TableViewerOptions, TableColumn } from './table.js';
 export { TableCellCtx, TableCellRenderer } from './table.js';
 import 'react';

@@ -1,5 +1,8 @@
 // src/renderers/parquet.tsx
-import { useEffect, useMemo, useRef, useState as useState2 } from "react";
+import { useEffect as useEffect2, useMemo, useState as useState3 } from "react";
+
+// src/renderers/parquetData.ts
+import { useEffect, useRef, useState } from "react";
 import { parquetMetadataAsync, parquetRead, parquetSchema } from "hyparquet";
 
 // src/react/asyncBuffer.ts
@@ -34,6 +37,134 @@ async function asyncBufferFromStore(store, path) {
   };
 }
 
+// src/renderers/parquetData.ts
+var NUMERIC_TYPES = /* @__PURE__ */ new Set(["INT32", "INT64", "INT96", "FLOAT", "DOUBLE"]);
+var RG_CACHE_SIZE = 4;
+function coarseKind(physicalType) {
+  if (NUMERIC_TYPES.has(physicalType)) return "number";
+  if (physicalType === "BOOLEAN") return "boolean";
+  if (physicalType === "BYTE_ARRAY" || physicalType === "FIXED_LEN_BYTE_ARRAY") return "string";
+  return void 0;
+}
+function useParquetMeta(store, path) {
+  const [meta, setMeta] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setMeta(null);
+    setError(null);
+    (async () => {
+      try {
+        const file = await asyncBufferFromStore(store, path);
+        const md = await parquetMetadataAsync(file);
+        if (cancelled) return;
+        const schema = parquetSchema(md).children.map((c) => {
+          const el = c.element;
+          const lt = el.logical_type;
+          const physicalType = el.type ? String(el.type) : void 0;
+          return {
+            name: el.name,
+            ...physicalType ? { physicalType, kind: coarseKind(physicalType) } : {},
+            ...lt ? { logicalType: lt.type } : {},
+            ...lt && "unit" in lt ? { timeUnit: lt.unit } : {},
+            ...el.converted_type ? { convertedType: String(el.converted_type) } : {}
+          };
+        });
+        const rowGroups = [];
+        let cum = 0;
+        md.row_groups.forEach((rg, i) => {
+          const numRows = Number(rg.num_rows);
+          const stats = /* @__PURE__ */ new Map();
+          for (const chunk of rg.columns) {
+            const cm = chunk.meta_data;
+            const s = cm?.statistics;
+            if (!cm || !s) continue;
+            const min = s.min_value ?? s.min;
+            const max = s.max_value ?? s.max;
+            const nullCount = s.null_count != null ? Number(s.null_count) : void 0;
+            if (min === void 0 && max === void 0 && nullCount === void 0) continue;
+            stats.set(cm.path_in_schema.join("."), {
+              ...min !== void 0 ? { min } : {},
+              ...max !== void 0 ? { max } : {},
+              ...nullCount !== void 0 ? { nullCount } : {}
+            });
+          }
+          rowGroups.push({
+            index: i,
+            numRows,
+            rowStart: cum,
+            rowEnd: cum + numRows,
+            uncompressedBytes: Number(rg.total_byte_size),
+            compressedBytes: rg.total_compressed_size != null ? Number(rg.total_compressed_size) : null,
+            stats
+          });
+          cum += numRows;
+        });
+        setMeta({ schema, totalRows: Number(md.num_rows), byteSize: file.byteLength, rowGroups });
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path]);
+  return { meta, error };
+}
+function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+  const cache = useRef(/* @__PURE__ */ new Map());
+  useEffect(() => {
+    cache.current = /* @__PURE__ */ new Map();
+    setRows(null);
+    setError(null);
+  }, [store, path]);
+  useEffect(() => {
+    if (!meta || meta.rowGroups.length === 0) return;
+    const rgIdx = Math.min(index, meta.rowGroups.length - 1);
+    const rg = meta.rowGroups[rgIdx];
+    const cached = cache.current.get(rgIdx);
+    if (cached) {
+      cache.current.delete(rgIdx);
+      cache.current.set(rgIdx, cached);
+      setRows(cached);
+      return;
+    }
+    let cancelled = false;
+    setRows(null);
+    (async () => {
+      try {
+        const file = await asyncBufferFromStore(store, path);
+        const out = [];
+        await parquetRead({
+          file,
+          rowStart: rg.rowStart,
+          rowEnd: rg.rowEnd,
+          rowFormat: "object",
+          onComplete: (data) => {
+            if (Array.isArray(data)) for (const r of data) out.push(r);
+          }
+        });
+        if (cancelled) return;
+        cache.current.set(rgIdx, out);
+        while (cache.current.size > cacheSize) {
+          const oldest = cache.current.keys().next().value;
+          if (oldest === void 0) break;
+          cache.current.delete(oldest);
+        }
+        setRows(out);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path, index, meta, cacheSize]);
+  return { rows, error };
+}
+
 // src/react/fmt.ts
 function fmtSize(n) {
   if (n === void 0) return "";
@@ -44,8 +175,8 @@ function fmtSize(n) {
 }
 
 // src/react/persistedState.ts
-import { useState } from "react";
-var defaultUseState = (_key, defaultValue) => useState(defaultValue);
+import { useState as useState2 } from "react";
+var defaultUseState = (_key, defaultValue) => useState2(defaultValue);
 
 // src/renderers/temporal.ts
 var WINDOWS = [
@@ -222,137 +353,24 @@ function resolveColStyles(columns, path, opts, isNumeric) {
 // src/renderers/parquet.tsx
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 var ROWS_PER_PAGE = 100;
-var RG_CACHE_SIZE = 4;
-function coarseKind(physicalType) {
-  if (NUMERIC_TYPES.has(physicalType)) return "number";
-  if (physicalType === "BOOLEAN") return "boolean";
-  if (physicalType === "BYTE_ARRAY" || physicalType === "FIXED_LEN_BYTE_ARRAY") return "string";
-  return void 0;
-}
-var NUMERIC_TYPES = /* @__PURE__ */ new Set(["INT32", "INT64", "INT96", "FLOAT", "DOUBLE"]);
 function makeParquetViewer(opts = {}) {
   return function BoundParquetViewer(props) {
     return /* @__PURE__ */ jsx(ParquetViewer, { ...props, ...opts });
   };
 }
 function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true }) {
-  const [meta, setMeta] = useState2(null);
+  const { meta, error: metaError } = useParquetMeta(store, path);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
-  const [rows, setRows] = useState2(null);
-  const [error, setError] = useState2(null);
-  const [rgPage, setRgPage] = useState2(0);
-  useEffect(() => {
+  const [rgPage, setRgPage] = useState3(0);
+  useEffect2(() => {
     setRgPage(0);
   }, [page]);
-  const rgCache = useRef(/* @__PURE__ */ new Map());
-  useEffect(() => {
-    let cancelled = false;
-    setMeta(null);
-    setRows(null);
-    setError(null);
-    rgCache.current = /* @__PURE__ */ new Map();
-    (async () => {
-      try {
-        const file = await asyncBufferFromStore(store, path);
-        const md = await parquetMetadataAsync(file);
-        if (cancelled) return;
-        const schema2 = parquetSchema(md).children.map((c) => {
-          const el = c.element;
-          const lt = el.logical_type;
-          const physicalType = el.type ? String(el.type) : void 0;
-          return {
-            name: el.name,
-            ...physicalType ? { physicalType, kind: coarseKind(physicalType) } : {},
-            ...lt ? { logicalType: lt.type } : {},
-            ...lt && "unit" in lt ? { timeUnit: lt.unit } : {},
-            ...el.converted_type ? { convertedType: String(el.converted_type) } : {}
-          };
-        });
-        const rowGroups2 = [];
-        let cum = 0;
-        md.row_groups.forEach((rg2, i) => {
-          const numRows = Number(rg2.num_rows);
-          const stats = /* @__PURE__ */ new Map();
-          for (const chunk of rg2.columns) {
-            const cm = chunk.meta_data;
-            const s = cm?.statistics;
-            if (!cm || !s) continue;
-            const min = s.min_value ?? s.min;
-            const max = s.max_value ?? s.max;
-            const nullCount = s.null_count != null ? Number(s.null_count) : void 0;
-            if (min === void 0 && max === void 0 && nullCount === void 0) continue;
-            stats.set(cm.path_in_schema.join("."), {
-              ...min !== void 0 ? { min } : {},
-              ...max !== void 0 ? { max } : {},
-              ...nullCount !== void 0 ? { nullCount } : {}
-            });
-          }
-          rowGroups2.push({
-            index: i,
-            numRows,
-            rowStart: cum,
-            rowEnd: cum + numRows,
-            uncompressedBytes: Number(rg2.total_byte_size),
-            compressedBytes: rg2.total_compressed_size != null ? Number(rg2.total_compressed_size) : null,
-            stats
-          });
-          cum += numRows;
-        });
-        setMeta({ schema: schema2, totalRows: Number(md.num_rows), byteSize: file.byteLength, rowGroups: rowGroups2 });
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [store, path]);
-  useEffect(() => {
+  const { rows, error: rowsError } = useRowGroup(store, path, meta, page);
+  const error = metaError ?? rowsError;
+  useEffect2(() => {
     if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0);
   }, [meta, page, setPage]);
-  useEffect(() => {
-    if (!meta || meta.rowGroups.length === 0) return;
-    const rgIdx = Math.min(page, meta.rowGroups.length - 1);
-    const rg2 = meta.rowGroups[rgIdx];
-    const cached = rgCache.current.get(rgIdx);
-    if (cached) {
-      rgCache.current.delete(rgIdx);
-      rgCache.current.set(rgIdx, cached);
-      setRows(cached);
-      return;
-    }
-    let cancelled = false;
-    setRows(null);
-    (async () => {
-      try {
-        const file = await asyncBufferFromStore(store, path);
-        const out = [];
-        await parquetRead({
-          file,
-          rowStart: rg2.rowStart,
-          rowEnd: rg2.rowEnd,
-          rowFormat: "object",
-          onComplete: (data) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r);
-          }
-        });
-        if (cancelled) return;
-        rgCache.current.set(rgIdx, out);
-        while (rgCache.current.size > RG_CACHE_SIZE) {
-          const oldest = rgCache.current.keys().next().value;
-          if (oldest === void 0) break;
-          rgCache.current.delete(oldest);
-        }
-        setRows(out);
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [store, path, page, meta]);
   const temporal = useMemo(
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
@@ -574,12 +592,17 @@ function typeLabel(c, temporal) {
 }
 var parquet_default = ParquetViewer;
 export {
+  NUMERIC_TYPES,
   ParquetViewer,
+  RG_CACHE_SIZE,
+  coarseKind,
   parquet_default as default,
   formatTemporal,
   inferColumnFormats,
   inferTemporalFormat,
   makeParquetViewer,
-  toMillis
+  toMillis,
+  useParquetMeta,
+  useRowGroup
 };
 //# sourceMappingURL=parquet.js.map
