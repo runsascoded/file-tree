@@ -89,19 +89,28 @@ export function S2Cell({ token, region }: { token: string; region: string }): Re
     whileElementsMounted: autoUpdate,
   })
   const { getReferenceProps, getFloatingProps } = useInteractions([
-    useHover(context, { move: false }),
+    // A short close delay bridges the 1px row border between adjacent
+    // targets. Without it, mousing down the column reads as
+    // hide/show/hide/show even with the targets flush.
+    useHover(context, { move: false, delay: { open: 0, close: 80 } }),
     useDismiss(context),
     useRole(context, { role: 'tooltip' }),
   ])
   const level = s2CellLevel(token)!
   return (
     <>
+      {/* Fills the cell rather than hugging the text: the `<td>` gives
+          up its padding (see `cellProps` in `MockDemo`) so adjacent
+          targets are flush top-to-bottom, and running the mouse down
+          the column doesn't fall into a gap between every row. */}
       <span
         ref={refs.setReference}
         {...getReferenceProps()}
-        style={{ cursor: 'help', borderBottom: '1px dotted currentColor' }}
+        style={{ display: 'block', padding: '0.2em 0.6em', cursor: 'help' }}
       >
-        {token}<sup style={{ opacity: 0.55, fontSize: '0.7em' }}>{level}</sup>
+        <span style={{ borderBottom: '1px dotted currentColor' }}>
+          {token}<sup style={{ opacity: 0.55, fontSize: '0.7em' }}>{level}</sup>
+        </span>
       </span>
       {open && (
         <FloatingPortal>

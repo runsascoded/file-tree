@@ -29,7 +29,14 @@ import { isS2Cell, S2Cell } from '../components/S2CellPreview'
 const EVENTS = 'samples/events.parquet'
 
 const ParquetViewer = makeParquetViewer({
-  cellProps: (col, path) => (path === EVENTS && col.name === 'region' ? { style: { textAlign: 'center', opacity: 0.85 } } : undefined),
+  cellProps: (col, path) => {
+    if (path !== EVENTS) return
+    if (col.name === 'region') return { style: { textAlign: 'center', opacity: 0.85 } }
+    // `s2_cell`'s hover target fills the cell, so the padding has to
+    // move off the `<td>` and onto it — otherwise the target stops at
+    // the text and mousing down the column flickers.
+    if (col.name === 's2_cell') return { style: { padding: 0 } }
+  },
   headerProps: (col, path) => (path === EVENTS && col.name === 'region' ? { style: { textAlign: 'center' } } : undefined),
 })
 
