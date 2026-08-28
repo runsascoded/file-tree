@@ -7,14 +7,38 @@
  *  line quoted fields (a quote opening on one line and closing on the
  *  next) — those would need a streaming parser since byte-paginated
  *  chunks can split mid-row. */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
+import { resolveColStyles, TD_STYLE, TH_STYLE, type TableColumn, type TableViewerOptions } from './table'
+
+export type { TableCellCtx, TableCellRenderer, TableColumn, TableViewerOptions } from './table'
 
 const PAGE_BYTES = 256 * 1024
 const HEADER_PROBE_BYTES = 32 * 1024
 
-export function CsvViewer({ store, path, delimiter }: { store: Store; path: string; delimiter: string }) {
+/** Note `rowIndex` in `renderCell` is **page-relative** here: pages are
+ *  byte ranges, so the viewer never learns how many rows preceded them.
+ *
+ *  CSV columns carry a name and nothing else: the format has no types,
+ *  and guessing one from the bytes is the consumer's call — a column of
+ *  digits may well be a zip code. So `kind` stays absent, and numeric
+ *  alignment (which parquet does from its schema) is off by default
+ *  here rather than inferred. */
+export interface CsvViewerOptions extends TableViewerOptions<TableColumn> {}
+
+/** Options bound up front, so `<FileTree csvRenderer={…}>` can take a
+ *  customized viewer. Module scope: this mints a component type, and
+ *  calling it in render would remount the table on every pass. */
+export function makeCsvViewer(opts: CsvViewerOptions = {}) {
+  return function BoundCsvViewer(props: { store: Store; path: string; delimiter: string }) {
+    return <CsvViewer {...props} {...opts} />
+  }
+}
+
+export function CsvViewer({ store, path, delimiter, renderCell, renderHeader, cellProps, headerProps }: {
+  store: Store; path: string; delimiter: string
+} & CsvViewerOptions) {
   const [total, setTotal] = useState<number | null>(null)
   const [header, setHeader] = useState<string[] | null>(null)
   const [page, setPage] = useState(0)
@@ -61,6 +85,11 @@ export function CsvViewer({ store, path, delimiter }: { store: Store; path: stri
     return () => { cancelled = true }
   }, [store, path, delimiter, page, total, header])
 
+  const columns: TableColumn[] = useMemo(() => (header ?? []).map(name => ({ name })), [header])
+  const colStyles = useMemo(
+    () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
+    [columns, path, cellProps, headerProps])
+
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (total === null || header === null) return <div style={{ opacity: 0.6 }}>reading CSV header…</div>
 
@@ -91,26 +120,42 @@ export function CsvViewer({ store, path, delimiter }: { store: Store; path: stri
                 hardcoded dark fallback, which rendered a black bar in a
                 light-themed host that didn't define `--bg`. */}
             <tr style={{ position: 'sticky', top: 0, zIndex: 1, background: 'Canvas' }}>
-              {header.map((c, i) => (
-                <th key={i} style={{ padding: '0.3em 0.6em', textAlign: 'left', borderBottom: '1px solid rgba(127,127,127,0.4)', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                  {c}
-                </th>
-              ))}
+              {columns.map(c => {
+                const st = colStyles.get(c.name)
+                return (
+                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), whiteSpace: 'nowrap' }} className={st?.headerClass}>
+                    {renderHeader ? renderHeader({ column: c, path, defaultNode: c.name }) : c.name}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
             {rows === null ? (
               <tr><td colSpan={header.length} style={{ padding: '0.5em', opacity: 0.6 }}>loading…</td></tr>
             ) : (
-              rows.map((r, i) => (
-                <tr key={i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
-                  {header.map((_, j) => (
-                    <td key={j} style={{ padding: '0.2em 0.6em', whiteSpace: 'nowrap', maxWidth: '30em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {r[j] ?? ''}
-                    </td>
-                  ))}
-                </tr>
-              ))
+              rows.map((r, i) => {
+                // Built lazily: a `renderCell` that reads siblings needs
+                // the row as an object, but most don't, and a table is
+                // mostly cells.
+                let asRow: Record<string, unknown> | null = null
+                const row = () => (asRow ??= Object.fromEntries(columns.map((c, j) => [c.name, r[j] ?? ''])))
+                return (
+                  <tr key={i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
+                    {columns.map((c, j) => {
+                      const st = colStyles.get(c.name)
+                      const value = r[j] ?? ''
+                      return (
+                        <td key={c.name} style={st?.cell ?? TD_STYLE} className={st?.cellClass}>
+                          {renderCell
+                            ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value })
+                            : value}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>

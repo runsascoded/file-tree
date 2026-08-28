@@ -188,6 +188,18 @@ test.describe('MockDemo', () => {
     await expect(page.getByRole('heading', { name: 'NYC' })).toBeVisible()
   })
 
+  test('the same renderCell serves the csv viewer', async ({ page }) => {
+    await page.goto('/mock/data/2024/q1.csv')
+
+    // `renderMoney` is written once against the format-neutral
+    // `TableCellCtx` and passed to both viewers — the `value` column
+    // formats here exactly as it does in the parquet table, even though
+    // CSV hands it over as a string.
+    const rows = page.locator('tbody tr')
+    expect(await rows.first().locator('td').allTextContents()).toEqual(['2024-01-01', '$100.00'])
+    expect(await rows.nth(1).locator('td').allTextContents()).toEqual(['2024-02-01', '$150.00'])
+  })
+
   test('decorates directory-listing cells', async ({ page }) => {
     await page.goto('/mock/data/2024')
 

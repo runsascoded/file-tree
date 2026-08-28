@@ -24,6 +24,19 @@ import { asyncBufferFromStore } from '../react/asyncBuffer'
 import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
+import {
+  resolveColStyles, TD_STYLE, TH_STYLE,
+  type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
+  type TableHeaderCtx, type TableViewerOptions,
+} from './table'
+
+// Re-exported so a consumer writing one `renderCell` for a mixed tree
+// (`.parquet` here, `.csv` next to it) can name the shared types from
+// whichever renderer they already import.
+export type {
+  TableCellCtx, TableCellRenderer, TableColumn, TableColumnProps,
+  TableHeaderCtx, TableHeaderRenderer, TableViewerOptions,
+} from './table'
 
 // Re-exported so a consumer writing a `renderCell` for a temporal
 // column can reuse the same reading + formatting the default does,
@@ -32,28 +45,13 @@ export { formatTemporal, inferColumnFormats, inferTemporalFormat, toMillis } fro
 export type { TemporalColumn, TemporalFormat, TemporalPrecision, TemporalSource, TemporalUnit } from './temporal'
 
 /** A leaf column of the file's schema. Passed to `renderCell` so a
- *  consumer can key off type as well as name. */
-export interface ParquetColumn extends TemporalColumn {}
+ *  consumer can key off type as well as name — the parquet-specific
+ *  detail (`physicalType`, `logicalType`, …) rides on top of the
+ *  format-neutral `TableColumn` every table viewer shares. */
+export interface ParquetColumn extends TemporalColumn, TableColumn {}
 
-export interface ParquetCellCtx {
-  value: unknown
-  column: ParquetColumn
-  /** The whole row, for cells whose rendering depends on a sibling. */
-  row: Record<string, unknown>
-  /** Absolute row index within the file, not within the page. */
-  rowIndex: number
-  /** Path of the file being viewed, so one module-scope renderer can
-   *  dispatch across a tree of unrelated schemas rather than needing a
-   *  viewer per file. */
-  path: string
-  /** What the viewer would have rendered for this cell. */
-  defaultNode: ReactNode
-}
-
-/** Per-cell render hook, mirroring `renderCell` (dir listing) and
- *  `renderValue` (JSON tree): called for every cell, decorate the ones
- *  you care about and return `ctx.defaultNode` for the rest. */
-export type ParquetCellRenderer = (ctx: ParquetCellCtx) => ReactNode
+export type ParquetCellCtx = TableCellCtx<ParquetColumn>
+export type ParquetCellRenderer = TableCellRenderer<ParquetColumn>
 
 /** Per-column statistics from the current row group's footer metadata.
  *  Not reconstructible from the decoded rows a consumer sees — the
@@ -64,34 +62,21 @@ export interface ParquetColumnStats {
   nullCount?: number
 }
 
-export interface ParquetHeaderCtx {
-  column: ParquetColumn
+/** Parquet's header ctx adds row-group statistics — not reconstructible
+ *  from the decoded rows a consumer sees, since only the viewer reads
+ *  the footer. */
+export interface ParquetHeaderCtx extends TableHeaderCtx<ParquetColumn> {
   /** Stats for the row group currently on screen, when the footer
    *  carries them — so the range moves as you page. */
   stats?: ParquetColumnStats
-  /** Path of the file being viewed (see `ParquetCellCtx['path']`). */
-  path: string
-  /** What the viewer would have rendered for this header. */
-  defaultNode: ReactNode
 }
 
 export type ParquetHeaderRenderer = (ctx: ParquetHeaderCtx) => ReactNode
+export type ParquetColumnProps = TableColumnProps<ParquetColumn>
 
-/** Attributes merged over a column's default `<td>` / `<th>` styling.
- *  Returning nothing leaves the default untouched. */
-export type ParquetColumnProps = (col: ParquetColumn, path: string) => { style?: CSSProperties; className?: string } | void
-
-export interface ParquetViewerOptions {
-  renderCell?: ParquetCellRenderer
-  /** Per-column header content (see `ParquetHeaderRenderer`) — a place
-   *  to hang format toggles, stat readouts, and the like. */
+export interface ParquetViewerOptions extends TableViewerOptions<ParquetColumn> {
+  /** Narrowed from `TableViewerOptions` to carry `stats`. */
   renderHeader?: ParquetHeaderRenderer
-  /** Per-column `<td>` attributes, merged over the viewer's defaults. */
-  cellProps?: ParquetColumnProps
-  /** Per-column `<th>` attributes. Separate from `cellProps` so
-   *  overriding one doesn't silently change the other; note the
-   *  built-in numeric alignment already keeps the pair in sync. */
-  headerProps?: ParquetColumnProps
   /** Apply the epoch-range heuristic to unannotated numeric columns
    *  (signals b+c). Default `true`. Turning it off keeps annotated
    *  `TIMESTAMP`/`DATE` columns formatted — it only suppresses the
@@ -140,12 +125,21 @@ const RG_CACHE_SIZE = 4
 
 /** Physical types that read as quantities, and so right-align by
  *  default. `BOOLEAN` and the byte-array types are excluded. */
+/** Parquet's physical type collapsed to the coarse reading every table
+ *  viewer speaks. Temporal isn't decidable here — a `TIMESTAMP` is an
+ *  `INT64` until inference runs — so it's applied below, once the
+ *  column's format is known. */
+function coarseKind(physicalType: string): TableColumn['kind'] {
+  if (NUMERIC_TYPES.has(physicalType)) return 'number'
+  if (physicalType === 'BOOLEAN') return 'boolean'
+  if (physicalType === 'BYTE_ARRAY' || physicalType === 'FIXED_LEN_BYTE_ARRAY') return 'string'
+  return undefined
+}
+
 const NUMERIC_TYPES = new Set(['INT32', 'INT64', 'INT96', 'FLOAT', 'DOUBLE'])
 
 /** Base cell/header styling, hoisted so per-column overrides merge over
  *  a single source of truth rather than a literal inlined in JSX. */
-const TD_STYLE: CSSProperties = { padding: '0.2em 0.6em', whiteSpace: 'nowrap', maxWidth: '30em', overflow: 'hidden', textOverflow: 'ellipsis' }
-const TH_STYLE: CSSProperties = { padding: '0.3em 0.6em', textAlign: 'left', borderBottom: '1px solid rgba(127,127,127,0.4)', fontWeight: 500 }
 
 /** Build a parquet viewer with per-cell decoration and/or the epoch
  *  heuristic disabled. Call at module scope — each call produces a new
@@ -200,9 +194,10 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
         const schema: ParquetColumn[] = parquetSchema(md).children.map(c => {
           const el = c.element
           const lt = el.logical_type
+          const physicalType = el.type ? String(el.type) : undefined
           return {
             name: el.name,
-            ...(el.type ? { physicalType: String(el.type) } : {}),
+            ...(physicalType ? { physicalType, kind: coarseKind(physicalType) } : {}),
             ...(lt ? { logicalType: lt.type } : {}),
             ...(lt && 'unit' in lt ? { timeUnit: lt.unit } : {}),
             ...(el.converted_type ? { convertedType: String(el.converted_type) } : {}),
@@ -309,30 +304,22 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
 
   // Resolved once per column rather than per cell — a 100-row page of a
   // 17-column file would otherwise call `cellProps` 1,700 times a render.
-  const colStyles = useMemo(() => {
-    const out = new Map<string, { cell: CSSProperties; header: CSSProperties; cellClass?: string; headerClass?: string }>()
-    for (const c of meta?.schema ?? []) {
-      // Numeric alignment keys off the *rendered* meaning, not the
-      // physical type: a column read as temporal prints as text, so
-      // right-aligning it would just detach it from its header.
-      const numeric = alignNumeric && !temporal.has(c.name) && c.physicalType !== undefined && NUMERIC_TYPES.has(c.physicalType)
-      const align: CSSProperties = numeric ? { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } : {}
-      const cp = cellProps?.(c, path) || {}
-      const hp = headerProps?.(c, path) || {}
-      out.set(c.name, {
-        cell: { ...TD_STYLE, ...align, ...cp.style },
-        header: { ...TH_STYLE, ...align, ...hp.style },
-        ...(cp.className ? { cellClass: cp.className } : {}),
-        ...(hp.className ? { headerClass: hp.className } : {}),
-      })
-    }
-    return out
-  }, [meta, temporal, alignNumeric, cellProps, headerProps, path])
+  const colStyles = useMemo(
+    // Numeric alignment keys off the *rendered* meaning, not the
+    // physical type: a column read as temporal prints as text, so
+    // right-aligning it would just detach it from its header.
+    () => resolveColStyles(meta?.schema ?? [], path, { cellProps, headerProps },
+      c => alignNumeric && !temporal.has(c.name) && c.physicalType !== undefined && NUMERIC_TYPES.has(c.physicalType)),
+    [meta, temporal, alignNumeric, cellProps, headerProps, path])
 
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (!meta) return <div style={{ opacity: 0.6 }}>reading parquet metadata…</div>
 
-  const { schema, totalRows, byteSize, rowGroups } = meta
+  const { schema: rawSchema, totalRows, byteSize, rowGroups } = meta
+  // `kind` is finalised here rather than at parse time: a `TIMESTAMP`
+  // is physically an `INT64`, so whether a column reads as temporal
+  // isn't known until inference has run over the sampled values.
+  const schema = rawSchema.map(c => (temporal.has(c.name) ? { ...c, kind: 'temporal' as const } : c))
   if (rowGroups.length === 0) {
     return <div style={{ opacity: 0.7 }}>parquet file has no row groups</div>
   }

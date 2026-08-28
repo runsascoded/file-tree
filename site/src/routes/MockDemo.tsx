@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { FileTree, type CellRenderer } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import { DEMO_FIXTURE } from '../fixtures/demo'
 import { renderMarkdown } from '@rdub/file-tree/renderers/markdown'
 import { makeParquetViewer, type ParquetViewerOptions } from '@rdub/file-tree/renderers/parquet'
+import type { TableCellCtx } from '@rdub/file-tree/renderers/table'
 import { renderJsonTree } from '@rdub/file-tree/renderers/json'
-import { CsvViewer } from '@rdub/file-tree/renderers/csv'
+import { makeCsvViewer } from '@rdub/file-tree/renderers/csv'
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
 import { useUrlPersistedState } from '@rdub/file-tree/url-state'
@@ -42,6 +43,23 @@ const ParquetViewer = makeParquetViewer({
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
+/** Format-neutral, so the same rule reaches `.parquet` and `.csv`. The
+ *  columns are named `value` in both, and a currency column is a
+ *  currency column regardless of how it was stored — which is the whole
+ *  argument for `TableViewerOptions` living above either format.
+ *
+ *  Note the CSV branch has to coerce: CSV has no types, so `value`
+ *  arrives as a string where parquet hands over a `DOUBLE`. */
+function renderMoney({ column, value, defaultNode }: TableCellCtx): ReactNode {
+  if (column.name !== 'value') return defaultNode
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? usd.format(n) : defaultNode
+}
+
+/** `data/*.csv` gets the shared money rule and nothing else — proof the
+ *  hook isn't parquet's. */
+const CsvViewer = makeCsvViewer({ renderCell: renderMoney })
+
 /** What the column holds underneath whatever we render. `hyparquet`
  *  resolves an annotated `TIMESTAMP` to a `Date` before the renderer
  *  sees it, so "raw" for that column is the epoch it came from, not
@@ -75,7 +93,7 @@ function useParquetOptions(): ParquetViewerOptions {
   }), [])
 
   return useMemo((): ParquetViewerOptions => ({
-  renderCell: ({ column, value, row, path, defaultNode }) => {
+  renderCell: ({ column, value, row, rowIndex, path, defaultNode }) => {
     if (path !== EVENTS) return defaultNode
     if (rawCols.has(column.name)) return rawText(value)
 
@@ -98,10 +116,9 @@ function useParquetOptions(): ParquetViewerOptions {
 
     // Replacing the value rather than wrapping it — note this is what
     // hides float noise like `36.960000000000004`, which is why
-    // formatting has to happen here and not in CSS.
-    if (column.name === 'value' && typeof value === 'number') {
-      return usd.format(value)
-    }
+    // formatting has to happen here and not in CSS. Shared with the CSV
+    // viewer, which takes the same hook.
+    if (column.name === 'value') return renderMoney({ column, value, row, rowIndex, path, defaultNode })
 
     // Decorating a *neighbouring* column's meaning: `row` is the whole
     // row, so a cell can render against a sibling it doesn't own.

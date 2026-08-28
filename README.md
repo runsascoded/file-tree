@@ -425,6 +425,29 @@ makeParquetViewer({
 
 The default header also carries a `title` summarising the current row group's range (`row group: 0 … 70578`, or `= 626` for a constant column) whenever the writer recorded statistics — a cheap orientation cue in a file with millions of rows.
 
+### The hooks aren't parquet's
+
+`renderCell` / `renderHeader` / `cellProps` / `headerProps` are defined on `TableViewerOptions` in `@rdub/file-tree/renderers/table`, and every table-shaped viewer takes them. A currency column is a currency column however it was stored, so write the rule once:
+
+```tsx
+import type { TableCellCtx } from '@rdub/file-tree/renderers/table'
+
+function renderMoney({ column, value, defaultNode }: TableCellCtx) {
+  if (column.name !== 'value') return defaultNode
+  const n = typeof value === 'number' ? value : Number(value)   // CSV has no types
+  return Number.isFinite(n) ? usd.format(n) : defaultNode
+}
+
+const ParquetViewer = makeParquetViewer({ renderCell: renderMoney })
+const CsvViewer     = makeCsvViewer({ renderCell: renderMoney })
+```
+
+Formats that know more extend the base: parquet's `ParquetColumn` adds the physical/logical type it read, and its `renderHeader` ctx carries row-group `stats`. `column.kind` is the coarse reading (`'number' | 'string' | 'temporal' | 'boolean' | 'binary'`) available everywhere — absent on CSV, which genuinely has no types, so guessing one is the consumer's call.
+
+Two differences worth knowing: `rowIndex` is absolute in parquet but **page-relative in CSV** (its pages are byte ranges, so it never learns how many rows preceded them), and numeric alignment is inferred by parquet from its schema but off by default in CSV for the same reason.
+
+The registry that will let consumers add formats — and stop every page bundling every renderer — is specced in `specs/viewer-registry.md`.
+
 ## Timestamp inference (parquet)
 
 Epoch integers are the worst-reading thing in a data table, and often the column you scan most. The viewer reads a column as temporal on the first signal that hits:

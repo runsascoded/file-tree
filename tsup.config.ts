@@ -13,6 +13,7 @@ export default defineConfig({
     'src/stores/gcs.ts',
     'src/server/index.ts',
     'src/test/conformance.ts',
+    'src/renderers/table.ts',
     'src/renderers/parquet.tsx',
     'src/renderers/markdown.tsx',
     'src/renderers/csv.tsx',

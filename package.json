@@ -62,7 +62,12 @@
       "import": "./dist/server/index.js",
       "require": "./dist/server/index.cjs"
     },
-    "./renderers/parquet": {
+    "./renderers/table": {
+      "types": "./dist/renderers/table.d.ts",
+      "import": "./dist/renderers/table.js",
+      "require": "./dist/renderers/table.cjs"
+    },
+"./renderers/parquet": {
       "types": "./dist/renderers/parquet.d.ts",
       "import": "./dist/renderers/parquet.js",
       "require": "./dist/renderers/parquet.cjs"
