@@ -30,9 +30,12 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/renderers/json.tsx
 var json_exports = {};
 __export(json_exports, {
+  collectMatchPaths: () => collectMatchPaths,
   defaultRunJq: () => defaultRunJq,
+  jqKeySegment: () => jqKeySegment,
   makeJsonTreeRenderer: () => makeJsonTreeRenderer,
-  renderJsonTree: () => renderJsonTree
+  renderJsonTree: () => renderJsonTree,
+  useOpenState: () => useOpenState
 });
 module.exports = __toCommonJS(json_exports);
 var import_react2 = require("react");
@@ -484,8 +487,11 @@ async function defaultRunJq(value, expr) {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  collectMatchPaths,
   defaultRunJq,
+  jqKeySegment,
   makeJsonTreeRenderer,
-  renderJsonTree
+  renderJsonTree,
+  useOpenState
 });
 //# sourceMappingURL=json.cjs.map

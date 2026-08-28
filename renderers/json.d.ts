@@ -87,6 +87,28 @@ declare function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth
  *  who want URL state pass `useUrlPersistedState` via `<FileTree>`'s
  *  `jsonRenderer` and forward it. */
 declare const renderJsonTree: (source: string, usePersistedState?: PersistedState) => react_jsx_runtime.JSX.Element;
+/** Open/closed state for one container, reconciling three inputs: its
+ *  initial depth, a standing depth-force (expand/collapse to N), and
+ *  search. Exported because getting the interaction right — search
+ *  closing only what search opened, a force reaching nodes that mount
+ *  *because* of it — is the fiddly part of a tree, and a fork
+ *  shouldn't have to rediscover it. */
+declare function useOpenState(initialOpen: boolean, forceOpen: boolean | null, forceOpenVersion: number, matchedHere: boolean): readonly [boolean, (v: boolean | ((o: boolean) => boolean)) => void];
+/** jq path segment for a key: `.foo` for valid identifiers, `["weird key"]`
+ *  otherwise. (jq's own rule.) */
+/** jq path segment for an object key — `.foo`, or `["odd key"]` when
+ *  it isn't a bare identifier. Exported because anything keying
+ *  side-band data to tree paths (YAML comments, a JSON Schema) has to
+ *  build the same strings `renderKey`/`renderValue` hand back. */
+declare function jqKeySegment(key: string): string;
+/** Walk `value` and return the set of paths that lead to a match (every
+ *  ancestor of a match is also in the set, so the tree auto-expands to
+ *  reveal them). Match = case-insensitive substring on a key or a
+ *  string-typed value. */
+/** Paths of every node matching `q`, plus their ancestors — the set
+ *  the tree opens to reveal a match. Exported for a fork implementing
+ *  its own search UI over the same semantics. */
+declare function collectMatchPaths(value: unknown, q: string): Set<string>;
 /** Lazy-load `jq-web` (optional peer) and apply `expr` to `value`.
  *  Throws a clear error if the peer isn't installed so the consumer
  *  can act on it (the `?jq=` input is the natural place).
@@ -98,4 +120,4 @@ declare const renderJsonTree: (source: string, usePersistedState?: PersistedStat
  *  to reimplement the import + error message. */
 declare function defaultRunJq(value: unknown, expr: string): Promise<unknown>;
 
-export { type JsonKeyCtx, type JsonKeyRenderer, type JsonTreeOptions, type JsonValueCtx, type JsonValueRenderer, defaultRunJq, makeJsonTreeRenderer, renderJsonTree };
+export { type JsonKeyCtx, type JsonKeyRenderer, type JsonTreeOptions, type JsonValueCtx, type JsonValueRenderer, collectMatchPaths, defaultRunJq, jqKeySegment, makeJsonTreeRenderer, renderJsonTree, useOpenState };
