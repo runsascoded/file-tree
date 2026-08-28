@@ -97,6 +97,13 @@ interface ParquetColumnStats {
     max?: unknown;
     nullCount?: number;
 }
+/** One entry of a row group's declared sort order. Present only when
+ *  the writer recorded it — most don't. */
+interface SortingColumn {
+    columnIdx: number;
+    descending: boolean;
+    nullsFirst: boolean;
+}
 interface RowGroupInfo {
     index: number;
     numRows: number;
@@ -106,6 +113,11 @@ interface RowGroupInfo {
     compressedBytes: number | null;
     /** Keyed by column name; empty when the writer wrote no statistics. */
     stats: Map<string, ParquetColumnStats>;
+    /** Columns this row group is sorted by, if the writer said so. When a
+     *  file is sorted on a column, its row groups' ranges are disjoint and
+     *  ordered — so a predicate on that column prunes down to one or two
+     *  groups instead of scanning every footer range. */
+    sortingColumns: SortingColumn[];
 }
 interface ParquetMeta {
     schema: ParquetColumn[];
@@ -149,5 +161,33 @@ declare function useAllRows(store: Store, path: string, meta: ParquetMeta | null
     rows: Record<string, unknown>[] | null;
     error: string | null;
 };
+/** A comparison a row-group's footer statistics can be tested against.
+ *  Deliberately narrow: `min`/`max` can rule out a *range*, and nothing
+ *  else — a substring or regex tells you nothing about a range, so
+ *  pruning is only ever sound for these. */
+interface Predicate {
+    column: string;
+    op: '=' | '<' | '<=' | '>' | '>=';
+    value: string;
+}
+/** `col=value`, `col>=3`, … or `null` when the text isn't a comparison
+ *  (which is the common case — a bare word is a substring search). */
+declare function parsePredicate(text: string): Predicate | null;
+/** Could this row group contain a matching row?
+ *
+ *  Conservative in both directions that matter: a group with no
+ *  statistics for the column, or unreadable ones, is kept — pruning may
+ *  only ever remove groups that *provably* cannot match. */
+declare function rowGroupMatches(rg: RowGroupInfo, p: Predicate): boolean;
+/** Row groups that could contain a match.
+ *
+ *  This is the one filter that works *above* the size threshold: it
+ *  reads only the footer, which is already loaded. On a file sorted by
+ *  the predicate's column the ranges are disjoint, so it typically
+ *  leaves one or two groups out of hundreds. */
+declare function pruneRowGroups(rowGroups: readonly RowGroupInfo[], p: Predicate): RowGroupInfo[];
+/** Is the file sorted by this column, per the writer's own metadata?
+ *  Used to tell the reader *why* a filter was cheap. */
+declare function isSortedBy(meta: ParquetMeta, column: string): boolean;
 
-export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, formatTemporal as i, inferColumnFormats as j, inferTemporalFormat as k, useRowGroup as l, useAllRows as m, toMillis as t, useParquetMeta as u };
+export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type SortingColumn as S, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, formatTemporal as i, inferColumnFormats as j, inferTemporalFormat as k, useRowGroup as l, type Predicate as m, isSortedBy as n, pruneRowGroups as o, parsePredicate as p, useAllRows as q, rowGroupMatches as r, toMillis as t, useParquetMeta as u };

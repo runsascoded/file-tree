@@ -23,6 +23,10 @@ __export(parquetData_exports, {
   NUMERIC_TYPES: () => NUMERIC_TYPES,
   RG_CACHE_SIZE: () => RG_CACHE_SIZE,
   coarseKind: () => coarseKind,
+  isSortedBy: () => isSortedBy,
+  parsePredicate: () => parsePredicate,
+  pruneRowGroups: () => pruneRowGroups,
+  rowGroupMatches: () => rowGroupMatches,
   useAllRows: () => useAllRows,
   useParquetMeta: () => useParquetMeta,
   useRowGroup: () => useRowGroup
@@ -122,7 +126,12 @@ function useParquetMeta(store, path) {
             rowEnd: cum + numRows,
             uncompressedBytes: Number(rg.total_byte_size),
             compressedBytes: rg.total_compressed_size != null ? Number(rg.total_compressed_size) : null,
-            stats
+            stats,
+            sortingColumns: (rg.sorting_columns ?? []).map((sc) => ({
+              columnIdx: Number(sc.column_idx),
+              descending: !!sc.descending,
+              nullsFirst: !!sc.nulls_first
+            }))
           });
           cum += numRows;
         });
@@ -223,11 +232,62 @@ function useAllRows(store, path, meta, enabled) {
   }, [store, path, meta, enabled]);
   return { rows, error };
 }
+var PREDICATE_RE = /^\s*([^<>=\s]+)\s*(>=|<=|=|<|>)\s*(.+?)\s*$/;
+function parsePredicate(text) {
+  const m = PREDICATE_RE.exec(text);
+  if (!m) return null;
+  return { column: m[1], op: m[2], value: m[3] };
+}
+function statValue(v) {
+  if (v instanceof Uint8Array) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(v);
+    } catch {
+      return void 0;
+    }
+  }
+  return v;
+}
+function cmp(a, b) {
+  const an = Number(a), bn = Number(b);
+  if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+  return String(a).localeCompare(String(b));
+}
+function rowGroupMatches(rg, p) {
+  const st = rg.stats.get(p.column);
+  if (!st) return true;
+  const min = statValue(st.min);
+  const max = statValue(st.max);
+  switch (p.op) {
+    case "=":
+      return (min === void 0 || cmp(min, p.value) <= 0) && (max === void 0 || cmp(max, p.value) >= 0);
+    case ">":
+      return max === void 0 || cmp(max, p.value) > 0;
+    case ">=":
+      return max === void 0 || cmp(max, p.value) >= 0;
+    case "<":
+      return min === void 0 || cmp(min, p.value) < 0;
+    case "<=":
+      return min === void 0 || cmp(min, p.value) <= 0;
+  }
+}
+function pruneRowGroups(rowGroups, p) {
+  return rowGroups.filter((rg) => rowGroupMatches(rg, p));
+}
+function isSortedBy(meta, column) {
+  const idx = meta.schema.findIndex((c) => c.name === column);
+  if (idx < 0 || meta.rowGroups.length === 0) return false;
+  return meta.rowGroups.every((rg) => rg.sortingColumns.some((sc) => sc.columnIdx === idx));
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   NUMERIC_TYPES,
   RG_CACHE_SIZE,
   coarseKind,
+  isSortedBy,
+  parsePredicate,
+  pruneRowGroups,
+  rowGroupMatches,
   useAllRows,
   useParquetMeta,
   useRowGroup

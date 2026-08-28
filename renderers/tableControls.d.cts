@@ -28,5 +28,29 @@ declare function ColumnPicker({ columns, vis }: {
     columns: readonly TableColumn[];
     vis: ColumnVisibility;
 }): react_jsx_runtime.JSX.Element;
+/** Free-text filter over the rows the viewer has.
+ *
+ *  Same idiom as the directory listing's filter and the JSON tree's
+ *  search — a plain box, matching anywhere, case-insensitive — rather
+ *  than a third thing to learn. Shares `?q=` with them for the same
+ *  reason: it's "the search box on this page", and a listing and a file
+ *  are never on screen together.
+ */
+declare function useFilter(usePersistedState?: PersistedState): [string, (v: string) => void];
+/** Rows whose *visible* cells contain `q`.
+ *
+ *  Visible, not all: filtering on a column you've hidden produces rows
+ *  with no apparent reason to be there, which reads as a bug. */
+declare function filterRows<R extends Record<string, unknown>>(rows: R[] | null, q: string, columns: readonly string[]): R[] | null;
+declare function FilterInput({ value, onChange, count, placeholder }: {
+    value: string;
+    onChange: (v: string) => void;
+    /** `matched / total`, shown when filtering. */
+    count?: {
+        shown: number;
+        total: number;
+    };
+    placeholder?: string;
+}): react_jsx_runtime.JSX.Element;
 
-export { ColumnPicker, type ColumnVisibility, useColumnVisibility };
+export { ColumnPicker, type ColumnVisibility, FilterInput, filterRows, useColumnVisibility, useFilter };

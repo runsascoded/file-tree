@@ -102,8 +102,52 @@ function ColumnPicker({ columns, vis }) {
     ] })
   );
 }
+function useFilter(usePersistedState) {
+  const use = usePersistedState ?? defaultUseState;
+  return use("q", "");
+}
+function filterRows(rows, q, columns) {
+  const needle = q.trim().toLowerCase();
+  if (!rows || !needle) return rows;
+  return rows.filter((r) => columns.some((c) => {
+    const v = r[c];
+    return v !== null && v !== void 0 && String(v).toLowerCase().includes(needle);
+  }));
+}
+function FilterInput({ value, onChange, count, placeholder = "filter" }) {
+  return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
+    /* @__PURE__ */ jsx(
+      "input",
+      {
+        type: "search",
+        value,
+        onChange: (e) => onChange(e.target.value),
+        placeholder,
+        spellCheck: false,
+        style: {
+          font: "inherit",
+          fontSize: "0.9em",
+          padding: "0.15em 0.4em",
+          borderRadius: 3,
+          border: "1px solid rgba(127,127,127,0.4)",
+          background: "transparent",
+          color: "inherit",
+          minWidth: "10em"
+        }
+      }
+    ),
+    value.trim() !== "" && count && /* @__PURE__ */ jsxs("span", { style: { opacity: 0.7 }, children: [
+      count.shown.toLocaleString(),
+      " / ",
+      count.total.toLocaleString()
+    ] })
+  ] });
+}
 export {
   ColumnPicker,
-  useColumnVisibility
+  FilterInput,
+  filterRows,
+  useColumnVisibility,
+  useFilter
 };
 //# sourceMappingURL=tableControls.js.map

@@ -96,7 +96,12 @@ function useParquetMeta(store, path) {
             rowEnd: cum + numRows,
             uncompressedBytes: Number(rg.total_byte_size),
             compressedBytes: rg.total_compressed_size != null ? Number(rg.total_compressed_size) : null,
-            stats
+            stats,
+            sortingColumns: (rg.sorting_columns ?? []).map((sc) => ({
+              columnIdx: Number(sc.column_idx),
+              descending: !!sc.descending,
+              nullsFirst: !!sc.nulls_first
+            }))
           });
           cum += numRows;
         });
@@ -196,6 +201,53 @@ function useAllRows(store, path, meta, enabled) {
     };
   }, [store, path, meta, enabled]);
   return { rows, error };
+}
+var PREDICATE_RE = /^\s*([^<>=\s]+)\s*(>=|<=|=|<|>)\s*(.+?)\s*$/;
+function parsePredicate(text) {
+  const m = PREDICATE_RE.exec(text);
+  if (!m) return null;
+  return { column: m[1], op: m[2], value: m[3] };
+}
+function statValue(v) {
+  if (v instanceof Uint8Array) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(v);
+    } catch {
+      return void 0;
+    }
+  }
+  return v;
+}
+function cmp(a, b) {
+  const an = Number(a), bn = Number(b);
+  if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+  return String(a).localeCompare(String(b));
+}
+function rowGroupMatches(rg, p) {
+  const st = rg.stats.get(p.column);
+  if (!st) return true;
+  const min = statValue(st.min);
+  const max = statValue(st.max);
+  switch (p.op) {
+    case "=":
+      return (min === void 0 || cmp(min, p.value) <= 0) && (max === void 0 || cmp(max, p.value) >= 0);
+    case ">":
+      return max === void 0 || cmp(max, p.value) > 0;
+    case ">=":
+      return max === void 0 || cmp(max, p.value) >= 0;
+    case "<":
+      return min === void 0 || cmp(min, p.value) < 0;
+    case "<=":
+      return min === void 0 || cmp(min, p.value) <= 0;
+  }
+}
+function pruneRowGroups(rowGroups, p) {
+  return rowGroups.filter((rg) => rowGroupMatches(rg, p));
+}
+function isSortedBy(meta, column) {
+  const idx = meta.schema.findIndex((c) => c.name === column);
+  if (idx < 0 || meta.rowGroups.length === 0) return false;
+  return meta.rowGroups.every((rg) => rg.sortingColumns.some((sc) => sc.columnIdx === idx));
 }
 
 // src/react/fmt.ts
@@ -450,6 +502,47 @@ function ColumnPicker({ columns, vis }) {
     ] })
   );
 }
+function useFilter(usePersistedState) {
+  const use = usePersistedState ?? defaultUseState;
+  return use("q", "");
+}
+function filterRows(rows, q, columns) {
+  const needle = q.trim().toLowerCase();
+  if (!rows || !needle) return rows;
+  return rows.filter((r) => columns.some((c) => {
+    const v = r[c];
+    return v !== null && v !== void 0 && String(v).toLowerCase().includes(needle);
+  }));
+}
+function FilterInput({ value, onChange, count, placeholder = "filter" }) {
+  return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
+    /* @__PURE__ */ jsx(
+      "input",
+      {
+        type: "search",
+        value,
+        onChange: (e) => onChange(e.target.value),
+        placeholder,
+        spellCheck: false,
+        style: {
+          font: "inherit",
+          fontSize: "0.9em",
+          padding: "0.15em 0.4em",
+          borderRadius: 3,
+          border: "1px solid rgba(127,127,127,0.4)",
+          background: "transparent",
+          color: "inherit",
+          minWidth: "10em"
+        }
+      }
+    ),
+    value.trim() !== "" && count && /* @__PURE__ */ jsxs("span", { style: { opacity: 0.7 }, children: [
+      count.shown.toLocaleString(),
+      " / ",
+      count.total.toLocaleString()
+    ] })
+  ] });
+}
 
 // src/renderers/tableSort.ts
 import { useCallback as useCallback2, useMemo as useMemo2 } from "react";
@@ -479,10 +572,10 @@ function useSortedRows(rows, sort, comparators, columns) {
   return useMemo2(() => {
     if (!rows || !sort.column) return rows;
     const col = columns?.find((c) => c.name === sort.column);
-    const cmp = (col && comparators?.(col)) ?? compareValues;
+    const cmp2 = (col && comparators?.(col)) ?? compareValues;
     const key = sort.column;
     const sign = sort.dir === "desc" ? -1 : 1;
-    return [...rows].sort((x, y) => sign * cmp(x[key], y[key]));
+    return [...rows].sort((x, y) => sign * cmp2(x[key], y[key]));
   }, [rows, sort.column, sort.dir, comparators, columns]);
 }
 function sortGlyph(column, sort) {
@@ -541,13 +634,23 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   const { rows: rgRows, error: rgError } = useRowGroup(store, path, meta, page);
   const { rows: allRows, error: allError } = useAllRows(store, path, meta, smallTable);
   const sort = useSort(usePersistedState);
+  const [filter, setFilter] = useFilter(usePersistedState);
   const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns);
   const error = metaError ?? (smallTable ? allError : rgError);
   useEffect2(() => {
     if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0);
   }, [meta, page, setPage]);
   const sortedAll = useSortedRows(smallTable ? allRows : null, sort, sortComparators, meta?.schema);
-  const rows = smallTable ? sortedAll : rgRows;
+  const filteredAll = useMemo3(
+    () => filterRows(sortedAll, filter, visible),
+    [sortedAll, filter, visible]
+  );
+  const rows = smallTable ? filteredAll : rgRows;
+  const predicate = smallTable ? null : parsePredicate(filter);
+  const prunedGroups = useMemo3(
+    () => predicate && meta ? pruneRowGroups(meta.rowGroups, predicate) : null,
+    [predicate?.column, predicate?.op, predicate?.value, meta]
+  );
   const temporal = useMemo3(
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
@@ -572,11 +675,52 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   const { schema: rawSchema, totalRows, byteSize, rowGroups } = meta;
   const allColumns = rawSchema.map((c) => temporal.has(c.name) ? { ...c, kind: "temporal" } : c);
   const schema = allColumns.filter((c) => visible.includes(c.name));
+  const FilterBar = () => /* @__PURE__ */ jsxs2("p", { style: { opacity: 0.8, fontSize: "0.9em", margin: "0 0 0.5em", display: "flex", alignItems: "center", gap: "0.6em", flexWrap: "wrap" }, children: [
+    /* @__PURE__ */ jsx2(
+      FilterInput,
+      {
+        value: filter,
+        onChange: (v) => {
+          setFilter(v);
+          setRgPage(0);
+          setPage(0);
+        },
+        placeholder: smallTable ? "filter rows" : "filter (e.g. dt >= 2026-01-01)",
+        ...smallTable && sortedAll ? { count: { shown: rows?.length ?? 0, total: sortedAll.length } } : {}
+      }
+    ),
+    predicate && prunedGroups && /* @__PURE__ */ jsxs2("span", { style: { opacity: 0.7 }, children: [
+      /* @__PURE__ */ jsx2("b", { children: prunedGroups.length }),
+      " / ",
+      rowGroups.length,
+      " row groups can match",
+      isSortedBy(meta, predicate.column) && /* @__PURE__ */ jsxs2(Fragment, { children: [
+        " \xB7 file is sorted by ",
+        /* @__PURE__ */ jsx2("code", { children: predicate.column })
+      ] })
+    ] }),
+    !smallTable && !predicate && filter.trim() !== "" && /* @__PURE__ */ jsxs2("span", { style: { opacity: 0.7 }, children: [
+      "streaming \u2014 only comparisons (",
+      /* @__PURE__ */ jsx2("code", { children: "col >= x" }),
+      ") can be answered without the whole file"
+    ] })
+  ] });
   if (rowGroups.length === 0) {
     return /* @__PURE__ */ jsx2("div", { style: { opacity: 0.7 }, children: "parquet file has no row groups" });
   }
-  const rgIndex = Math.min(Math.max(page, 0), rowGroups.length - 1);
-  const rg = rowGroups[rgIndex];
+  const activeGroups = prunedGroups ?? rowGroups;
+  if (activeGroups.length === 0) {
+    return /* @__PURE__ */ jsxs2(Fragment, { children: [
+      /* @__PURE__ */ jsx2(FilterBar, {}),
+      /* @__PURE__ */ jsxs2("p", { style: { opacity: 0.7 }, children: [
+        "No row group can contain a match for ",
+        /* @__PURE__ */ jsx2("code", { children: filter }),
+        "."
+      ] })
+    ] });
+  }
+  const rgIndex = Math.min(Math.max(page, 0), activeGroups.length - 1);
+  const rg = activeGroups[rgIndex];
   const rowBase = smallTable ? 0 : rg.rowStart;
   const rgPageCount = rows ? Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE)) : 0;
   const clampedRgPage = Math.min(Math.max(rgPage, 0), Math.max(0, rgPageCount - 1));
@@ -589,10 +733,10 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   };
   const goNextPage = () => {
     if (clampedRgPage < rgPageCount - 1) setRgPage(clampedRgPage + 1);
-    else if (!smallTable && rgIndex < rowGroups.length - 1) setPage(rgIndex + 1);
+    else if (!smallTable && rgIndex < activeGroups.length - 1) setPage(rgIndex + 1);
   };
   const canGoPrev = clampedRgPage > 0 || !smallTable && rgIndex > 0;
-  const canGoNext = rows !== null && clampedRgPage < rgPageCount - 1 || !smallTable && rgIndex < rowGroups.length - 1;
+  const canGoNext = rows !== null && clampedRgPage < rgPageCount - 1 || !smallTable && rgIndex < activeGroups.length - 1;
   return /* @__PURE__ */ jsxs2(Fragment, { children: [
     /* @__PURE__ */ jsxs2("p", { style: { opacity: 0.7, fontSize: "0.95em", display: "flex", alignItems: "center", gap: "0.6em", flexWrap: "wrap", position: "relative", zIndex: 2 }, children: [
       /* @__PURE__ */ jsxs2("span", { children: [
@@ -636,7 +780,8 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         ] }, g.index)) })
       ] })
     ] }),
-    /* @__PURE__ */ jsx2(Pager, { rg, rgCount: rowGroups.length, setPage, totalRows }),
+    /* @__PURE__ */ jsx2(FilterBar, {}),
+    /* @__PURE__ */ jsx2(Pager, { rg, rgCount: activeGroups.length, setPage, totalRows }),
     /* @__PURE__ */ jsx2(
       RowPager,
       {
@@ -760,7 +905,7 @@ function fmtCell(v, temporal) {
   }
   return rawText(v);
 }
-function statValue(v, temporal) {
+function statValue2(v, temporal) {
   if (v === null || v === void 0) return null;
   if (temporal) {
     const s = formatTemporal(v, temporal);
@@ -782,8 +927,8 @@ function statValue(v, temporal) {
 function statsTitle(stats, temporal) {
   if (!stats) return void 0;
   const parts = [];
-  const min = statValue(stats.min, temporal);
-  const max = statValue(stats.max, temporal);
+  const min = statValue2(stats.min, temporal);
+  const max = statValue2(stats.max, temporal);
   if (min !== null && max !== null) parts.push(min === max ? `= ${min}` : `${min} \u2026 ${max}`);
   else if (min !== null) parts.push(`\u2265 ${min}`);
   else if (max !== null) parts.push(`\u2264 ${max}`);

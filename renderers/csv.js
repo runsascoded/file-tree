@@ -246,6 +246,47 @@ function ColumnPicker({ columns, vis }) {
     ] })
   );
 }
+function useFilter(usePersistedState) {
+  const use = usePersistedState ?? defaultUseState;
+  return use("q", "");
+}
+function filterRows(rows, q, columns) {
+  const needle = q.trim().toLowerCase();
+  if (!rows || !needle) return rows;
+  return rows.filter((r) => columns.some((c) => {
+    const v = r[c];
+    return v !== null && v !== void 0 && String(v).toLowerCase().includes(needle);
+  }));
+}
+function FilterInput({ value, onChange, count, placeholder = "filter" }) {
+  return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
+    /* @__PURE__ */ jsx(
+      "input",
+      {
+        type: "search",
+        value,
+        onChange: (e) => onChange(e.target.value),
+        placeholder,
+        spellCheck: false,
+        style: {
+          font: "inherit",
+          fontSize: "0.9em",
+          padding: "0.15em 0.4em",
+          borderRadius: 3,
+          border: "1px solid rgba(127,127,127,0.4)",
+          background: "transparent",
+          color: "inherit",
+          minWidth: "10em"
+        }
+      }
+    ),
+    value.trim() !== "" && count && /* @__PURE__ */ jsxs("span", { style: { opacity: 0.7 }, children: [
+      count.shown.toLocaleString(),
+      " / ",
+      count.total.toLocaleString()
+    ] })
+  ] });
+}
 
 // src/renderers/tableSort.ts
 import { useCallback as useCallback2, useMemo as useMemo2 } from "react";
@@ -331,6 +372,7 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
   const { rows: pageRows, error: pageError } = useCsvPage(store, path, delimiter, page, smallTable ? null : total);
   const { rows: allRaw, error: allError } = useAllCsvRows(store, path, delimiter, smallTable);
   const sort = useSort(usePersistedState);
+  const [filter, setFilter] = useFilter(usePersistedState);
   const error = headerError ?? (smallTable ? allError : pageError);
   const allColumns = useMemo3(() => (header ?? []).map((name) => ({ name })), [header]);
   const { visible, ...vis } = useColumnVisibility(allColumns, usePersistedState, hiddenColumns);
@@ -344,9 +386,13 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
     [allRaw, allColumns]
   );
   const sortedKeyed = useSortedRows(keyed, sort, sortComparators, allColumns);
+  const filteredKeyed = useMemo3(
+    () => filterRows(sortedKeyed, filter, visible),
+    [sortedKeyed, filter, visible]
+  );
   const allSorted = useMemo3(
-    () => sortedKeyed?.map((o) => allColumns.map((c) => String(o[c.name] ?? ""))) ?? null,
-    [sortedKeyed, allColumns]
+    () => filteredKeyed?.map((o) => allColumns.map((c) => String(o[c.name] ?? ""))) ?? null,
+    [filteredKeyed, allColumns]
   );
   const colStyles = useMemo3(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
@@ -378,6 +424,15 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
         /* @__PURE__ */ jsx2(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
       ] })
     ] }),
+    smallTable && /* @__PURE__ */ jsx2("p", { style: { opacity: 0.8, fontSize: "0.9em", margin: "0 0 0.5em" }, children: /* @__PURE__ */ jsx2(
+      FilterInput,
+      {
+        value: filter,
+        onChange: setFilter,
+        placeholder: "filter rows",
+        ...sortedKeyed ? { count: { shown: rows?.length ?? 0, total: sortedKeyed.length } } : {}
+      }
+    ) }),
     !smallTable && /* @__PURE__ */ jsxs2("p", { style: { opacity: 0.6, fontSize: "0.85em", margin: "0 0 0.4em" }, children: [
       fmtSize(total),
       " \u2014 streaming byte ranges; sorting needs the whole file."
