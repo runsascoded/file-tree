@@ -760,9 +760,31 @@ function TruncationBanner({ shown, total }) {
   ] });
 }
 
+// src/react/viewers.tsx
+import { lazy, Suspense } from "react";
+import { jsx as jsx7 } from "react/jsx-runtime";
+var lazyCache = /* @__PURE__ */ new Map();
+function lazyFor(entry) {
+  let C = lazyCache.get(entry.id);
+  if (!C) {
+    C = lazy(entry.load);
+    lazyCache.set(entry.id, C);
+  }
+  return C;
+}
+function findViewer(viewers, path) {
+  if (!viewers?.length) return void 0;
+  const ctx = { path, ext: extOf(path) };
+  return viewers.find((v) => v.match(ctx));
+}
+function RegistryViewer({ entry, store, path, usePersistedState, fallback }) {
+  const Component = lazyFor(entry);
+  return /* @__PURE__ */ jsx7(Suspense, { fallback: fallback ?? /* @__PURE__ */ jsx7("div", { style: { opacity: 0.6 }, children: "loading viewer\u2026" }), children: /* @__PURE__ */ jsx7(Component, { store, path, usePersistedState, ...entry.options ?? {} }) });
+}
+
 // src/react/FileTree.tsx
-import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }) {
+import { jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }) {
   const location = useLocation();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
@@ -780,18 +802,22 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
   const actionsNode = ctx && viewerActions ? viewerActions(ctx) : null;
   const right = downloadHref || actionsNode ? /* @__PURE__ */ jsxs7("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.6em" }, children: [
     actionsNode,
-    downloadHref && /* @__PURE__ */ jsx7(DownloadIcon, { href: downloadHref, name: downloadName })
+    downloadHref && /* @__PURE__ */ jsx8(DownloadIcon, { href: downloadHref, name: downloadName })
   ] }) : void 0;
   return /* @__PURE__ */ jsxs7("div", { className, style, children: [
-    title && /* @__PURE__ */ jsx7("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
-    /* @__PURE__ */ jsx7(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
-    /* @__PURE__ */ jsx7(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState })
+    title && /* @__PURE__ */ jsx8("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
+    /* @__PURE__ */ jsx8(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
+    /* @__PURE__ */ jsx8(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState })
   ] });
 }
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }) {
+  if (parsed.kind !== "dir" && parsed.kind !== "zipEntry") {
+    const entry = findViewer(viewers, parsed.path);
+    if (entry) return /* @__PURE__ */ jsx8(RegistryViewer, { entry, store, path: parsed.path, usePersistedState });
+  }
   switch (parsed.kind) {
     case "dir":
-      return /* @__PURE__ */ jsx7(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState });
+      return /* @__PURE__ */ jsx8(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState });
     case "text": {
       const ext = extOf(parsed.path);
       const isMd = ext === "md" || ext === "markdown";
@@ -800,9 +826,9 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const lang = CODE_LANG[ext];
       if (isCsv && csvRenderer) {
         const Component = csvRenderer;
-        return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
+        return /* @__PURE__ */ jsx8(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
       }
-      return /* @__PURE__ */ jsx7(
+      return /* @__PURE__ */ jsx8(
         TextViewer,
         {
           store,
@@ -816,29 +842,29 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       );
     }
     case "zip":
-      return /* @__PURE__ */ jsx7(ZipEntryList, { store, path: parsed.path, routeBase, rootPrefix });
+      return /* @__PURE__ */ jsx8(ZipEntryList, { store, path: parsed.path, routeBase, rootPrefix });
     case "zipEntry":
-      return /* @__PURE__ */ jsx7(ZipEntryPreview, { store, path: parsed.path, entry: parsed.entry, markdownRenderer });
+      return /* @__PURE__ */ jsx8(ZipEntryPreview, { store, path: parsed.path, entry: parsed.entry, markdownRenderer });
     case "parquet": {
-      if (!parquetRenderer) return /* @__PURE__ */ jsx7(UnsupportedView, { label: "Parquet preview" });
+      if (!parquetRenderer) return /* @__PURE__ */ jsx8(UnsupportedView, { label: "Parquet preview" });
       const Component = parquetRenderer;
-      return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path, usePersistedState });
+      return /* @__PURE__ */ jsx8(Component, { store, path: parsed.path, usePersistedState, ...parquetOptions });
     }
     case "notebook": {
-      if (!notebookRenderer) return /* @__PURE__ */ jsx7(UnsupportedView, { label: "Notebook preview" });
+      if (!notebookRenderer) return /* @__PURE__ */ jsx8(UnsupportedView, { label: "Notebook preview" });
       const Component = notebookRenderer;
-      return /* @__PURE__ */ jsx7(Component, { store, path: parsed.path, usePersistedState });
+      return /* @__PURE__ */ jsx8(Component, { store, path: parsed.path, usePersistedState });
     }
     case "image":
-      return /* @__PURE__ */ jsx7(MediaViewer, { store, path: parsed.path, kind: "image" });
+      return /* @__PURE__ */ jsx8(MediaViewer, { store, path: parsed.path, kind: "image" });
     case "video":
-      return /* @__PURE__ */ jsx7(MediaViewer, { store, path: parsed.path, kind: "video" });
+      return /* @__PURE__ */ jsx8(MediaViewer, { store, path: parsed.path, kind: "video" });
     case "audio":
-      return /* @__PURE__ */ jsx7(MediaViewer, { store, path: parsed.path, kind: "audio" });
+      return /* @__PURE__ */ jsx8(MediaViewer, { store, path: parsed.path, kind: "audio" });
     case "pdf":
-      return /* @__PURE__ */ jsx7(UnsupportedView, { label: "PDF preview" });
+      return /* @__PURE__ */ jsx8(UnsupportedView, { label: "PDF preview" });
     case "binary":
-      return /* @__PURE__ */ jsx7("div", { style: { opacity: 0.7 }, children: "Preview not supported for this file type." });
+      return /* @__PURE__ */ jsx8("div", { style: { opacity: 0.7 }, children: "Preview not supported for this file type." });
   }
 }
 function useDownloadHref(store, path) {
@@ -868,7 +894,7 @@ function useDownloadHref(store, path) {
   return syncHref;
 }
 function DownloadIcon({ href, name }) {
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     "a",
     {
       href,
@@ -889,9 +915,9 @@ function DownloadIcon({ href, name }) {
           strokeLinejoin: "round",
           "aria-hidden": "true",
           children: [
-            /* @__PURE__ */ jsx7("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
-            /* @__PURE__ */ jsx7("path", { d: "M16.5 12 12 16.5 7.5 12" }),
-            /* @__PURE__ */ jsx7("path", { d: "M12 3v13.5" })
+            /* @__PURE__ */ jsx8("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
+            /* @__PURE__ */ jsx8("path", { d: "M16.5 12 12 16.5 7.5 12" }),
+            /* @__PURE__ */ jsx8("path", { d: "M12 3v13.5" })
           ]
         }
       )
@@ -962,6 +988,7 @@ export {
   FileTree,
   IMAGE,
   MediaViewer,
+  RegistryViewer,
   TEXTY,
   TextViewer,
   VIDEO,
@@ -970,6 +997,7 @@ export {
   asyncBufferFromStore,
   basename,
   extOf,
+  findViewer,
   fmtSize,
   keyToSplat,
   makeMatcher,

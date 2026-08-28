@@ -1,5 +1,5 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
-import { ReactNode, ComponentType } from 'react';
+import { ReactNode, ComponentType, ComponentProps } from 'react';
 import { Entry, Store, ZipEntriesResult, GetResult } from '../index.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
 
@@ -153,6 +153,52 @@ declare function parsePath(splat: string, opts?: ParsePathOptions): Parsed;
 declare function keyToSplat(key: string, rootPrefix?: string): string;
 declare function basename(key: string): string;
 
+/** What a viewer is handed. Every viewer takes these; anything else it
+ *  needs comes from its entry's `options`. */
+interface ViewerProps {
+    store: Store;
+    path: string;
+    usePersistedState?: PersistedState;
+}
+/** What `match` gets to decide on. Deliberately a predicate rather than
+ *  an extension list: plenty of real dispatch isn't extension-shaped —
+ *  `manifest.jsonl` wanting a different viewer than other `.jsonl`,
+ *  `part-*.parquet` under a directory that should render as one logical
+ *  table, or a key with no extension at all. */
+interface ViewerMatchCtx {
+    /** Store key of the file. */
+    path: string;
+    /** Lower-cased extension, or `''` when there isn't one. */
+    ext: string;
+}
+interface ViewerEntry<O = Record<string, unknown>> {
+    /** Stable identity for the lazy component this entry resolves to.
+     *
+     *  Required, and it must be stable across renders: `React.lazy`
+     *  mints a component *type*, and a new type each render remounts the
+     *  viewer (dropping whatever it had cached). Keying the cache on a
+     *  string rather than the entry object means an inline `viewers={[…]}`
+     *  array still behaves — which is the mistake everyone makes once. */
+    id: string;
+    /** First match wins, so array order is the consumer's priority. */
+    match: (ctx: ViewerMatchCtx) => boolean;
+    /** Dynamic import of the viewer's module. Nothing is fetched until a
+     *  matching path is opened. */
+    load: () => Promise<{
+        default: ComponentType<ViewerProps & O>;
+    }>;
+    /** Forwarded to the viewer as props. */
+    options?: O;
+}
+declare function findViewer(viewers: readonly ViewerEntry<never>[] | undefined, path: string): ViewerEntry<never> | undefined;
+declare function RegistryViewer({ entry, store, path, usePersistedState, fallback }: {
+    entry: ViewerEntry<never>;
+    store: Store;
+    path: string;
+    usePersistedState?: PersistedState;
+    fallback?: ReactNode;
+}): react_jsx_runtime.JSX.Element;
+
 /** Optional renderer that converts a markdown source string into a
  *  React node. Pluggable so the lib doesn't bundle a markdown library;
  *  consumers wire `react-markdown` (or any equivalent). When provided,
@@ -172,13 +218,21 @@ type MarkdownRenderer = (source: string) => ReactNode;
  *  `usePersistedState` is injected by `<FileTree>` and threads its
  *  `usePersistedState` prop down — use it for any state the renderer
  *  wants to persist (e.g. `?page=N`). Renderers that don't care
- *  ignore the prop. */
-type ParquetRenderer = ComponentType<{
+ *  ignore the prop; likewise the `parquetOptions` spread onto every
+ *  renderer, which a custom one is free to ignore. */
+interface ParquetRendererProps {
     store: Store;
     path: string;
     usePersistedState?: PersistedState;
-}>;
-interface FileTreeProps {
+}
+type ParquetRenderer = ComponentType<ParquetRendererProps>;
+/** Whatever `R` accepts *beyond* the three props `<FileTree>` supplies
+ *  itself — i.e. exactly what's left to configure. Collapses to `never`
+ *  for a renderer that takes nothing extra, so handing options to one
+ *  that can't use them is a compile error rather than a bag of unknown
+ *  props spread onto someone's component. */
+type ParquetOptionsOf<R extends ParquetRenderer> = keyof Omit<ComponentProps<R>, keyof ParquetRendererProps> extends never ? never : Omit<ComponentProps<R>, keyof ParquetRendererProps>;
+interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
     store: Store;
     /** Path the browser is mounted under, e.g. `/files`. */
     routeBase: string;
@@ -200,7 +254,31 @@ interface FileTreeProps {
     /** Optional parquet renderer (see `ParquetRenderer`). When set,
      *  `.parquet`/`.pqt` paths render via this component (typically a
      *  hyparquet-backed table). */
-    parquetRenderer?: ParquetRenderer;
+    parquetRenderer?: R;
+    /** Options forwarded to `parquetRenderer`, so customizing a cell
+     *  doesn't require wrapping the viewer in a component of your own.
+     *
+     *  Prefer this over `makeParquetViewer` when a hook must close over
+     *  something that changes — a format toggle, or a lookup fetched
+     *  separately from the file. The renderer type stays stable across
+     *  renders, so the table isn't remounted, whereas calling the factory
+     *  inside render mints a new component type each pass. Styling that
+     *  CSS can own (color, alignment, theme) belongs in CSS, not here.
+     *  Options baked in by `makeParquetViewer` win over these. */
+    parquetOptions?: ParquetOptionsOf<R>;
+    /** Viewer registry — an ordered list of `{ id, match, load, options }`,
+     *  consulted for every file before the built-in renderers, so a
+     *  consumer can add formats (or override one) without the library
+     *  knowing about them.
+     *
+     *  `load` is a dynamic import, so each viewer lands in its own chunk
+     *  and a page only downloads the formats it opens — unlike the
+     *  `*Renderer` props above, which are eagerly imported.
+     *
+     *  Define the array at module scope (or memoize it): entries are
+     *  matched in order and resolved by `id`, but re-creating the array
+     *  every render still re-runs `match` on every render. */
+    viewers?: readonly ViewerEntry<never>[];
     /** Optional JSON renderer. When set, `.json` files render via this fn
      *  (typically a collapsible tree) instead of plaintext `<pre>`. The
      *  second arg is the resolved `usePersistedState` hook (forward it
@@ -264,7 +342,7 @@ interface ViewerActionCtx {
     /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
     entry?: string;
 }
-declare function FileTree({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps): react_jsx_runtime.JSX.Element;
+declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
 
 /** Adapter from `Store` to hyparquet's `AsyncBuffer` shape
  *  (`{ byteLength: number; slice(start, end?): Promise<ArrayBuffer> }`).
@@ -367,4 +445,4 @@ declare function fmtSize(n: number | undefined): string;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { AUDIO, type AsyncBuffer, Breadcrumb, CODE_LANG, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, TEXTY, TextViewer, type TextViewerProps, VIDEO, type ViewerActionCtx, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, basename, extOf, fmtSize, keyToSplat, makeMatcher, parsePath, readZipEntries, readZipEntry };
+export { AUDIO, type AsyncBuffer, Breadcrumb, CODE_LANG, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, PersistedState, RegistryViewer, TEXTY, TextViewer, type TextViewerProps, VIDEO, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, basename, extOf, findViewer, fmtSize, keyToSplat, makeMatcher, parsePath, readZipEntries, readZipEntry };

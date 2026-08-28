@@ -30,7 +30,8 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/renderers/notebook.tsx
 var notebook_exports = {};
 __export(notebook_exports, {
-  NotebookViewer: () => NotebookViewer
+  NotebookViewer: () => NotebookViewer,
+  default: () => notebook_default
 });
 module.exports = __toCommonJS(notebook_exports);
 var import_react = require("react");
@@ -168,6 +169,7 @@ function OutputView({ output }) {
   }
   return null;
 }
+var notebook_default = NotebookViewer;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   NotebookViewer

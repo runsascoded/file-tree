@@ -20,7 +20,9 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/renderers/csv.tsx
 var csv_exports = {};
 __export(csv_exports, {
-  CsvViewer: () => CsvViewer
+  CsvViewer: () => CsvViewer,
+  default: () => csv_default,
+  makeCsvViewer: () => makeCsvViewer
 });
 module.exports = __toCommonJS(csv_exports);
 var import_react = require("react");
@@ -34,11 +36,47 @@ function fmtSize(n) {
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
 }
 
+// src/renderers/table.ts
+var TD_STYLE = {
+  padding: "0.2em 0.6em",
+  whiteSpace: "nowrap",
+  maxWidth: "30em",
+  overflow: "hidden",
+  textOverflow: "ellipsis"
+};
+var TH_STYLE = {
+  padding: "0.3em 0.6em",
+  textAlign: "left",
+  fontWeight: 500,
+  borderBottom: "1px solid rgba(127,127,127,0.4)"
+};
+var NUMERIC_ALIGN = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
+function resolveColStyles(columns, path, opts, isNumeric) {
+  const out = /* @__PURE__ */ new Map();
+  for (const c of columns) {
+    const align = isNumeric(c) ? NUMERIC_ALIGN : {};
+    const cp = opts.cellProps?.(c, path) || {};
+    const hp = opts.headerProps?.(c, path) || {};
+    out.set(c.name, {
+      cell: { ...TD_STYLE, ...align, ...cp.style },
+      header: { ...TH_STYLE, ...align, ...hp.style },
+      ...cp.className ? { cellClass: cp.className } : {},
+      ...hp.className ? { headerClass: hp.className } : {}
+    });
+  }
+  return out;
+}
+
 // src/renderers/csv.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
 var PAGE_BYTES = 256 * 1024;
 var HEADER_PROBE_BYTES = 32 * 1024;
-function CsvViewer({ store, path, delimiter }) {
+function makeCsvViewer(opts = {}) {
+  return function BoundCsvViewer(props) {
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CsvViewer, { ...props, ...opts });
+  };
+}
+function CsvViewer({ store, path, delimiter, renderCell, renderHeader, cellProps, headerProps }) {
   const [total, setTotal] = (0, import_react.useState)(null);
   const [header, setHeader] = (0, import_react.useState)(null);
   const [page, setPage] = (0, import_react.useState)(0);
@@ -99,6 +137,11 @@ function CsvViewer({ store, path, delimiter }) {
       cancelled = true;
     };
   }, [store, path, delimiter, page, total, header]);
+  const columns = (0, import_react.useMemo)(() => (header ?? []).map((name) => ({ name })), [header]);
+  const colStyles = (0, import_react.useMemo)(
+    () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
+    [columns, path, cellProps, headerProps]
+  );
   if (error) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
@@ -132,8 +175,19 @@ function CsvViewer({ store, path, delimiter }) {
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(pages - 1), children: "\xBB" })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { style: { position: "sticky", top: 0, background: "var(--bg, #181818)" }, children: header.map((c, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { style: { padding: "0.3em 0.6em", textAlign: "left", borderBottom: "1px solid rgba(127,127,127,0.4)", fontWeight: 500, whiteSpace: "nowrap" }, children: c }, i)) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { colSpan: header.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: header.map((_, j) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { style: { padding: "0.2em 0.6em", whiteSpace: "nowrap", maxWidth: "30em", overflow: "hidden", textOverflow: "ellipsis" }, children: r[j] ?? "" }, j)) }, i)) })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "Canvas" }, children: columns.map((c) => {
+        const st = colStyles.get(c.name);
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap" }, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, path, defaultNode: c.name }) : c.name }, c.name);
+      }) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { colSpan: header.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
+        let asRow = null;
+        const row = () => asRow ??= Object.fromEntries(columns.map((c, j) => [c.name, r[j] ?? ""]));
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: columns.map((c, j) => {
+          const st = colStyles.get(c.name);
+          const value = r[j] ?? "";
+          return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value }, c.name);
+        }) }, i);
+      }) })
     ] }) })
   ] });
 }
@@ -174,8 +228,10 @@ function parseLine(line, delimiter) {
   out.push(cur);
   return out;
 }
+var csv_default = CsvViewer;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  CsvViewer
+  CsvViewer,
+  makeCsvViewer
 });
 //# sourceMappingURL=csv.cjs.map

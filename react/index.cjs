@@ -27,6 +27,7 @@ __export(react_exports, {
   FileTree: () => FileTree,
   IMAGE: () => IMAGE,
   MediaViewer: () => MediaViewer,
+  RegistryViewer: () => RegistryViewer,
   TEXTY: () => TEXTY,
   TextViewer: () => TextViewer,
   VIDEO: () => VIDEO,
@@ -35,6 +36,7 @@ __export(react_exports, {
   asyncBufferFromStore: () => asyncBufferFromStore,
   basename: () => basename,
   extOf: () => extOf,
+  findViewer: () => findViewer,
   fmtSize: () => fmtSize,
   keyToSplat: () => keyToSplat,
   makeMatcher: () => makeMatcher,
@@ -45,7 +47,7 @@ __export(react_exports, {
 module.exports = __toCommonJS(react_exports);
 
 // src/react/FileTree.tsx
-var import_react7 = require("react");
+var import_react8 = require("react");
 var import_react_router_dom4 = require("react-router-dom");
 
 // src/react/Breadcrumb.tsx
@@ -806,14 +808,36 @@ function TruncationBanner({ shown, total }) {
   ] });
 }
 
-// src/react/FileTree.tsx
+// src/react/viewers.tsx
+var import_react7 = require("react");
 var import_jsx_runtime7 = require("react/jsx-runtime");
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }) {
+var lazyCache = /* @__PURE__ */ new Map();
+function lazyFor(entry) {
+  let C = lazyCache.get(entry.id);
+  if (!C) {
+    C = (0, import_react7.lazy)(entry.load);
+    lazyCache.set(entry.id, C);
+  }
+  return C;
+}
+function findViewer(viewers, path) {
+  if (!viewers?.length) return void 0;
+  const ctx = { path, ext: extOf(path) };
+  return viewers.find((v) => v.match(ctx));
+}
+function RegistryViewer({ entry, store, path, usePersistedState, fallback }) {
+  const Component = lazyFor(entry);
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_react7.Suspense, { fallback: fallback ?? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { opacity: 0.6 }, children: "loading viewer\u2026" }), children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path, usePersistedState, ...entry.options ?? {} }) });
+}
+
+// src/react/FileTree.tsx
+var import_jsx_runtime8 = require("react/jsx-runtime");
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }) {
   const location = (0, import_react_router_dom4.useLocation)();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
-  const parsed = (0, import_react7.useMemo)(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
-  const crumbs = (0, import_react7.useMemo)(() => buildCrumbs(parsed, routeBase, rootPrefix), [parsed, routeBase, rootPrefix]);
+  const parsed = (0, import_react8.useMemo)(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
+  const crumbs = (0, import_react8.useMemo)(() => buildCrumbs(parsed, routeBase, rootPrefix), [parsed, routeBase, rootPrefix]);
   const downloadable = parsed.kind !== "dir" && parsed.kind !== "zipEntry";
   const downloadName = downloadable ? basename(parsed.path) : "";
   const downloadHref = useDownloadHref(store, downloadable ? parsed.path : null);
@@ -824,20 +848,24 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
     ...parsed.kind === "zipEntry" ? { entry: parsed.entry } : {}
   };
   const actionsNode = ctx && viewerActions ? viewerActions(ctx) : null;
-  const right = downloadHref || actionsNode ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.6em" }, children: [
+  const right = downloadHref || actionsNode ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.6em" }, children: [
     actionsNode,
-    downloadHref && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(DownloadIcon, { href: downloadHref, name: downloadName })
+    downloadHref && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DownloadIcon, { href: downloadHref, name: downloadName })
   ] }) : void 0;
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className, style, children: [
-    title && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState })
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className, style, children: [
+    title && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState })
   ] });
 }
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }) {
+  if (parsed.kind !== "dir" && parsed.kind !== "zipEntry") {
+    const entry = findViewer(viewers, parsed.path);
+    if (entry) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(RegistryViewer, { entry, store, path: parsed.path, usePersistedState });
+  }
   switch (parsed.kind) {
     case "dir":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState });
     case "text": {
       const ext = extOf(parsed.path);
       const isMd = ext === "md" || ext === "markdown";
@@ -846,9 +874,9 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const lang = CODE_LANG[ext];
       if (isCsv && csvRenderer) {
         const Component = csvRenderer;
-        return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
+        return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
       }
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         TextViewer,
         {
           store,
@@ -862,35 +890,35 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       );
     }
     case "zip":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ZipEntryList, { store, path: parsed.path, routeBase, rootPrefix });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ZipEntryList, { store, path: parsed.path, routeBase, rootPrefix });
     case "zipEntry":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ZipEntryPreview, { store, path: parsed.path, entry: parsed.entry, markdownRenderer });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ZipEntryPreview, { store, path: parsed.path, entry: parsed.entry, markdownRenderer });
     case "parquet": {
-      if (!parquetRenderer) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(UnsupportedView, { label: "Parquet preview" });
+      if (!parquetRenderer) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(UnsupportedView, { label: "Parquet preview" });
       const Component = parquetRenderer;
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path, usePersistedState });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Component, { store, path: parsed.path, usePersistedState, ...parquetOptions });
     }
     case "notebook": {
-      if (!notebookRenderer) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(UnsupportedView, { label: "Notebook preview" });
+      if (!notebookRenderer) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(UnsupportedView, { label: "Notebook preview" });
       const Component = notebookRenderer;
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Component, { store, path: parsed.path, usePersistedState });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Component, { store, path: parsed.path, usePersistedState });
     }
     case "image":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MediaViewer, { store, path: parsed.path, kind: "image" });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MediaViewer, { store, path: parsed.path, kind: "image" });
     case "video":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MediaViewer, { store, path: parsed.path, kind: "video" });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MediaViewer, { store, path: parsed.path, kind: "video" });
     case "audio":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MediaViewer, { store, path: parsed.path, kind: "audio" });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MediaViewer, { store, path: parsed.path, kind: "audio" });
     case "pdf":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(UnsupportedView, { label: "PDF preview" });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(UnsupportedView, { label: "PDF preview" });
     case "binary":
-      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { opacity: 0.7 }, children: "Preview not supported for this file type." });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { opacity: 0.7 }, children: "Preview not supported for this file type." });
   }
 }
 function useDownloadHref(store, path) {
   const syncHref = path != null && typeof store.getUrl === "function" ? store.getUrl(path) : null;
-  const [asyncHref, setAsyncHref] = (0, import_react7.useState)(null);
-  (0, import_react7.useEffect)(() => {
+  const [asyncHref, setAsyncHref] = (0, import_react8.useState)(null);
+  (0, import_react8.useEffect)(() => {
     if (path == null || typeof store.getDownloadUrl !== "function") {
       setAsyncHref(null);
       return;
@@ -914,7 +942,7 @@ function useDownloadHref(store, path) {
   return syncHref;
 }
 function DownloadIcon({ href, name }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
     "a",
     {
       href,
@@ -922,7 +950,7 @@ function DownloadIcon({ href, name }) {
       title: `Download ${name}`,
       "aria-label": `Download ${name}`,
       style: { textDecoration: "none", display: "inline-block", lineHeight: 1, verticalAlign: "middle" },
-      children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+      children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
         "svg",
         {
           viewBox: "0 0 24 24",
@@ -935,9 +963,9 @@ function DownloadIcon({ href, name }) {
           strokeLinejoin: "round",
           "aria-hidden": "true",
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("path", { d: "M16.5 12 12 16.5 7.5 12" }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("path", { d: "M12 3v13.5" })
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M16.5 12 12 16.5 7.5 12" }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M12 3v13.5" })
           ]
         }
       )
@@ -945,7 +973,7 @@ function DownloadIcon({ href, name }) {
   );
 }
 function UnsupportedView({ label }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { opacity: 0.7 }, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { opacity: 0.7 }, children: [
     label,
     " not yet supported in this version."
   ] });
@@ -1009,6 +1037,7 @@ async function asyncBufferFromStore(store, path) {
   FileTree,
   IMAGE,
   MediaViewer,
+  RegistryViewer,
   TEXTY,
   TextViewer,
   VIDEO,
@@ -1017,6 +1046,7 @@ async function asyncBufferFromStore(store, path) {
   asyncBufferFromStore,
   basename,
   extOf,
+  findViewer,
   fmtSize,
   keyToSplat,
   makeMatcher,

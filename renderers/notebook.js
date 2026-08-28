@@ -134,7 +134,9 @@ function OutputView({ output }) {
   }
   return null;
 }
+var notebook_default = NotebookViewer;
 export {
-  NotebookViewer
+  NotebookViewer,
+  notebook_default as default
 };
 //# sourceMappingURL=notebook.js.map

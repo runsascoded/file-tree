@@ -1,5 +1,5 @@
 // src/renderers/json.tsx
-import { useEffect, useMemo, useState as useState2 } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState as useState2 } from "react";
 
 // src/react/persistedState.ts
 import { useState } from "react";
@@ -19,7 +19,7 @@ var COLORS = {
 };
 var FONT = "ui-monospace, monospace";
 var INDENT = "1.4em";
-function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1 } = {}) {
+function makeJsonTreeRenderer({ renderValue, renderKey, initialOpenDepth = 1, parse, label = "JSON", jqDebounceMs = 300 } = {}) {
   return function renderJson(source, usePersistedState) {
     return /* @__PURE__ */ jsx(
       JsonViewer,
@@ -27,31 +27,67 @@ function makeJsonTreeRenderer({ renderValue, initialOpenDepth = 1 } = {}) {
         source,
         usePersistedState,
         renderValue,
-        initialOpenDepth
+        renderKey,
+        initialOpenDepth,
+        ...parse ? { parse } : {},
+        label,
+        jqDebounceMs
       }
     );
   };
 }
 var renderJsonTree = makeJsonTreeRenderer();
-function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }) {
+function JsonViewer({ source, usePersistedState, renderValue, renderKey, initialOpenDepth, parse, label, jqDebounceMs }) {
   const use = usePersistedState ?? defaultUseState;
-  const [q, setQ] = use("json-q", "");
+  const [q, setQ] = use("q", "");
   const [jq, setJq] = use("jq", "");
+  const [jqDraft, setJqDraft] = useState2(jq);
+  useEffect(() => setJqDraft(jq), [jq]);
+  useEffect(() => {
+    if (jqDraft === jq) return;
+    if (jqDebounceMs <= 0) {
+      setJq(jqDraft);
+      return;
+    }
+    const t = setTimeout(() => setJq(jqDraft), jqDebounceMs);
+    return () => clearTimeout(t);
+  }, [jqDraft, jqDebounceMs]);
   const [expandVersion, setExpandVersion] = useState2(0);
-  const [forceOpen, setForceOpen] = useState2(null);
+  const [forceDepth, setForceDepth] = usePersistedDepth(use);
   const [copyToast, setCopyToast] = useState2(null);
+  const [asyncParsed, setAsyncParsed] = useState2(null);
+  useEffect(() => {
+    if (!parse) return;
+    let cancelled = false;
+    setAsyncParsed(null);
+    Promise.resolve().then(() => parse(source)).then((value2) => {
+      if (!cancelled) setAsyncParsed({ value: value2 });
+    }).catch((e) => {
+      if (!cancelled) setAsyncParsed({ error: String(e) });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [source, parse]);
   let parsed;
   let parseError = null;
-  try {
-    parsed = JSON.parse(source);
-  } catch (e) {
-    parseError = String(e);
+  let parsing = false;
+  if (parse) {
+    if (asyncParsed === null) parsing = true;
+    else if ("error" in asyncParsed) parseError = asyncParsed.error;
+    else parsed = asyncParsed.value;
+  } else {
+    try {
+      parsed = JSON.parse(source);
+    } catch (e) {
+      parseError = String(e);
+    }
   }
   const [jqResult, setJqResult] = useState2(null);
   const [jqError, setJqError] = useState2(null);
   const [jqLoading, setJqLoading] = useState2(false);
   useEffect(() => {
-    if (parseError || jq.trim() === "") {
+    if (parseError || parsing || jq.trim() === "") {
       setJqResult(null);
       setJqError(null);
       setJqLoading(false);
@@ -73,9 +109,14 @@ function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }
     return () => {
       cancelled = true;
     };
-  }, [source, jq, parseError]);
+  }, [source, jq, parseError, parsing]);
   const value = jqResult ? jqResult.value : parsed;
   const matches = useMemo(() => q.trim() === "" || value === void 0 ? null : collectMatchPaths(value, q), [value, q]);
+  if (parsing) return /* @__PURE__ */ jsxs("div", { style: { opacity: 0.6 }, children: [
+    "parsing ",
+    label,
+    "\u2026"
+  ] });
   if (parseError) {
     return /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsxs("div", { style: { color: "salmon", fontSize: "0.85em", marginBottom: "0.4em" }, children: [
@@ -109,37 +150,41 @@ function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }
         "input",
         {
           type: "text",
-          value: jq,
-          onChange: (e) => setJq(e.target.value),
+          value: jqDraft,
+          onChange: (e) => setJqDraft(e.target.value),
           placeholder: "jq filter (e.g. .foo[].bar)",
           style: { ...inputStyle, minWidth: "16em" },
           spellCheck: false
         }
       ),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          onClick: () => {
-            setForceOpen(true);
-            setExpandVersion((v) => v + 1);
+      /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.25em" }, children: [
+        /* @__PURE__ */ jsx("span", { style: { opacity: 0.6, fontSize: "0.85em" }, children: "depth" }),
+        [0, 1, 2, 3].map((d) => /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => {
+              setForceDepth(d);
+              setExpandVersion((v) => v + 1);
+            },
+            title: d === 0 ? "Collapse all" : `Expand to depth ${d}`,
+            style: btnStyle,
+            children: d
           },
-          title: "Expand all",
-          style: btnStyle,
-          children: "expand"
-        }
-      ),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          onClick: () => {
-            setForceOpen(false);
-            setExpandVersion((v) => v + 1);
-          },
-          title: "Collapse all",
-          style: btnStyle,
-          children: "collapse"
-        }
-      ),
+          d
+        )),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => {
+              setForceDepth(EXPAND_ALL);
+              setExpandVersion((v) => v + 1);
+            },
+            title: "Expand all",
+            style: btnStyle,
+            children: "all"
+          }
+        )
+      ] }),
       copyToast !== null && /* @__PURE__ */ jsxs("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: [
         "copied ",
         /* @__PURE__ */ jsx("code", { children: copyToast })
@@ -159,10 +204,12 @@ function JsonViewer({ source, usePersistedState, renderValue, initialOpenDepth }
         initialOpenDepth,
         q,
         matches,
-        forceOpen,
+        forceDepth,
         forceOpenVersion: expandVersion,
         copyPath,
-        renderValue
+        renderValue,
+        renderKey,
+        root: value
       }
     ) })
   ] });
@@ -205,13 +252,13 @@ function scalarNode(value, q) {
   if (typeof value === "boolean") return /* @__PURE__ */ jsx("span", { style: { color: COLORS.bool }, children: String(value) });
   return null;
 }
-function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }) {
+function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue, renderKey, root }) {
   const scalar = scalarNode(value, q);
   if (scalar !== null) {
     if (!renderValue) return /* @__PURE__ */ jsx(Fragment, { children: scalar });
     return /* @__PURE__ */ jsx(Fragment, { children: renderValue({ value, path, key: keyName, defaultNode: scalar }) });
   }
-  const rest = { path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue, initialOpen: depth < initialOpenDepth };
+  const rest = { path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue, renderKey, root, initialOpen: depth < initialOpenDepth };
   if (Array.isArray(value)) {
     return /* @__PURE__ */ jsx(ArrayNode, { value, ...rest });
   }
@@ -220,9 +267,9 @@ function Node({ value, path, depth, initialOpenDepth, keyName, q, matches, force
   }
   return /* @__PURE__ */ jsx("span", { children: String(value) });
 }
-function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
+function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, initialOpen, copyPath, renderValue, renderKey, root }) {
   const matchedHere = matches?.has(path) ?? false;
-  const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere);
+  const [open, setOpen] = useOpenState(initialOpen, forceDepth === null ? null : depth < forceDepth, forceOpenVersion, matchedHere);
   if (value.length === 0) return /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "[]" });
   return /* @__PURE__ */ jsxs("span", { children: [
     /* @__PURE__ */ jsx(Toggle, { open, onClick: () => setOpen((o) => !o) }),
@@ -230,7 +277,7 @@ function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen
     open ? /* @__PURE__ */ jsx("div", { style: { marginLeft: INDENT }, children: value.map((v, i) => {
       const childPath = `${path}[${i}]`;
       return /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx(Node, { value: v, path: childPath, depth: depth + 1, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }),
+        /* @__PURE__ */ jsx(Node, { value: v, path: childPath, depth: depth + 1, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue, renderKey, root }),
         i < value.length - 1 && /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "," })
       ] }, i);
     }) }) : /* @__PURE__ */ jsxs("span", { style: { color: COLORS.punct, opacity: 0.7 }, children: [
@@ -241,9 +288,9 @@ function ArrayNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen
     /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "]" })
   ] });
 }
-function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceOpen, forceOpenVersion, initialOpen, copyPath, renderValue }) {
+function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceDepth, forceOpenVersion, initialOpen, copyPath, renderValue, renderKey, root }) {
   const matchedHere = matches?.has(path) ?? false;
-  const [open, setOpen] = useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere);
+  const [open, setOpen] = useOpenState(initialOpen, forceDepth === null ? null : depth < forceDepth, forceOpenVersion, matchedHere);
   const keys = Object.keys(value);
   if (keys.length === 0) return /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "{}" });
   return /* @__PURE__ */ jsxs("span", { children: [
@@ -252,9 +299,9 @@ function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceOpe
     open ? /* @__PURE__ */ jsx("div", { style: { marginLeft: INDENT }, children: keys.map((k, i) => {
       const childPath = `${path}${jqKeySegment(k)}`;
       return /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx(KeyLabel, { keyName: k, q, path: childPath, copyPath }),
+        renderKey ? renderKey({ key: k, path: childPath, root, defaultNode: /* @__PURE__ */ jsx(KeyLabel, { keyName: k, q, path: childPath, copyPath }) }) : /* @__PURE__ */ jsx(KeyLabel, { keyName: k, q, path: childPath, copyPath }),
         /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: ": " }),
-        /* @__PURE__ */ jsx(Node, { value: value[k], path: childPath, depth: depth + 1, initialOpenDepth, keyName: k, q, matches, forceOpen, forceOpenVersion, copyPath, renderValue }),
+        /* @__PURE__ */ jsx(Node, { value: value[k], path: childPath, depth: depth + 1, initialOpenDepth, keyName: k, q, matches, forceDepth, forceOpenVersion, copyPath, renderValue, renderKey, root }),
         i < keys.length - 1 && /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "," })
       ] }, k);
     }) }) : /* @__PURE__ */ jsxs("span", { style: { color: COLORS.punct, opacity: 0.7 }, children: [
@@ -265,16 +312,36 @@ function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceOpe
     /* @__PURE__ */ jsx("span", { style: { color: COLORS.punct }, children: "}" })
   ] });
 }
+var EXPAND_ALL = 99;
+function usePersistedDepth(use) {
+  const [raw, setRaw] = use("depth", -1);
+  return [raw < 0 ? null : raw === 0 ? 0 : raw, setRaw];
+}
 function useOpenState(initialOpen, forceOpen, forceOpenVersion, matchedHere) {
-  const [open, setOpen] = useState2(forceOpen ?? initialOpen);
+  const [open, setOpenRaw] = useState2(forceOpen ?? initialOpen);
   const [lastVersion, setLastVersion] = useState2(forceOpenVersion);
   if (forceOpenVersion !== lastVersion) {
     setLastVersion(forceOpenVersion);
-    if (forceOpen !== null) setOpen(forceOpen);
+    if (forceOpen !== null) setOpenRaw(forceOpen);
   }
+  const openedBySearch = useRef(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   useEffect(() => {
-    if (matchedHere) setOpen(true);
+    if (matchedHere) {
+      if (!openRef.current) {
+        openedBySearch.current = true;
+        setOpenRaw(true);
+      }
+    } else if (openedBySearch.current) {
+      openedBySearch.current = false;
+      setOpenRaw(false);
+    }
   }, [matchedHere]);
+  const setOpen = useCallback((v) => {
+    openedBySearch.current = false;
+    setOpenRaw(v);
+  }, []);
   return [open, setOpen];
 }
 function KeyLabel({ keyName, q, path, copyPath }) {

@@ -27,13 +27,16 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/renderers/json.tsx
-var json_exports = {};
-__export(json_exports, {
-  makeJsonTreeRenderer: () => makeJsonTreeRenderer,
-  renderJsonTree: () => renderJsonTree
+// src/renderers/yaml.tsx
+var yaml_exports = {};
+__export(yaml_exports, {
+  makeYamlTreeRenderer: () => makeYamlTreeRenderer,
+  parseYaml: () => parseYaml,
+  renderYamlTree: () => renderYamlTree
 });
-module.exports = __toCommonJS(json_exports);
+module.exports = __toCommonJS(yaml_exports);
+
+// src/renderers/json.tsx
 var import_react2 = require("react");
 
 // src/react/persistedState.ts
@@ -480,9 +483,80 @@ async function runJq(value, expr) {
   const jq = await mod.default;
   return jq.json(value, expr);
 }
+
+// src/renderers/yaml.tsx
+var import_jsx_runtime2 = require("react/jsx-runtime");
+var cached = null;
+function loadYaml() {
+  cached ??= import("yaml").then((m) => m).catch(() => {
+    cached = null;
+    throw new Error("YAML rendering requires the `yaml` peer dep \u2014 install it in your app to enable.");
+  });
+  return cached;
+}
+var comments = /* @__PURE__ */ new WeakMap();
+function seg(k) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) ? `.${k}` : `[${JSON.stringify(k)}]`;
+}
+function collect(node, path, out) {
+  const n = node;
+  if (!n || typeof n !== "object" || !Array.isArray(n.items)) return;
+  n.items.forEach((item, i) => {
+    const pair = item;
+    if (pair && typeof pair === "object" && "key" in pair) {
+      const k = pair.key?.value;
+      if (typeof k !== "string") return;
+      const childPath = `${path}${seg(k)}`;
+      const key = pair.key;
+      const val = pair.value;
+      const parts = [key?.commentBefore, val?.comment].filter((c) => typeof c === "string" && c.trim() !== "").map((c) => c.split("\n").map((l) => l.replace(/^#?\s*/, "").trim()).filter(Boolean).join(" "));
+      if (parts.length) out.set(childPath, parts.join(" \u2014 "));
+      collect(pair.value, childPath, out);
+    } else {
+      collect(pair, `${path}[${i}]`, out);
+    }
+  });
+}
+async function parseYaml(source) {
+  const { parseDocument } = await loadYaml();
+  const doc = parseDocument(source, { merge: true });
+  const value = doc.toJS();
+  if (value !== null && typeof value === "object") {
+    const map = /* @__PURE__ */ new Map();
+    collect(doc.contents, "", map);
+    if (map.size) comments.set(value, map);
+  }
+  return value;
+}
+function commentRenderKey(user) {
+  return (ctx) => {
+    const node = user ? user(ctx) : ctx.defaultNode;
+    const { root } = ctx;
+    const map = root !== null && typeof root === "object" ? comments.get(root) : void 0;
+    const c = map?.get(ctx.path);
+    if (!c) return node;
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { opacity: 0.45, fontStyle: "italic", fontWeight: 400, whiteSpace: "normal" }, children: [
+        "# ",
+        c
+      ] }),
+      node
+    ] });
+  };
+}
+function makeYamlTreeRenderer(opts = {}) {
+  return makeJsonTreeRenderer({
+    ...opts,
+    parse: parseYaml,
+    label: "YAML",
+    renderKey: commentRenderKey(opts.renderKey)
+  });
+}
+var renderYamlTree = makeYamlTreeRenderer();
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  makeJsonTreeRenderer,
-  renderJsonTree
+  makeYamlTreeRenderer,
+  parseYaml,
+  renderYamlTree
 });
-//# sourceMappingURL=json.cjs.map
+//# sourceMappingURL=yaml.cjs.map

@@ -21,6 +21,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var parquet_exports = {};
 __export(parquet_exports, {
   ParquetViewer: () => ParquetViewer,
+  default: () => parquet_default,
   formatTemporal: () => formatTemporal,
   inferColumnFormats: () => inferColumnFormats,
   inferTemporalFormat: () => inferTemporalFormat,
@@ -217,13 +218,48 @@ function inferColumnFormats(cols, rows, opts = {}) {
   return out;
 }
 
+// src/renderers/table.ts
+var TD_STYLE = {
+  padding: "0.2em 0.6em",
+  whiteSpace: "nowrap",
+  maxWidth: "30em",
+  overflow: "hidden",
+  textOverflow: "ellipsis"
+};
+var TH_STYLE = {
+  padding: "0.3em 0.6em",
+  textAlign: "left",
+  fontWeight: 500,
+  borderBottom: "1px solid rgba(127,127,127,0.4)"
+};
+var NUMERIC_ALIGN = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
+function resolveColStyles(columns, path, opts, isNumeric) {
+  const out = /* @__PURE__ */ new Map();
+  for (const c of columns) {
+    const align = isNumeric(c) ? NUMERIC_ALIGN : {};
+    const cp = opts.cellProps?.(c, path) || {};
+    const hp = opts.headerProps?.(c, path) || {};
+    out.set(c.name, {
+      cell: { ...TD_STYLE, ...align, ...cp.style },
+      header: { ...TH_STYLE, ...align, ...hp.style },
+      ...cp.className ? { cellClass: cp.className } : {},
+      ...hp.className ? { headerClass: hp.className } : {}
+    });
+  }
+  return out;
+}
+
 // src/renderers/parquet.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
 var ROWS_PER_PAGE = 100;
 var RG_CACHE_SIZE = 4;
+function coarseKind(physicalType) {
+  if (NUMERIC_TYPES.has(physicalType)) return "number";
+  if (physicalType === "BOOLEAN") return "boolean";
+  if (physicalType === "BYTE_ARRAY" || physicalType === "FIXED_LEN_BYTE_ARRAY") return "string";
+  return void 0;
+}
 var NUMERIC_TYPES = /* @__PURE__ */ new Set(["INT32", "INT64", "INT96", "FLOAT", "DOUBLE"]);
-var TD_STYLE = { padding: "0.2em 0.6em", whiteSpace: "nowrap", maxWidth: "30em", overflow: "hidden", textOverflow: "ellipsis" };
-var TH_STYLE = { padding: "0.3em 0.6em", textAlign: "left", borderBottom: "1px solid rgba(127,127,127,0.4)", fontWeight: 500 };
 function makeParquetViewer(opts = {}) {
   return function BoundParquetViewer(props) {
     return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ParquetViewer, { ...props, ...opts });
@@ -254,9 +290,10 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         const schema2 = (0, import_hyparquet.parquetSchema)(md).children.map((c) => {
           const el = c.element;
           const lt = el.logical_type;
+          const physicalType = el.type ? String(el.type) : void 0;
           return {
             name: el.name,
-            ...el.type ? { physicalType: String(el.type) } : {},
+            ...physicalType ? { physicalType, kind: coarseKind(physicalType) } : {},
             ...lt ? { logicalType: lt.type } : {},
             ...lt && "unit" in lt ? { timeUnit: lt.unit } : {},
             ...el.converted_type ? { convertedType: String(el.converted_type) } : {}
@@ -350,28 +387,25 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
   );
-  const colStyles = (0, import_react2.useMemo)(() => {
-    const out = /* @__PURE__ */ new Map();
-    for (const c of meta?.schema ?? []) {
-      const numeric = alignNumeric && !temporal.has(c.name) && c.physicalType !== void 0 && NUMERIC_TYPES.has(c.physicalType);
-      const align = numeric ? { textAlign: "right", fontVariantNumeric: "tabular-nums" } : {};
-      const cp = cellProps?.(c) || {};
-      const hp = headerProps?.(c) || {};
-      out.set(c.name, {
-        cell: { ...TD_STYLE, ...align, ...cp.style },
-        header: { ...TH_STYLE, ...align, ...hp.style },
-        ...cp.className ? { cellClass: cp.className } : {},
-        ...hp.className ? { headerClass: hp.className } : {}
-      });
-    }
-    return out;
-  }, [meta, temporal, alignNumeric, cellProps, headerProps]);
+  const colStyles = (0, import_react2.useMemo)(
+    // Numeric alignment keys off the *rendered* meaning, not the
+    // physical type: a column read as temporal prints as text, so
+    // right-aligning it would just detach it from its header.
+    () => resolveColStyles(
+      meta?.schema ?? [],
+      path,
+      { cellProps, headerProps },
+      (c) => alignNumeric && !temporal.has(c.name) && c.physicalType !== void 0 && NUMERIC_TYPES.has(c.physicalType)
+    ),
+    [meta, temporal, alignNumeric, cellProps, headerProps, path]
+  );
   if (error) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
   if (!meta) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { opacity: 0.6 }, children: "reading parquet metadata\u2026" });
-  const { schema, totalRows, byteSize, rowGroups } = meta;
+  const { schema: rawSchema, totalRows, byteSize, rowGroups } = meta;
+  const schema = rawSchema.map((c) => temporal.has(c.name) ? { ...c, kind: "temporal" } : c);
   if (rowGroups.length === 0) {
     return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { opacity: 0.7 }, children: "parquet file has no row groups" });
   }
@@ -449,12 +483,12 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
       }
     ),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { style: { position: "sticky", top: 0, background: "rgba(127,127,127,0.15)" }, children: schema.map((c) => {
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas" }, children: schema.map((c) => {
         const st = colStyles.get(c.name);
         const stats = rg.stats.get(c.name);
         const title = statsTitle(stats, temporal.get(c.name));
         const defaultNode = title ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { title, children: c.name }) : c.name;
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { style: st?.header ?? TH_STYLE, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, ...stats ? { stats } : {}, defaultNode }) : defaultNode }, c.name);
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { style: st?.header ?? TH_STYLE, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, ...stats ? { stats } : {}, path, defaultNode }) : defaultNode }, c.name);
       }) }) }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: visibleRows === null ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
         "loading row group ",
@@ -464,7 +498,7 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         const value = r[c.name];
         const defaultNode = fmtCell(value, temporal.get(c.name));
         const st = colStyles.get(c.name);
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, defaultNode }) : defaultNode }, c.name);
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode }, c.name);
       }) }, clampedRgPage * ROWS_PER_PAGE + i)) })
     ] }) })
   ] });
@@ -568,6 +602,7 @@ function typeLabel(c, temporal) {
   if (temporal?.source === "inferred") parts.push(`epoch ${temporal.unit.toLowerCase()} (inferred)`);
   return parts.join(" \xB7 ");
 }
+var parquet_default = ParquetViewer;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   ParquetViewer,

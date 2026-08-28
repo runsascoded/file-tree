@@ -6,4 +6,4 @@ declare function NotebookViewer({ store, path }: {
     path: string;
 }): react_jsx_runtime.JSX.Element;
 
-export { NotebookViewer };
+export { NotebookViewer, NotebookViewer as default };
