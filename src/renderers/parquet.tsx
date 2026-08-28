@@ -586,3 +586,8 @@ function typeLabel(c: ParquetColumn, temporal?: TemporalFormat): string {
   if (temporal?.source === 'inferred') parts.push(`epoch ${temporal.unit.toLowerCase()} (inferred)`)
   return parts.join(' · ')
 }
+
+/** Default export so the viewer registry can `load: () => import(…)`
+ *  without an unwrapping step. The named export stays for consumers
+ *  wiring it through the `*Renderer` props. */
+export default ParquetViewer

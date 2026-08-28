@@ -175,3 +175,8 @@ function OutputView({ output }: { output: CellOutput }) {
   }
   return null
 }
+
+/** Default export so the viewer registry can `load: () => import(…)`
+ *  without an unwrapping step. The named export stays for consumers
+ *  wiring it through the `*Renderer` props. */
+export default NotebookViewer

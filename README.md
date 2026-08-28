@@ -487,6 +487,29 @@ Set only the first and a dark app gets a light-looking file tree: your CSS recol
 
 [`color-scheme`]: https://developer.mozilla.org/en-US/docs/Web/CSS/color-scheme
 
+## Viewer registry
+
+The `*Renderer` props are eagerly imported, so a page browsing CSVs still bundles `hyparquet` — and adding a format the library doesn't know means a PR. `viewers` fixes both: an ordered list, first match wins, consulted before the built-ins.
+
+```tsx
+import type { ViewerEntry } from '@rdub/file-tree/react'
+
+// Module scope: `id` is what the lazy component is cached under, and
+// re-creating the array every render re-runs `match` every render.
+const VIEWERS: readonly ViewerEntry<never>[] = [
+  { id: 'log',  match: ({ ext }) => ext === 'log',  load: () => import('./LogViewer') },
+  { id: 'hdf5', match: ({ ext }) => ext === 'h5',   load: () => import('./Hdf5Viewer') },
+]
+
+<FileTree store={store} routeBase="/files" viewers={VIEWERS} />
+```
+
+`load` is a dynamic import, so **each viewer lands in its own chunk** and a page downloads only the formats it opens. Every viewer is handed `{ store, path, usePersistedState }`, plus whatever the entry's `options` carries. The bundled renderers all default-export their component, so `load: () => import('@rdub/file-tree/renderers/parquet')` works directly.
+
+`match` is a predicate rather than an extension list because plenty of real dispatch isn't extension-shaped — `manifest.jsonl` wanting a different viewer than other `.jsonl`, a key with no extension at all. It receives `{ path, ext }`.
+
+Registry entries win over the `*Renderer` props, so registering a `.parquet` viewer overrides the built-in one. Directories and zip entries are excluded (the first isn't a file; container formats are still specced, not built — see `specs/viewer-registry.md`).
+
 ## Subpath exports
 
 | Path | What |

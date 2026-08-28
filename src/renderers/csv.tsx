@@ -192,3 +192,8 @@ function parseLine(line: string, delimiter: string): string[] {
   out.push(cur)
   return out
 }
+
+/** Default export so the viewer registry can `load: () => import(…)`
+ *  without an unwrapping step. The named export stays for consumers
+ *  wiring it through the `*Renderer` props. */
+export default CsvViewer

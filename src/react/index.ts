@@ -21,3 +21,5 @@ export { parsePath, keyToSplat, basename, extOf, TEXTY, IMAGE, VIDEO, AUDIO, COD
 export type { Parsed, ParsePathOptions } from './parsePath'
 export { fmtSize } from './fmt'
 export { makeMatcher } from './match'
+export { findViewer, RegistryViewer } from './viewers'
+export type { ViewerEntry, ViewerMatchCtx, ViewerProps } from './viewers'

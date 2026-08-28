@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { FileTree, type CellRenderer } from '@rdub/file-tree/react'
+import { FileTree, type CellRenderer, type ViewerEntry } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import { DEMO_FIXTURE } from '../fixtures/demo'
 import { renderMarkdown } from '@rdub/file-tree/renderers/markdown'
@@ -154,6 +154,22 @@ function useParquetOptions(): ParquetViewerOptions {
   }), [rawCols, toggle])
 }
 
+/** The viewer registry. `.log` is a format the library knows nothing
+ *  about — no `kind` in `parsePath`, no `logRenderer` prop — and this
+ *  is the whole of teaching it. `load` being a dynamic import means the
+ *  viewer lands in its own chunk and is fetched when a `.log` is first
+ *  opened, not on page load.
+ *
+ *  Module scope so `match` isn't rebuilt every render; `id` is what the
+ *  lazy component is cached under, so it has to be stable. */
+const VIEWERS: readonly ViewerEntry<never>[] = [
+  {
+    id: 'log',
+    match: ({ ext }) => ext === 'log',
+    load: () => import('../components/LogViewer'),
+  },
+]
+
 /** Directory-listing hooks, the same `defaultNode` convention one level
  *  up: decorate a key whose name encodes something the listing can't
  *  know (here, a quarter), without reimplementing the icon + `<Link>`. */
@@ -178,6 +194,7 @@ export function MockDemo() {
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
         parquetOptions={parquetOptions}
+        viewers={VIEWERS}
         renderCell={renderCell}
         jsonRenderer={renderJsonTree}
         csvRenderer={CsvViewer}
@@ -226,7 +243,7 @@ export function MockDemo() {
           <code>Store</code> interface real backends (R2, HTTP, …) implement, so{' '}
           <code>&lt;FileTree&gt;</code> renders identically.
         </p>
-        <pre><code>{`import { FileTree, type CellRenderer } from '@rdub/file-tree/react'
+        <pre><code>{`import { FileTree, type CellRenderer, type ViewerEntry } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 
 const store = MockStore({

@@ -200,6 +200,23 @@ test.describe('MockDemo', () => {
     expect(await rows.nth(1).locator('td').allTextContents()).toEqual(['2024-02-01', '$150.00'])
   })
 
+  test('a consumer-registered viewer handles a format the library lacks', async ({ page }) => {
+    await page.goto('/mock/logs/2026-01-01.log')
+
+    // `.log` has no `kind` in `parsePath` and no `*Renderer` prop — it
+    // reaches the page only through `<FileTree viewers>`, lazily. Without
+    // the registry this renders as plain `<pre>` text, so the split
+    // level/message structure is what proves the viewer ran.
+    // Retrying form, deliberately: the viewer is behind `React.lazy`
+    // *and* an async read, so a one-shot read races the chunk.
+    const lines = page.locator('pre > div')
+    await expect(lines).toHaveText([
+      'INFO System started',
+      'DEBUG Connected to db',
+    ])
+    await expect(lines.first().locator('span')).toHaveText('INFO')
+  })
+
   test('decorates directory-listing cells', async ({ page }) => {
     await page.goto('/mock/data/2024')
 

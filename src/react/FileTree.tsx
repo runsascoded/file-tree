@@ -20,6 +20,7 @@ import { ZipEntryList } from './ZipEntryList'
 import { ZipEntryPreview } from './ZipEntryPreview'
 import { type Parsed, parsePath, basename, keyToSplat, extOf, CODE_LANG } from './parsePath'
 import { type PersistedState } from './persistedState'
+import { findViewer, RegistryViewer, type ViewerEntry } from './viewers'
 
 export type { PersistedState } from './persistedState'
 
@@ -92,6 +93,19 @@ export interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
    *  CSS can own (color, alignment, theme) belongs in CSS, not here.
    *  Options baked in by `makeParquetViewer` win over these. */
   parquetOptions?: ParquetOptionsOf<R>
+  /** Viewer registry — an ordered list of `{ id, match, load, options }`,
+   *  consulted for every file before the built-in renderers, so a
+   *  consumer can add formats (or override one) without the library
+   *  knowing about them.
+   *
+   *  `load` is a dynamic import, so each viewer lands in its own chunk
+   *  and a page only downloads the formats it opens — unlike the
+   *  `*Renderer` props above, which are eagerly imported.
+   *
+   *  Define the array at module scope (or memoize it): entries are
+   *  matched in order and resolved by `id`, but re-creating the array
+   *  every render still re-runs `match` on every render. */
+  viewers?: readonly ViewerEntry<never>[]
   /** Optional JSON renderer. When set, `.json` files render via this fn
    *  (typically a collapsible tree) instead of plaintext `<pre>`. The
    *  second arg is the resolved `usePersistedState` hook (forward it
@@ -148,7 +162,7 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps<R>) {
+export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps<R>) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -181,12 +195,22 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} rightSlot={right} renderCrumb={renderCrumb} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState }) {
+  // The registry wins over the built-ins: a consumer registering a
+  // `.parquet` viewer means they want theirs, not the prop's. `dir` and
+  // `zipEntry` are excluded — the first isn't a file, and the second is
+  // a path *inside* one, which the container work will handle properly
+  // (`specs/viewer-registry.md`).
+  if (parsed.kind !== 'dir' && parsed.kind !== 'zipEntry') {
+    const entry = findViewer(viewers, parsed.path)
+    if (entry) return <RegistryViewer entry={entry} store={store} path={parsed.path} usePersistedState={usePersistedState} />
+  }
+
   switch (parsed.kind) {
     case 'dir':
       return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
