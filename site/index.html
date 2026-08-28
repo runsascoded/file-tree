@@ -2,6 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- `jq-web` self-instantiates on import, so there's no `locateFile`
+         hook, and with no `document.currentScript` in a bundle emscripten
+         resolves `jq.wasm` against the *page* URL — `/mock/foo/jq.wasm`,
+         a different miss per route. A root `<base>` makes that one
+         predictable `/jq.wasm`, which the Vite plugin serves. -->
+    <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@rdub/file-tree — demos</title>
     <style>

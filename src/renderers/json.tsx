@@ -2,7 +2,7 @@
  *  + copy-jq-path. Wire as `<FileTree jsonRenderer={renderJsonTree}>`.
  *
  *  URL state (via `use-prms`):
- *    - `?json-q=foo` — substring search; matches highlighted inline +
+ *    - `?q=foo` — substring search; matches highlighted inline +
  *      ancestor paths auto-expanded.
  *    - `?jq=.foo[].bar` — applies a jq filter to the parsed JSON before
  *      rendering. Requires `jq-web` as an optional peer; lazy-loaded
@@ -10,7 +10,7 @@
  *
  *  On parse failure falls back to a plain `<pre>` of the raw text so
  *  the user always sees something. */
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 
 const COLORS = {
@@ -120,8 +120,21 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
   initialOpenDepth: number; parse?: (source: string) => unknown | Promise<unknown>; label: string
 }) {
   const use = usePersistedState ?? defaultUseState
-  const [q, setQ] = use<string>('json-q', '')
+  // `q` is shared with the directory listing's filter deliberately: they
+  // are the same affordance ("the search box on this page") and
+  // `<FileTree>` shows a listing or a file, never both.
+  const [q, setQ] = use<string>('q', '')
   const [jq, setJq] = use<string>('jq', '')
+  // Debounced: a jq filter is only valid at a few points while you type
+  // it, so running (and URL-writing) every keystroke means a stream of
+  // `null`s and errors for expressions you're halfway through.
+  const [jqDraft, setJqDraft] = useState(jq)
+  useEffect(() => setJqDraft(jq), [jq])
+  useEffect(() => {
+    if (jqDraft === jq) return
+    const t = setTimeout(() => setJq(jqDraft), 300)
+    return () => clearTimeout(t)
+  }, [jqDraft])
   // Bumped when "expand all" / "collapse all" is clicked. Each `Node`
   // tracks the last version it acted on; when the version changes,
   // re-derive its `open` state from `forceOpen`.
@@ -129,7 +142,7 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
   // `null` = no standing force; a number opens every container
   // shallower than it. Expand-all is `Infinity`, collapse-all is `0`,
   // and "depth N" is just N — one mechanism instead of three.
-  const [forceDepth, setForceDepth] = useState<number | null>(null)
+  const [forceDepth, setForceDepth] = usePersistedDepth(use)
   const [copyToast, setCopyToast] = useState<string | null>(null)
 
   // A custom `parse` may be async (lazily-imported parser), so the
@@ -162,7 +175,12 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
   const [jqLoading, setJqLoading] = useState(false)
 
   useEffect(() => {
-    if (parseError || jq.trim() === '') {
+    // `parsing` is load-bearing, not defensive: with an async `parse`
+    // the first run of this effect sees `parsed === undefined`, and
+    // `parsed` can't be a dependency (JSON re-parses to a fresh object
+    // every render, which would loop). Gating on the flag makes the
+    // effect re-run exactly once, when the value arrives.
+    if (parseError || parsing || jq.trim() === '') {
       setJqResult(null); setJqError(null); setJqLoading(false)
       return
     }
@@ -176,7 +194,7 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
       setJqError(String(e)); setJqResult(null); setJqLoading(false)
     })
     return () => { cancelled = true }
-  }, [source, jq, parseError])
+  }, [source, jq, parseError, parsing])
 
   const value = jqResult ? jqResult.value : parsed
   const matches = useMemo(() => q.trim() === '' || value === undefined ? null : collectMatchPaths(value, q), [value, q])
@@ -213,8 +231,8 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
         />
         <input
           type="text"
-          value={jq}
-          onChange={e => setJq(e.target.value)}
+          value={jqDraft}
+          onChange={e => setJqDraft(e.target.value)}
           placeholder="jq filter (e.g. .foo[].bar)"
           style={{ ...inputStyle, minWidth: '16em' }}
           spellCheck={false}
@@ -233,7 +251,7 @@ function JsonViewer({ source, usePersistedState, renderValue, renderKey, initial
             >{d}</button>
           ))}
           <button
-            onClick={() => { setForceDepth(Infinity); setExpandVersion(v => v + 1) }}
+            onClick={() => { setForceDepth(EXPAND_ALL); setExpandVersion(v => v + 1) }}
             title="Expand all"
             style={btnStyle}
           >all</button>
@@ -419,6 +437,18 @@ function ObjectNode({ value, path, depth, initialOpenDepth, q, matches, forceDep
 
 /** Per-node `open` state that respects: (a) initial, (b) user toggles,
  *  (c) global expand/collapse-all bumps, (d) search-match auto-open. */
+/** Expansion depth, in the URL alongside `q`/`jq` — "here's the file,
+ *  opened two levels down" is exactly the kind of thing you paste to
+ *  someone. `-1` is the sentinel for "untouched", since the meaningful
+ *  values include 0 (collapse all) and Infinity (expand all), and the
+ *  persisted-state hook carries numbers, not `null`. */
+const EXPAND_ALL = 99
+
+function usePersistedDepth(use: PersistedState): [number | null, (d: number) => void] {
+  const [raw, setRaw] = use<number>('depth', -1)
+  return [raw < 0 ? null : (raw === 0 ? 0 : raw), setRaw]
+}
+
 function useOpenState(initialOpen: boolean, forceOpen: boolean | null, forceOpenVersion: number, matchedHere: boolean) {
   // A node mounts either at first render or because an ancestor just
   // opened — including as a *result* of expand-all. In that second case
@@ -426,20 +456,36 @@ function useOpenState(initialOpen: boolean, forceOpen: boolean | null, forceOpen
   // already-bumped value), so a standing `forceOpen` has to be honored
   // at mount. Without this, expand-all only reaches the frontier of
   // mounted nodes: one click per level of nesting.
-  const [open, setOpen] = useState(forceOpen ?? initialOpen)
+  const [open, setOpenRaw] = useState(forceOpen ?? initialOpen)
   const [lastVersion, setLastVersion] = useState(forceOpenVersion)
   // expand/collapse-all: snap to forceOpen on a version bump.
   if (forceOpenVersion !== lastVersion) {
     setLastVersion(forceOpenVersion)
-    if (forceOpen !== null) setOpen(forceOpen)
+    if (forceOpen !== null) setOpenRaw(forceOpen)
   }
-  // search match: open if this node is in the matched-ancestors set.
-  // Don't override "user closed it" — the match → open is one-way, on
-  // entry. (matchedHere flips back to false when q clears; user
-  // toggling closed mid-search persists.)
+
+  // Search opens a node to reveal a match, and *closes it again* when
+  // the node stops matching. One-way opening looks broken while typing:
+  // an early prefix matches half the document, and narrowing to the
+  // real query leaves everything it touched hanging open. Only nodes
+  // search itself opened are closed again, so a node you opened by hand
+  // stays open — hence the flag, cleared by any manual toggle.
+  const openedBySearch = useRef(false)
+  const openRef = useRef(open)
+  openRef.current = open
   useEffect(() => {
-    if (matchedHere) setOpen(true)
+    if (matchedHere) {
+      if (!openRef.current) { openedBySearch.current = true; setOpenRaw(true) }
+    } else if (openedBySearch.current) {
+      openedBySearch.current = false
+      setOpenRaw(false)
+    }
   }, [matchedHere])
+
+  const setOpen = useCallback((v: boolean | ((o: boolean) => boolean)) => {
+    openedBySearch.current = false
+    setOpenRaw(v)
+  }, [])
   return [open, setOpen] as const
 }
 

@@ -142,8 +142,12 @@ test.describe('MockDemo', () => {
     // overridden `timeout`).
     await page.getByTitle('Expand to depth 2').click()
     const at2 = await jsonTree(page)
+    // Both servers have 3 keys: `<<: *defaults` merged `retries` and
+    // `timeout` in, and the second overrode `timeout`. Merge keys are a
+    // YAML 1.1 feature, so this needs `merge: true` — without it `<<`
+    // stays a literal key and the anchor is *not* applied.
     expect(at2.slice(at2.indexOf('"defaults"'), at2.indexOf('# Block'))).toBe(
-      '"defaults": ▾{"retries": 3,"timeout": 30},"servers": ▾[▸{ 2 keys },▸{ 3 keys }],',
+      '"defaults": ▾{"retries": 3,"timeout": 30},"servers": ▾[▸{ 3 keys },▸{ 3 keys }],',
     )
   })
 
@@ -285,6 +289,46 @@ test.describe('MockDemo', () => {
     // The label is appended *around* the default node, so the link is
     // still just the filename — decorating, not replacing.
     await expect(page.getByRole('link', { name: 'q1.csv', exact: true })).toBeVisible()
+  })
+
+  test('jq filters the parsed document', async ({ page }) => {
+    // Regression: `jq.wasm` resolved against the *page* URL, so it
+    // 404'd into the SPA fallback on every route and jq never worked at
+    // all. Nothing asserted it, so it stayed broken.
+    await page.goto('/mock/config.json?jq=.server.tls')
+    // Retrying: jq is a ~2.8 MB wasm module fetched on first use.
+    await expect.poll(() => jsonTree(page)).toBe('▾{"enabled": false,"ciphers": ▸[ 2 items ]}')
+  })
+
+  test('jq works on yaml, over the merged document', async ({ page }) => {
+    // Second regression: the jq effect ran before the *async* YAML parse
+    // resolved and never retried, so every YAML filter failed with
+    // "Unsupported data type". Both `servers` show 3 keys because
+    // `<<: *defaults` merged — which needs `merge: true`, off by default
+    // in YAML 1.2.
+    await page.goto('/mock/config.yaml?jq=.servers')
+    await expect.poll(() => jsonTree(page)).toBe('▾[▸{ 3 keys },▸{ 3 keys }]')
+  })
+
+  test('search opens only what it needs, and closes as it narrows', async ({ page }) => {
+    await page.goto('/mock/config.json')
+    const search = page.getByRole('searchbox')
+
+    // A one-character prefix matches deep in the tree...
+    await search.fill('e')
+    await expect.poll(() => jsonTree(page)).toBe(
+      // "e" reaches "enabled", "ciphers" and "aes" — so the whole
+      // spine down to the ciphers array opens.
+      '▾{"version": "0.0.1","demo": true,"server": ▾{"host": "localhost",'
+      + '"tls": ▾{"enabled": false,"ciphers": ▾["aes","chacha"]}}}',
+    )
+
+    // ...and narrowing has to *undo* that. One-way opening leaves
+    // everything the early prefix touched hanging open.
+    await search.fill('demo')
+    await expect.poll(() => jsonTree(page)).toBe(
+      '▾{"version": "0.0.1","demo": true,"server": ▸{ 2 keys }}',
+    )
   })
 
   test('shows error for non-existent path', async ({ page }) => {

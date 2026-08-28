@@ -23,7 +23,7 @@ type YamlDoc = {
 }
 type YamlModule = {
   parse: (src: string) => unknown
-  parseDocument: (src: string) => YamlDoc
+  parseDocument: (src: string, opts?: { merge?: boolean }) => YamlDoc
 }
 
 let cached: Promise<YamlModule> | null = null
@@ -96,7 +96,10 @@ function collect(node: unknown, path: string, out: Map<string, string>): void {
 
 export async function parseYaml(source: string): Promise<unknown> {
   const { parseDocument } = await loadYaml()
-  const doc = parseDocument(source)
+  // `merge: true` is required for `<<: *anchor` to actually merge —
+  // merge keys are a YAML 1.1 feature and `yaml` defaults to 1.2, where
+  // `<<` is just a key whose value happens to be an alias.
+  const doc = parseDocument(source, { merge: true })
   const value = doc.toJS()
   if (value !== null && typeof value === 'object') {
     const map = new Map<string, string>()
