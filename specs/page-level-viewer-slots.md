@@ -60,6 +60,74 @@ above/below it, `renderAside` never fits and A is the whole answer.
    change — the plumbing is already there. That's the cheap path and probably
    the right one.
 
+## A second driver: the hover drawer
+
+Same gap, different direction. A tooltip is a bad home for a *rich* preview —
+it's transient, it's sized to not cover the table, and every hover rebuilds it.
+The alternative is one fixed panel somewhere on the page that shows a rich view
+of whatever cell the cursor is on: bigger map, full row, related records,
+whatever the consumer wants.
+
+That needs the viewer to publish **which cell is active**, not just which rows
+are on screen:
+
+```ts
+onCellHover?: (ctx: TableCellCtx | null) => void   // null on leave
+```
+
+Cheap to add and it composes with `onPage` — the drawer gets the hovered cell,
+the map gets the page. Two open questions: whether hover is the right trigger
+(click-to-pin is the usual complement, and a pinned cell wants to survive
+paging), and whether it should be throttled inside the viewer or left to the
+consumer (leaning: leave it — a consumer that wants `requestAnimationFrame` can
+wrap, and the library guessing wrong is worse).
+
+Note this makes the per-cell tooltip and the page drawer the *same* content at
+two sizes, which is an argument for the consumer rendering both from one
+component rather than the library offering two hooks.
+
+## Static basemaps for the locators
+
+The S2 preview in `site/` draws points and a footprint, with no basemap — so it
+answers "whereabouts in this cluster" but not "where on Earth". The fix isn't
+tiles (see the tile-free reasoning above); it's a **static vector outline
+bundled once**:
+
+- [Natural Earth] land / coastline / urban-area polygons are public domain — no
+  key, no attribution requirement, no runtime fetch. Clipped to the demo's three
+  city bboxes and simplified, that's single-digit KB of coordinates.
+- Draw as SVG `<path>` under the existing points. Same renderer, one more layer.
+
+This also removes the honest caveat currently in `site/src/fixtures/parquet.ts`:
+a synthetic scatter can't fake a recognizable city, but a real coastline under
+it doesn't have to — the outline does the recognizing and the points just sit on
+it.
+
+[Natural Earth]: https://www.naturalearthdata.com/
+
+## Per-column format controls, done properly
+
+The demo currently puts an identical `⌗` raw/formatted toggle on *every* column,
+which is a fair demonstration of the plumbing and a bad model of what a consumer
+wants:
+
+- **Most columns need no control at all.** A control per column is visual noise
+  that stops meaning anything, the same way underlining every cell would.
+- **The control differs by column.** A temporal column wants `auto | ISO |
+  epoch | relative`; a float wants `raw | currency | SI | fixed(n)`; a string
+  column usually wants nothing.
+- **Two states is often too few.** Several timestamp renderings are equally
+  reasonable, and the honest end state is a *format expression* — [d3-format]
+  for numbers, something strftime-ish for dates — typed by the reader.
+
+None of this needs library support beyond what `renderHeader` already gives: the
+consumer returns whatever control it wants, and the state lives in the
+consumer's hands (`parquetOptions`, or a context). The demo should model the
+realistic version rather than the uniform one, because as written it teaches the
+wrong lesson.
+
+[d3-format]: https://d3js.org/d3-format
+
 ## Not in scope
 
 Selection / cross-filtering (click the map, filter the table) is the natural
