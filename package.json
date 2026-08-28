@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.4250d11",
+  "version": "0.0.1-dist.a7d1dd6",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {

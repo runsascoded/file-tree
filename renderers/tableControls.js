@@ -1,5 +1,5 @@
 // src/renderers/tableControls.tsx
-import { useCallback, useMemo, useState as useState2 } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState as useState2 } from "react";
 
 // src/react/persistedState.ts
 import { useState } from "react";
@@ -143,11 +143,24 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
     ] })
   ] });
 }
+function useStableCallback(fn) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args) => ref.current?.(...args), []);
+}
+function usePageNotify(onPage, ctxRef, deps) {
+  const notify = useStableCallback(onPage);
+  useEffect(() => {
+    notify(ctxRef.current);
+  }, deps);
+}
 export {
   ColumnPicker,
   FilterInput,
   filterRows,
   useColumnVisibility,
-  useFilter
+  useFilter,
+  usePageNotify,
+  useStableCallback
 };
 //# sourceMappingURL=tableControls.js.map

@@ -1,5 +1,5 @@
 import { Store } from './index.cjs';
-import { a as TableColumn } from './table-Bhl7BV7o.cjs';
+import { a as TableColumn } from './table-ZN60aKsl.cjs';
 
 /** Temporal inference + formatting for tabular cells.
  *

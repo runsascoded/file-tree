@@ -24,7 +24,9 @@ __export(tableControls_exports, {
   FilterInput: () => FilterInput,
   filterRows: () => filterRows,
   useColumnVisibility: () => useColumnVisibility,
-  useFilter: () => useFilter
+  useFilter: () => useFilter,
+  usePageNotify: () => usePageNotify,
+  useStableCallback: () => useStableCallback
 });
 module.exports = __toCommonJS(tableControls_exports);
 var import_react2 = require("react");
@@ -171,12 +173,25 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
     ] })
   ] });
 }
+function useStableCallback(fn) {
+  const ref = (0, import_react2.useRef)(fn);
+  ref.current = fn;
+  return (0, import_react2.useCallback)((...args) => ref.current?.(...args), []);
+}
+function usePageNotify(onPage, ctxRef, deps) {
+  const notify = useStableCallback(onPage);
+  (0, import_react2.useEffect)(() => {
+    notify(ctxRef.current);
+  }, deps);
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   ColumnPicker,
   FilterInput,
   filterRows,
   useColumnVisibility,
-  useFilter
+  useFilter,
+  usePageNotify,
+  useStableCallback
 });
 //# sourceMappingURL=tableControls.cjs.map

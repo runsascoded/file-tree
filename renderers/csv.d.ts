@@ -1,8 +1,8 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { Store } from '../index.js';
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.js';
-import { T as TableViewerOptions, a as TableColumn } from '../table-ClgyajEc.js';
-export { b as TableCellCtx, c as TableCellRenderer } from '../table-ClgyajEc.js';
+import { T as TableViewerOptions, a as TableColumn } from '../table-BDoOyrVw.js';
+export { b as TableCellCtx, c as TableCellRenderer } from '../table-BDoOyrVw.js';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
 import 'react';
 
@@ -25,7 +25,7 @@ declare function makeCsvViewer(opts?: CsvViewerOptions): (props: {
     delimiter: string;
     usePersistedState?: PersistedState;
 }) => react_jsx_runtime.JSX.Element;
-declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators }: {
+declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, onPage, onCellHover }: {
     store: Store;
     path: string;
     delimiter: string;

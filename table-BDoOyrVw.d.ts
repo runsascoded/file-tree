@@ -107,6 +107,19 @@ type TableColumnProps<C extends TableColumn = TableColumn> = (col: C, path: stri
     style?: CSSProperties;
     className?: string;
 } | void;
+/** The page a viewer just rendered. */
+interface TablePageCtx<C extends TableColumn = TableColumn> {
+    rows: Record<string, unknown>[];
+    /** Visible columns, in render order. */
+    columns: readonly C[];
+    path: string;
+    /** Index of the first row *within the file*, where the viewer knows
+     *  it — see `TableCellCtx['rowIndex']` for when it doesn't. */
+    pageStart: number;
+    /** Total rows in the file, or `null` when the viewer can't know
+     *  (CSV paging by bytes never learns one). */
+    totalRows: number | null;
+}
 interface TableViewerOptions<C extends TableColumn = TableColumn> {
     renderCell?: TableCellRenderer<C>;
     /** Per-column header content — a place to hang format toggles, stat
@@ -138,6 +151,20 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
      *  reading anything, and a row count is only knowable after the
      *  decision it would inform. */
     fullLoadMaxBytes?: number;
+    /** Called when the rendered page changes — the rows now on screen,
+     *  for a sibling widget: a map of the current page, a chart, a
+     *  summary. The viewer can't render these itself; consumers lay the
+     *  table and the widget out side by side (ctbk's is a full-height
+     *  flex sibling), so the data has to flow *out*.
+     *
+     *  The callback is held in a ref, so an inline arrow is safe — its
+     *  identity changing every render will not re-fire this. */
+    onPage?: (ctx: TablePageCtx<C>) => void;
+    /** Called with the cell under the cursor, and `null` on leave.
+     *
+     *  For one rich preview panel driven by the table, rather than a
+     *  tooltip per cell. Same ref treatment as `onPage`. */
+    onCellHover?: (ctx: TableCellCtx<C> | null) => void;
     /** Per-column comparator override, for when the default (numeric if
      *  both values parse as numbers, else locale string order) reads a
      *  column wrong — a version string, an ordered enum. */
@@ -158,4 +185,4 @@ declare function resolveColStyles<C extends TableColumn>(columns: readonly C[], 
     headerClass?: string;
 }>;
 
-export { DEFAULT_FULL_LOAD_MAX_BYTES as D, NUMERIC_ALIGN as N, type SortComparators as S, type TableViewerOptions as T, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, TD_STYLE as k, TH_STYLE as l, resolveColStyles as r, sortGlyph as s, useSort as u };
+export { DEFAULT_FULL_LOAD_MAX_BYTES as D, NUMERIC_ALIGN as N, type SortComparators as S, type TableViewerOptions as T, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, TD_STYLE as k, TH_STYLE as l, type TablePageCtx as m, resolveColStyles as r, sortGlyph as s, useSort as u };

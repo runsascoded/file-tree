@@ -318,6 +318,17 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
     ] })
   ] });
 }
+function useStableCallback(fn) {
+  const ref = (0, import_react3.useRef)(fn);
+  ref.current = fn;
+  return (0, import_react3.useCallback)((...args) => ref.current?.(...args), []);
+}
+function usePageNotify(onPage, ctxRef, deps) {
+  const notify = useStableCallback(onPage);
+  (0, import_react3.useEffect)(() => {
+    notify(ctxRef.current);
+  }, deps);
+}
 
 // src/renderers/tableSort.ts
 var import_react4 = require("react");
@@ -396,7 +407,7 @@ function makeCsvViewer(opts = {}) {
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CsvViewer, { ...props, ...opts });
   };
 }
-function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }) {
+function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter);
   const [page, setPage] = (0, import_react5.useState)(0);
   const smallTable = total !== null && total <= fullLoadMaxBytes;
@@ -429,6 +440,9 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
     [columns, path, cellProps, headerProps]
   );
+  const pageCtxRef = (0, import_react5.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
+  usePageNotify(onPage, pageCtxRef, [pageRows, allSorted, columns.length, path, smallTable]);
+  const notifyHover = useStableCallback(onCellHover);
   if (error) return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
@@ -436,6 +450,13 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
   if (total === null || header === null) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
   const rows = smallTable ? allSorted : pageRows;
   const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES));
+  pageCtxRef.current = {
+    rows: (rows ?? []).map((r) => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? ""]))),
+    columns,
+    path,
+    pageStart: 0,
+    totalRows: smallTable ? rows?.length ?? null : null
+  };
   const offsetStart = page * PAGE_BYTES;
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES);
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
@@ -518,7 +539,19 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
           const st = colStyles.get(c.name);
           const j = colIndex.get(c.name);
           const value = r[j] ?? "";
-          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value }, c.name);
+          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+            "td",
+            {
+              style: st?.cell ?? TD_STYLE,
+              className: st?.cellClass,
+              ...onCellHover ? {
+                onMouseEnter: () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }),
+                onMouseLeave: () => notifyHover(null)
+              } : {},
+              children: renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value
+            },
+            c.name
+          );
         }) }, i);
       }) })
     ] }) })

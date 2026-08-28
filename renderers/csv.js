@@ -1,5 +1,5 @@
 // src/renderers/csv.tsx
-import { useMemo as useMemo3, useState as useState4 } from "react";
+import { useMemo as useMemo3, useRef as useRef2, useState as useState4 } from "react";
 
 // src/react/fmt.ts
 function fmtSize(n) {
@@ -143,7 +143,7 @@ function useAllCsvRows(store, path, delimiter, enabled) {
 }
 
 // src/renderers/tableControls.tsx
-import { useCallback, useMemo, useState as useState3 } from "react";
+import { useCallback, useEffect as useEffect2, useMemo, useRef, useState as useState3 } from "react";
 
 // src/react/persistedState.ts
 import { useState as useState2 } from "react";
@@ -287,6 +287,17 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
     ] })
   ] });
 }
+function useStableCallback(fn) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args) => ref.current?.(...args), []);
+}
+function usePageNotify(onPage, ctxRef, deps) {
+  const notify = useStableCallback(onPage);
+  useEffect2(() => {
+    notify(ctxRef.current);
+  }, deps);
+}
 
 // src/renderers/tableSort.ts
 import { useCallback as useCallback2, useMemo as useMemo2 } from "react";
@@ -365,7 +376,7 @@ function makeCsvViewer(opts = {}) {
     return /* @__PURE__ */ jsx2(CsvViewer, { ...props, ...opts });
   };
 }
-function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }) {
+function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter);
   const [page, setPage] = useState4(0);
   const smallTable = total !== null && total <= fullLoadMaxBytes;
@@ -398,6 +409,9 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
     [columns, path, cellProps, headerProps]
   );
+  const pageCtxRef = useRef2({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
+  usePageNotify(onPage, pageCtxRef, [pageRows, allSorted, columns.length, path, smallTable]);
+  const notifyHover = useStableCallback(onCellHover);
   if (error) return /* @__PURE__ */ jsxs2("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
@@ -405,6 +419,13 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
   if (total === null || header === null) return /* @__PURE__ */ jsx2("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
   const rows = smallTable ? allSorted : pageRows;
   const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES));
+  pageCtxRef.current = {
+    rows: (rows ?? []).map((r) => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? ""]))),
+    columns,
+    path,
+    pageStart: 0,
+    totalRows: smallTable ? rows?.length ?? null : null
+  };
   const offsetStart = page * PAGE_BYTES;
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES);
   return /* @__PURE__ */ jsxs2(Fragment, { children: [
@@ -487,7 +508,19 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
           const st = colStyles.get(c.name);
           const j = colIndex.get(c.name);
           const value = r[j] ?? "";
-          return /* @__PURE__ */ jsx2("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value }, c.name);
+          return /* @__PURE__ */ jsx2(
+            "td",
+            {
+              style: st?.cell ?? TD_STYLE,
+              className: st?.cellClass,
+              ...onCellHover ? {
+                onMouseEnter: () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }),
+                onMouseLeave: () => notifyHover(null)
+              } : {},
+              children: renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value
+            },
+            c.name
+          );
         }) }, i);
       }) })
     ] }) })

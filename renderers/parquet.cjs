@@ -578,6 +578,17 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
     ] })
   ] });
 }
+function useStableCallback(fn) {
+  const ref = (0, import_react3.useRef)(fn);
+  ref.current = fn;
+  return (0, import_react3.useCallback)((...args) => ref.current?.(...args), []);
+}
+function usePageNotify(onPage, ctxRef, deps) {
+  const notify = useStableCallback(onPage);
+  (0, import_react3.useEffect)(() => {
+    notify(ctxRef.current);
+  }, deps);
+}
 
 // src/renderers/tableSort.ts
 var import_react4 = require("react");
@@ -657,7 +668,7 @@ function makeParquetViewer(opts = {}) {
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ParquetViewer, { ...props, ...opts });
   };
 }
-function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators }) {
+function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }) {
   const { meta, error: metaError } = useParquetMeta(store, path);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
@@ -702,6 +713,9 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
     ),
     [meta, temporal, alignNumeric, cellProps, headerProps, path]
   );
+  const pageCtxRef = (0, import_react5.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: 0 });
+  usePageNotify(onPage, pageCtxRef, [rows, rgPage, page, path, visible.join(",")]);
+  const notifyHover = useStableCallback(onCellHover);
   if (error) return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
@@ -762,6 +776,7 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   const pageRowStart = rowBase + clampedRgPage * ROWS_PER_PAGE;
   const pageRowEnd = rows ? rowBase + Math.min((clampedRgPage + 1) * ROWS_PER_PAGE, rows.length) : pageRowStart;
   const visibleRows = rows ? rows.slice(clampedRgPage * ROWS_PER_PAGE, (clampedRgPage + 1) * ROWS_PER_PAGE) : null;
+  pageCtxRef.current = { rows: visibleRows ?? [], columns: schema, path, pageStart: pageRowStart, totalRows };
   const goPrevPage = () => {
     if (clampedRgPage > 0) setRgPage(clampedRgPage - 1);
     else if (!smallTable && rgIndex > 0) setPage(rgIndex - 1);
@@ -873,7 +888,19 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         const value = r[c.name];
         const defaultNode = fmtCell(value, temporal.get(c.name));
         const st = colStyles.get(c.name);
-        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: st?.cell ?? TD_STYLE, className: st?.cellClass, children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode }, c.name);
+        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          "td",
+          {
+            style: st?.cell ?? TD_STYLE,
+            className: st?.cellClass,
+            ...onCellHover ? {
+              onMouseEnter: () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }),
+              onMouseLeave: () => notifyHover(null)
+            } : {},
+            children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode
+          },
+          c.name
+        );
       }) }, clampedRgPage * ROWS_PER_PAGE + i)) })
     ] }) })
   ] });
