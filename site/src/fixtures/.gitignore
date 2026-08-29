@@ -1,0 +1,3 @@
+# Intermediate: `catalog.sql` builds it, `tools/embed-sqlite.mjs` turns
+# it into the committed `catalog.ts`. No need for a third copy in Git.
+catalog.sqlite

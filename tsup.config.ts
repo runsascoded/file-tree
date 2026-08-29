@@ -18,6 +18,7 @@ export default defineConfig({
     'src/sqlite/tableSource.ts',
     'src/renderers/table.ts',
     'src/renderers/tableSource.ts',
+    'src/renderers/sqlite.tsx',
     'src/renderers/tableControls.tsx',
     'src/renderers/tableSort.ts',
     'src/renderers/yaml.tsx',

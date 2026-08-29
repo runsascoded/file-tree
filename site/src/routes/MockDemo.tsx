@@ -236,6 +236,16 @@ const VIEWERS: readonly ViewerEntry<never>[] = [
     match: ({ ext }) => ext === 'pqt',
     load: async () => ({ default: StreamingParquetViewer }),
   },
+  // The SQLite viewer, and the demonstration that a registry entry is
+  // a dynamic import of *anything*: `load` doesn't care whether the
+  // module ships with the library, comes from another package, or is
+  // written here. Nothing — not the viewer, not `wa-sqlite`, not its
+  // 1.1 MB of wasm — is fetched until a `.sqlite` is opened.
+  {
+    id: 'sqlite',
+    match: ({ ext }) => ext === 'sqlite' || ext === 'db' || ext === 'sqlite3',
+    load: () => import('../components/CatalogViewer'),
+  },
   {
     id: 'log',
     match: ({ ext }) => ext === 'log',
@@ -268,7 +278,7 @@ const label = (s: string) => <span style={{ opacity: 0.5, fontWeight: 400 }}> {s
 
 const EXT_LABEL: Record<string, string> = {
   md: 'markdown', csv: 'csv', log: 'log', parquet: 'parquet',
-  json: 'json', yaml: 'yaml',
+  json: 'json', yaml: 'yaml', sqlite: 'sqlite',
 }
 
 /** `prefix` → what's under it, as `2 dirs · markdown`. Built once from
@@ -371,6 +381,23 @@ export function MockDemo() {
           <code>defaultNode</code> — so decorating never means reimplementing the default (the
           link, icon, and size formatting all survive). All of them also receive{' '}
           <code>path</code>, so one viewer serves a whole tree of unrelated schemas.
+        </p>
+        <p>
+          <strong>SQLite</strong> (<code>samples/catalog.sqlite</code>) is the one file here that
+          is never read whole. Every other viewer streams bytes and then sorts, filters and counts
+          in JavaScript — the best available answer when the format can't be asked anything. A
+          database can be asked, so <code>LIMIT</code>, <code>ORDER BY</code> and{' '}
+          <code>WHERE</code> go down to SQLite, which reads the few 8&nbsp;KiB blocks they need
+          through a VFS backed by <code>Store.get(path, {'{ offset, length }'})</code>. Watch the{' '}
+          <code>N reads</code> counter: sorting 900 rows costs single digits, and the second query
+          costs none, because the connection stays open and keeps its page cache.
+        </p>
+        <p>
+          Its registry entry is also the worked example of an <em>external</em> renderer:{' '}
+          <code>load</code> is a dynamic import of any module at all, so neither the viewer nor{' '}
+          <code>wa-sqlite</code>'s 1.1&nbsp;MB of wasm is fetched until a <code>.sqlite</code> is
+          opened. Whether such a viewer ships with the library or from another package is a
+          packaging decision, not an architectural one.
         </p>
         <p>
           The fixture is an <code>{'{ key: content }'}</code> object literal in{' '}

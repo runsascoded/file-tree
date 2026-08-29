@@ -1,6 +1,7 @@
 /** Demo fixture for MockStore. Designed to look like a realistic
  *  data-bucket layout — same shape consumers (ctbk, crashes) browse
  *  in production. */
+import { CATALOG_SQLITE } from './catalog'
 import { EVENTS_PARQUET } from './parquet'
 
 export const DEMO_FIXTURE = {
@@ -73,6 +74,11 @@ export const DEMO_FIXTURE = {
   ].join('\n'),
   // Exercises the parquet viewer's timestamp inference — see
   // `./parquet.ts` for what each column is meant to prove.
+  // A whole database, browsed table by table. Unlike every other
+  // fixture here it is never read whole: the viewer asks SQLite for a
+  // page and SQLite asks the store for the few 8 KiB blocks that page
+  // lives in.
+  'samples/catalog.sqlite': CATALOG_SQLITE,
   'samples/events.parquet': EVENTS_PARQUET,
   // Same bytes, second extension: `MockDemo` registers `.pqt` with
   // `fullLoadMaxBytes: 0` so the streaming half of small-table mode —

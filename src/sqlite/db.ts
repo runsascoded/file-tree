@@ -117,6 +117,14 @@ export class SqliteDb {
   private readonly vfs: StoreVFS
   private readonly db: number
   private closed = false
+  /** A SQLite connection is not reentrant: two `sqlite3_step` loops
+   *  interleaved on one handle is misuse, and SQLite says so
+   *  (`SQLITE_MISUSE`, "bad parameter or other API misuse"). Every
+   *  `await` in `select` is a chance for that to happen — a filter
+   *  keystroke landing mid-page-load is enough, and React's
+   *  double-invoked effects in development guarantee it. So work is
+   *  chained rather than run concurrently. */
+  private queue: Promise<unknown> = Promise.resolve()
 
   private constructor(sqlite3: SqliteRuntime, vfs: StoreVFS, db: number) {
     this.sqlite3 = sqlite3
@@ -148,25 +156,39 @@ export class SqliteDb {
    *  explain why something was fast or slow. */
   get stats(): Readonly<VFSStats> { return this.vfs.stats }
 
+  /** Run `work` after everything already queued on this connection. */
+  private serialize<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(work, work)
+    // Swallow rejections on the *chain* only: a failed query must not
+    // poison every query after it. The caller still sees its own.
+    this.queue = next.catch(() => {})
+    return next
+  }
+
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
-    await this.sqlite3.close(this.db)
+    // Through the queue, so an in-flight query finishes against a live
+    // handle rather than a closed one.
+    await this.serialize(async () => { await this.sqlite3.close(this.db) })
   }
 
   /** Run `sql`, binding `params` positionally. */
   async select(sql: string, params: (string | number | null)[] = []): Promise<SqliteRows> {
-    const rows: Record<string, unknown>[] = []
-    let columns: string[] = []
-    for await (const stmt of this.sqlite3.statements(this.db, sql)) {
-      if (params.length) this.sqlite3.bind_collection(stmt, params)
-      columns = this.sqlite3.column_names(stmt)
-      while (await this.sqlite3.step(stmt) === SQLite.SQLITE_ROW) {
-        const values = this.sqlite3.row(stmt)
-        rows.push(Object.fromEntries(columns.map((c, i) => [c, values[i] ?? null])))
+    return this.serialize(async () => {
+      if (this.closed) throw new Error('SqliteDb: connection is closed')
+      const rows: Record<string, unknown>[] = []
+      let columns: string[] = []
+      for await (const stmt of this.sqlite3.statements(this.db, sql)) {
+        if (params.length) this.sqlite3.bind_collection(stmt, params)
+        columns = this.sqlite3.column_names(stmt)
+        while (await this.sqlite3.step(stmt) === SQLite.SQLITE_ROW) {
+          const values = this.sqlite3.row(stmt)
+          rows.push(Object.fromEntries(columns.map((c, i) => [c, values[i] ?? null])))
+        }
       }
-    }
-    return { columns, rows }
+      return { columns, rows }
+    })
   }
 
   /** Tables and views, in name order.

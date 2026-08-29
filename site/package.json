@@ -20,6 +20,7 @@
     "react-router-dom": "^6.30.0",
     "remark-gfm": "^4.0.1",
     "s2js": "^1.44.0",
+    "wa-sqlite": "^1.0.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

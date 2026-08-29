@@ -72,6 +72,11 @@
       "import": "./dist/renderers/tableSource.js",
       "require": "./dist/renderers/tableSource.cjs"
     },
+    "./renderers/sqlite": {
+      "types": "./dist/renderers/sqlite.d.ts",
+      "import": "./dist/renderers/sqlite.js",
+      "require": "./dist/renderers/sqlite.cjs"
+    },
     "./renderers/tableControls": {
       "types": "./dist/renderers/tableControls.d.ts",
       "import": "./dist/renderers/tableControls.js",

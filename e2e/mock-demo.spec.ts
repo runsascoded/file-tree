@@ -467,6 +467,75 @@ test.describe('MockDemo', () => {
     )
   })
 
+  /** One row of the SQLite table as its trimmed cell strings. */
+  async function sqliteRow(page: Page, which: 'header' | number): Promise<string[]> {
+    const table = page.locator('table').last()
+    const row = which === 'header' ? table.locator('thead tr') : table.locator('tbody tr').nth(which)
+    return (await row.locator(which === 'header' ? 'th' : 'td').allTextContents()).map(t => t.trim())
+  }
+
+  test('the sqlite viewer pages a database without reading it whole', async ({ page }) => {
+    await page.goto('/mock/samples/catalog.sqlite')
+    await expect(page.getByRole('combobox', { name: 'Table' })).toBeVisible()
+
+    // Defaults to the first object in the database.
+    expect(await sqliteRow(page, 'header')).toEqual(['code ↕', 'name ↕', 'timezone ↕'])
+    expect(await sqliteRow(page, 0)).toEqual(['nyc', 'New York', 'America/New_York'])
+
+    // The read counter is the point of the viewer: three tiny tables and
+    // a view, browsed with a handful of ranged reads rather than a
+    // download. Asserting a bound rather than an exact count — the
+    // number depends on where SQLite's B-tree pages happen to land.
+    const stats = (await page.locator('span[title="ranged reads / cache hits"]').textContent()) ?? ''
+    const reads = Number(/^(\d+) reads/.exec(stats)?.[1])
+    expect(reads).toBeGreaterThan(0)
+    expect(reads).toBeLessThan(6)
+  })
+
+  test('sqlite pushes sort, filter and paging down to the engine', async ({ page }) => {
+    await page.goto('/mock/samples/catalog.sqlite?table=rides&sort=-duration_s')
+
+    await expect(page.locator('table tbody tr').first()).toBeVisible()
+    expect(await sqliteRow(page, 'header')).toEqual(
+      ['id ↕', 'station_id ↕', 'started_at ↕', 'duration_s ▼', 'member ↕'])
+    // Longest ride first, with the consumer's `renderCell` formatting
+    // seconds and the boolean.
+    expect(await sqliteRow(page, 0)).toEqual(
+      ['287', '12', '2026-01-02 10:21:37', '59m 59s', 'member'])
+    await expect(page.getByText('900 rows · 1–25')).toBeVisible()
+    await expect(page.getByText('page 1 / 36')).toBeVisible()
+
+    // Filtering is a `WHERE`, so the total and the page count both move.
+    await page.getByPlaceholder('filter').fill('2026-01-05 11')
+    await expect(page.getByText('7 rows · 1–7')).toBeVisible()
+    await expect(page.getByText('7 / 900')).toBeVisible()
+  })
+
+  test('a sqlite cell can link to another table', async ({ page }) => {
+    await page.goto('/mock/samples/catalog.sqlite?table=rides')
+
+    // `station_id` is a foreign key, rendered as a real link — the whole
+    // viewer state is query params, so cross-table navigation is a URL.
+    const fk = page.locator('tbody tr').first().getByRole('link')
+    await expect(fk).toHaveText('14')
+    await fk.click()
+
+    await expect(page).toHaveURL(/\?table=stations&q=Station\+014$/)
+    expect(await sqliteRow(page, 0)).toEqual(
+      ['14', 'Station 014', 'lax', '26', '37.14', '-121.86'])
+    await expect(page.getByText('1 row · 1–1')).toBeVisible()
+  })
+
+  test('sqlite keeps a shared ?page=', async ({ page }) => {
+    // The page-reset effect has to fire on a *change* of table/filter/
+    // sort, not on mount — otherwise a pasted link opens at page 1.
+    await page.goto('/mock/samples/catalog.sqlite?table=stations&q=lax&page=1')
+    await expect(page.getByText('page 2 / 2')).toBeVisible()
+    expect(await sqliteRow(page, 0)).toEqual(
+      ['77', 'Station 077', 'lax', '27', '37.77', '-121.23'])
+    await expect(page).toHaveURL(/page=1/)
+  })
+
   test('shows error for non-existent path', async ({ page }) => {
     await page.goto('/mock/missing.md')
     await expect(page.getByText(/^error:.*NotFoundError/)).toBeVisible()
