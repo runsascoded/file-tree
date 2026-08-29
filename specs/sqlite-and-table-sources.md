@@ -290,6 +290,39 @@ and backend-agnostic, so it doesn't violate the "no storage-backend-specific
 logic outside `src/stores/`" rule, and SQLite stays a *view* concern rather than
 a `Store` capability.
 
+## Status
+
+Built (`995e2a1`, `30b71b7`, `d74a3aa`):
+
+- `src/sqlite/vfs.ts` — `StoreVFS` over a `RangeReader`, with
+  `rangeReaderFromStore`. Fixed-size indexed blocks; readahead grows the
+  *count* fetched per request, not the block size (growing the size
+  re-aligns downwards and re-fetches cached bytes). Read-only.
+- `src/sqlite/db.ts` — `SqliteDb`, plus `createSqliteModule` taking wasm
+  as a URL, bytes, or a compiled module. Queries are serialised on the
+  connection: SQLite is not reentrant, and interleaved `step` loops are
+  `SQLITE_MISUSE`.
+- `src/renderers/tableSource.ts` — the seam, with `capabilities` so a
+  viewer hides a control rather than offering one that lies.
+- `src/sqlite/tableSource.ts` — the first pushdown implementation.
+- `src/renderers/sqlite.tsx` — the viewer, sharing the existing table
+  chrome (column picker, filter, sort glyphs, `onPage`/`onCellHover`).
+- Demo at `/mock/samples/catalog.sqlite`, registered as a lazy import;
+  e2e in `e2e/mock-demo.spec.ts`.
+
+Not built yet:
+
+- **Mode 2 as shipped code.** The spike proved a Worker can do this
+  (`tmp/sqlite-spike/`), but the library exports nothing for it: no
+  request handler, and no `TableSource` that talks to one over HTTP.
+  That client-side remote source is also mode 3 — same interface, so
+  one implementation covers both.
+- **The Durable Object.** A stateless Worker re-reads what the last
+  query already had; the numbers say the page cache matters more than
+  anything else here.
+- **Parquet and CSV behind `TableSource`.** They work as they are; the
+  seam only pays off once something else consumes it.
+
 ## Open
 
 - **Multi-table UI.** A `.db` is a directory of tables. ire stacks them all;
