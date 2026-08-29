@@ -310,18 +310,33 @@ Built (`995e2a1`, `30b71b7`, `d74a3aa`):
 - Demo at `/mock/samples/catalog.sqlite`, registered as a lazy import;
   e2e in `e2e/mock-demo.spec.ts`.
 
+Then modes 2 and 3 (`494df05`):
+
+- `src/renderers/tableSource.ts` gained `TableCatalog` — a file of
+  tables, which is the layer that lets one component serve either.
+- `src/renderers/tableBrowser.tsx` — the whole UI, driven by a catalog
+  and nothing else. `<SqliteViewer>` and `<RemoteTableViewer>` are thin
+  wirings over it; nothing in the remote path imports `wa-sqlite`.
+- `src/renderers/httpTableSource.ts` + `src/server/sqlite.ts` — the two
+  halves of the wire protocol (`/objects`, `/page`), tested against each
+  other in one process in `test/sqlite-remote.test.ts`.
+- The site runs `createTableHandlers` in a dev-time Vite middleware, and
+  the demo has an engine toggle: same view either way.
+
 Not built yet:
 
-- **Mode 2 as shipped code.** The spike proved a Worker can do this
-  (`tmp/sqlite-spike/`), but the library exports nothing for it: no
-  request handler, and no `TableSource` that talks to one over HTTP.
-  That client-side remote source is also mode 3 — same interface, so
-  one implementation covers both.
-- **The Durable Object.** A stateless Worker re-reads what the last
-  query already had; the numbers say the page cache matters more than
-  anything else here.
+- **The Durable Object.** `maxConnections` gives a warm Worker isolate a
+  connection cache, which is best-effort — the platform may evict the
+  isolate whenever it likes. A DO holding one connection is the version
+  that guarantees it, and the numbers say the page cache matters more
+  here than anything else.
 - **Parquet and CSV behind `TableSource`.** They work as they are; the
-  seam only pays off once something else consumes it.
+  seam only pays off once something else consumes it. Doing it would
+  also let `<TableBrowser>` replace their bespoke chrome, at the cost of
+  losing what each viewer knows that the seam doesn't (row-group
+  statistics, temporal inference) unless `capabilities` grows.
+- **A query box.** Obvious for SQLite, no analogue in parquet or CSV —
+  so it belongs to a SQLite-specific view, not to `TableSource`.
 
 ## Open
 
