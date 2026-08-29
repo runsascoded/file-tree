@@ -206,15 +206,34 @@ reads are dependent and can't be pipelined.
    read, cold. Whatever the multi-table UI ends up being, it costs nothing to
    populate — unlike parquet, where the footer is proportional to the file.
 
-2. **`OFFSET` is the enemy, not wasm.** Deep offset pagination is O(offset)
-   *page reads* — 900 round-trips for page 4000. Keyset pagination on an
-   indexed column (`where id > ?`) is 4 reads at any depth. This is a direct
-   constraint on `TableSource.page`: an offset-shaped interface is what a pager
-   UI wants, but the SQLite implementation must be able to take a cursor
-   instead. Options: carry an opaque `cursor` alongside `offset` for
-   next/prev (random jumps still pay), or let the source declare that it
-   prefers keyset and have the pager offer next/prev rather than page numbers.
-   **Decide this before the interface hardens.**
+2. **`OFFSET` is linear, and the fix is narrower than it looks.** A B-tree
+   has no rank index, so `OFFSET n` means *produce and discard* `n` rows —
+   each costing the page it sits on. Measured at 4 KiB blocks (1 block = 1
+   page; `events` is 1827 pages, ~110 rows/page):
+
+   | offset | 0 | 1k | 10k | 50k | 100k | 199 975 |
+   |---|---|---|---|---|---|---|
+   | OFFSET | 4 | 12 | 89 | 449 | 900 | 1828 (whole table) |
+   | keyset (`where id > ?`) | 4 | 4 | 4 | 4 | 4 | 4 |
+
+   Dead linear at 0.009 pages/row. This is not a wasm artifact — native SQLite
+   does the same work, just with microsecond page reads.
+
+   Keyset pagination fixes it *only for index-backed sorts*:
+
+   | | offset | keyset |
+   |---|---|---|
+   | indexed sort, depth 40 000 | 159 | **5** |
+   | unindexed sort (`order by value`) | 1828 | **1828** |
+
+   A user clicking a column header is the second row of that table: SQLite must
+   read and sort the whole table to know what row 1 is, at *offset 0*. Keyset
+   is also next/prev only (no jump-to-page-N) and needs a unique tiebreaker
+   appended to the sort key, or rows repeat across page boundaries.
+
+   So: keep `TableSource.page` offset-shaped, and add an opaque `cursor` later
+   as an optimization for indexed sorts. It does not need settling before the
+   interface hardens.
 
 3. **Block size is the mode-1/mode-2 dial.** Big blocks convert round-trips
    into bandwidth: 256 KiB turns 900 reads into 15, but makes a trivial query
@@ -225,11 +244,15 @@ reads are dependent and can't be pipelined.
 ### What this settles
 
 Mode 2 is a sound default and mode 1 is a real fallback, on one implementation.
-The remaining risk in mode 2 is not feasibility but *shape*: a Worker holds no
-state between requests, so every request re-instantiates wasm (~6 ms, tolerable)
-and re-reads the pages the last query already had (not tolerable for scans).
-A Durable Object holding an open connection plus its page cache is the obvious
-fix and is worth measuring before mode 2 is documented as the default.
+
+The bigger lever is **the page cache, not the query shape**. Reading those 1828
+pages once and keeping them makes every later query cheap, ad-hoc sorts
+included — worth more than keyset, and far simpler. That reframes mode 2: a
+stateless Worker re-instantiates wasm per request (~6 ms, fine) and re-reads
+pages the previous query already had (not fine for scans), so a Durable Object
+holding an open connection *and its page cache* isn't an optimization, it's the
+design. Mode 1 gets this for free — the cache lives in the tab for as long as
+the file is open.
 
 ## Where the code lives, and how easily it leaves
 
