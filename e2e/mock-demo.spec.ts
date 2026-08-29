@@ -536,6 +536,29 @@ test.describe('MockDemo', () => {
     await expect(page).toHaveURL(/page=1/)
   })
 
+  test('the same view renders against a remote engine', async ({ page }) => {
+    // `?engine=server` swaps `sqliteCatalog` (wasm in this tab) for
+    // `httpTableCatalog` (wasm in a Vite middleware, which is what a
+    // Cloudflare Worker would run). Everything below the catalog is the
+    // same component, so the assertion is that nothing visibly changes.
+    await page.goto('/mock/samples/catalog.sqlite?engine=server&table=rides&sort=-duration_s')
+
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 15_000 })
+    expect(await sqliteRow(page, 'header')).toEqual(
+      ['id ↕', 'station_id ↕', 'started_at ↕', 'duration_s ▼', 'member ↕'])
+    expect(await sqliteRow(page, 0)).toEqual(
+      ['287', '12', '2026-01-02 10:21:37', '59m 59s', 'member'])
+    await expect(page.getByText('900 rows · 1–25')).toBeVisible()
+
+    // The browser made no ranged reads of its own — there is no
+    // database in this tab to read.
+    await expect(page.locator('span[title="ranged reads / cache hits"]')).toHaveCount(0)
+
+    // Sort and filter are the server's `ORDER BY` and `WHERE`.
+    await page.getByPlaceholder('filter').fill('2026-01-05 11')
+    await expect(page.getByText('7 rows · 1–7')).toBeVisible()
+  })
+
   test('shows error for non-existent path', async ({ page }) => {
     await page.goto('/mock/missing.md')
     await expect(page.getByText(/^error:.*NotFoundError/)).toBeVisible()

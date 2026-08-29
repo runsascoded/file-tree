@@ -10,7 +10,7 @@
 import type { TableColumn } from '../renderers/table'
 import {
   kindOfDeclaredType,
-  type PageRequest, type PageResult, type TableSource, type TableSourceCapabilities,
+  type PageRequest, type PageResult, type TableCatalog, type TableSource, type TableSourceCapabilities,
 } from '../renderers/tableSource'
 import { quoteIdent, type SqliteDb } from './db'
 
@@ -103,5 +103,24 @@ export function sqliteTableSource(
     columns,
     page,
     capabilities: countRows ? CAPABILITIES : { ...CAPABILITIES, total: false },
+  }
+}
+
+/** Every table and view in a database, as a `TableCatalog`.
+ *
+ *  Sources are memoised per table so switching back and forth doesn't
+ *  discard the column list and row count each already fetched. */
+export function sqliteCatalog(db: SqliteDb, opts: SqliteTableSourceOptions = {}): TableCatalog {
+  const sources = new Map<string, TableSource>()
+  return {
+    objects: () => db.objects(),
+    source(name: string) {
+      let source = sources.get(name)
+      if (!source) {
+        source = sqliteTableSource(db, name, opts)
+        sources.set(name, source)
+      }
+      return source
+    },
   }
 }

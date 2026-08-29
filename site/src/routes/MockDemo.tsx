@@ -400,6 +400,18 @@ export function MockDemo() {
           packaging decision, not an architectural one.
         </p>
         <p>
+          In dev, that page also carries an <strong>engine</strong> toggle. Both settings render
+          the same <code>&lt;TableBrowser&gt;</code>; they differ in who runs SQLite.{' '}
+          <em>browser</em> is <code>sqliteCatalog</code> over a VFS reading the file by ranges —
+          simple, and needs no backend, but SQLite's page reads are <em>dependent</em>, so each is
+          a round-trip that can't be pipelined. <em>server</em> is{' '}
+          <code>httpTableCatalog</code> against <code>createTableHandlers</code>, which is the
+          library code a Cloudflare Worker with an R2 binding would mount; the seeking happens
+          next to the bytes and the browser gets one request and some rows. The read counter
+          disappears in that mode because this tab has made no ranged reads at all. (Dev only —
+          a static build has nowhere to run the middleware.)
+        </p>
+        <p>
           The fixture is an <code>{'{ key: content }'}</code> object literal in{' '}
           <code>site/src/fixtures/demo.ts</code>. <code>MockStore</code> wraps it with the same{' '}
           <code>Store</code> interface real backends (R2, HTTP, …) implement, so{' '}

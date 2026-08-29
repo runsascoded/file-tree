@@ -62,6 +62,11 @@
       "import": "./dist/server/index.js",
       "require": "./dist/server/index.cjs"
     },
+    "./server/sqlite": {
+      "types": "./dist/server/sqlite.d.ts",
+      "import": "./dist/server/sqlite.js",
+      "require": "./dist/server/sqlite.cjs"
+    },
     "./renderers/table": {
       "types": "./dist/renderers/table.d.ts",
       "import": "./dist/renderers/table.js",
@@ -72,10 +77,25 @@
       "import": "./dist/renderers/tableSource.js",
       "require": "./dist/renderers/tableSource.cjs"
     },
+    "./renderers/httpTableSource": {
+      "types": "./dist/renderers/httpTableSource.d.ts",
+      "import": "./dist/renderers/httpTableSource.js",
+      "require": "./dist/renderers/httpTableSource.cjs"
+    },
     "./renderers/sqlite": {
       "types": "./dist/renderers/sqlite.d.ts",
       "import": "./dist/renderers/sqlite.js",
       "require": "./dist/renderers/sqlite.cjs"
+    },
+    "./renderers/tableBrowser": {
+      "types": "./dist/renderers/tableBrowser.d.ts",
+      "import": "./dist/renderers/tableBrowser.js",
+      "require": "./dist/renderers/tableBrowser.cjs"
+    },
+    "./renderers/remoteTable": {
+      "types": "./dist/renderers/remoteTable.d.ts",
+      "import": "./dist/renderers/remoteTable.js",
+      "require": "./dist/renderers/remoteTable.cjs"
     },
     "./renderers/tableControls": {
       "types": "./dist/renderers/tableControls.d.ts",

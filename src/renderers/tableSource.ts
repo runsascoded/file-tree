@@ -72,6 +72,28 @@ export interface TableSource<C extends TableColumn = TableColumn> {
   readonly capabilities: TableSourceCapabilities
 }
 
+/** One thing inside a file that renders as a table. */
+export interface TableObject {
+  name: string
+  /** `view` is worth distinguishing because it explains why a thing is
+   *  slower, or read-only, or absent from the schema you expected. */
+  type: 'table' | 'view'
+  /** Its definition, where the format has one. */
+  sql?: string | null
+}
+
+/** A file that contains several tables.
+ *
+ *  The layer that lets one component render a database whether the
+ *  engine is running in this tab or behind an HTTP endpoint. A
+ *  single-table format (a parquet file, a CSV) is the degenerate case:
+ *  one object, one source.
+ */
+export interface TableCatalog<C extends TableColumn = TableColumn> {
+  objects(): Promise<readonly TableObject[]>
+  source(name: string): TableSource<C>
+}
+
 /** SQLite's type-affinity rules, reduced to the coarse `kind` the table
  *  viewers render on.
  *
