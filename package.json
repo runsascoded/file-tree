@@ -67,6 +67,11 @@
       "import": "./dist/renderers/table.js",
       "require": "./dist/renderers/table.cjs"
     },
+    "./renderers/tableSource": {
+      "types": "./dist/renderers/tableSource.d.ts",
+      "import": "./dist/renderers/tableSource.js",
+      "require": "./dist/renderers/tableSource.cjs"
+    },
     "./renderers/tableControls": {
       "types": "./dist/renderers/tableControls.d.ts",
       "import": "./dist/renderers/tableControls.js",
@@ -131,6 +136,16 @@
       "types": "./dist/sqlite/vfs.d.ts",
       "import": "./dist/sqlite/vfs.js",
       "require": "./dist/sqlite/vfs.cjs"
+    },
+    "./sqlite/db": {
+      "types": "./dist/sqlite/db.d.ts",
+      "import": "./dist/sqlite/db.js",
+      "require": "./dist/sqlite/db.cjs"
+    },
+    "./sqlite/tableSource": {
+      "types": "./dist/sqlite/tableSource.d.ts",
+      "import": "./dist/sqlite/tableSource.js",
+      "require": "./dist/sqlite/tableSource.cjs"
     }
   },
   "scripts": {
