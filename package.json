@@ -1,7 +1,7 @@
 {
   "name": "@rdub/file-tree",
   "version": "0.0.1",
-  "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
+  "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, \u2026).",
   "type": "module",
   "files": [
     "dist"
@@ -67,12 +67,12 @@
       "import": "./dist/renderers/table.js",
       "require": "./dist/renderers/table.cjs"
     },
-"./renderers/tableControls": {
+    "./renderers/tableControls": {
       "types": "./dist/renderers/tableControls.d.ts",
       "import": "./dist/renderers/tableControls.js",
       "require": "./dist/renderers/tableControls.cjs"
     },
-"./renderers/tableSort": {
+    "./renderers/tableSort": {
       "types": "./dist/renderers/tableSort.d.ts",
       "import": "./dist/renderers/tableSort.js",
       "require": "./dist/renderers/tableSort.cjs"
@@ -87,7 +87,7 @@
       "import": "./dist/renderers/parquet.js",
       "require": "./dist/renderers/parquet.cjs"
     },
-"./renderers/parquetData": {
+    "./renderers/parquetData": {
       "types": "./dist/renderers/parquetData.d.ts",
       "import": "./dist/renderers/parquetData.js",
       "require": "./dist/renderers/parquetData.cjs"
@@ -102,7 +102,7 @@
       "import": "./dist/renderers/csv.js",
       "require": "./dist/renderers/csv.cjs"
     },
-"./renderers/csvData": {
+    "./renderers/csvData": {
       "types": "./dist/renderers/csvData.d.ts",
       "import": "./dist/renderers/csvData.js",
       "require": "./dist/renderers/csvData.cjs"
@@ -126,6 +126,11 @@
       "types": "./dist/url-state/index.d.ts",
       "import": "./dist/url-state/index.js",
       "require": "./dist/url-state/index.cjs"
+    },
+    "./sqlite/vfs": {
+      "types": "./dist/sqlite/vfs.d.ts",
+      "import": "./dist/sqlite/vfs.js",
+      "require": "./dist/sqlite/vfs.cjs"
     }
   },
   "scripts": {
@@ -165,7 +170,8 @@
     "react-router-dom": "^6 || ^7",
     "remark-gfm": "^3 || ^4",
     "use-prms": "^0.4",
-    "yaml": "^2"
+    "yaml": "^2",
+    "wa-sqlite": "^1"
   },
   "peerDependenciesMeta": {
     "yaml": {
@@ -197,6 +203,9 @@
     },
     "use-prms": {
       "optional": true
+    },
+    "wa-sqlite": {
+      "optional": true
     }
   },
   "devDependencies": {
@@ -214,6 +223,7 @@
     "typescript": "^5.9.0",
     "use-prms": "^0.4.1",
     "vitest": "^2.1.8",
+    "wa-sqlite": "^1.0.0",
     "yaml": "^2.9.0"
   },
   "dependencies": {

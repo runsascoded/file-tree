@@ -13,6 +13,7 @@ export default defineConfig({
     'src/stores/gcs.ts',
     'src/server/index.ts',
     'src/test/conformance.ts',
+    'src/sqlite/vfs.ts',
     'src/renderers/table.ts',
     'src/renderers/tableControls.tsx',
     'src/renderers/tableSort.ts',
@@ -41,6 +42,7 @@ export default defineConfig({
     'remark-gfm',
     'highlight.js',
     'jq-web',
+    'wa-sqlite',
     'use-prms',
   ],
 })

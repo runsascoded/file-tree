@@ -57,6 +57,9 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9
+      wa-sqlite:
+        specifier: ^1.0.0
+        version: 1.0.0
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -1253,6 +1256,9 @@ packages:
         optional: true
       jsdom:
         optional: true
+
+  wa-sqlite@1.0.0:
+    resolution: {integrity: sha512-Kyybo5/BaJp76z7gDWGk2J6Hthl4NIPsE+swgraEjy3IY6r5zIR02wAs1OJH4XtJp1y3puj3Onp5eMGS0z7nUA==}
 
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
@@ -2543,6 +2549,8 @@ snapshots:
       - sugarss
       - supports-color
       - terser
+
+  wa-sqlite@1.0.0: {}
 
   why-is-node-running@2.3.0:
     dependencies:
