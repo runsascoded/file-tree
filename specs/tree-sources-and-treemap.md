@@ -400,13 +400,33 @@ library like ours. Plan:
   size renders). Demo: `walkTreeSource(store)` over the mock fixture — verified
   in-browser, dir rows show recursive totals (`docs/` = 459 B = 120+207+132).
 
+**Built — the `<Treemap>` wrapper + list↔treemap toggle:**
+
+- `src/renderers/treemap.tsx` — `<TreeMapView source={TreeSource}>` wraps
+  `@disk-tree/react`'s generic `<Treemap<TreeNode>>` through a handful of
+  accessors + a `path → children` cache that `getChildren` reads synchronously
+  as `loadChildren` fills it; the map drives its own lazy drill (click a dir
+  tile to descend), so it needs no router. `@disk-tree/react` is an *optional
+  peer*, statically imported here and marked `external`, so it never lands in
+  the main bundle — a consumer installs it and lazy-loads this subpath.
+- `<FileTree treemapRenderer={…} treeSource={…}>` gains a list↔map toggle in
+  the dir view (`DirView`/`ViewToggle`), persisted to `?view=tree` via the same
+  `usePersistedState` everything else uses. `treemapRenderer` is pluggable (like
+  `parquetRenderer`) so the core never imports the peer.
+- The pin that unblocked this: `@disk-tree/react` is now git-pinnable at the
+  dist-branch root — DT added an npm-dist `package_dir` input that flattens
+  `packages/react` to the branch root, so
+  `github:runsascoded/disk-tree#<dist-sha>` resolves `@disk-tree/react`
+  directly (was a nested workspace before). file-tree + site pin
+  `#bdfe23ac…` (`0.1.0-dist.6ed3eed`); `--frozen-lockfile` CI resolves it.
+- Exports: subpath `./renderers/treemap`, `/react` re-exports the
+  `TreemapRenderer`/`TreemapRendererProps` types (not the component — it pulls
+  the peer). Demo passes `treemapRenderer={TreeMapView}`; e2e asserts the
+  toggle renders the map, drills `samples`→`catalog.sqlite`, and restores the
+  list. 233 unit, 35 e2e (+1 treemap), verified in-browser.
+
 **Not built yet (in priority order):**
 
-- **The `<Treemap>` wrapper + list↔treemap toggle.** Blocked on Half C of the
-  DT spec: `@disk-tree/react` is source-only today, so file-tree can't pin it
-  for a `tsup` build. Once DT ships a dist branch (`npm-dist`), add
-  `renderers/treemap.tsx` (optional peer, lazy chunk) wiring a `TreeSource` to
-  its accessors, plus the URL-persisted view toggle in the dir header.
 - **Layers 1 & 2** — `snapshotTreeSource` (read DT's rollup parquet; can reuse
   the SQLite block cache), `httpTreeSource` + `createTreeHandlers`, and the
   `diskTreeTreeSource` adapter over DT's existing Flask API.
