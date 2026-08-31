@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.94a116e",
+  "version": "0.0.1-dist.92c4542",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -123,6 +123,56 @@
       "types": "./renderers/tableSort.d.ts",
       "import": "./renderers/tableSort.js",
       "require": "./renderers/tableSort.cjs"
+    },
+    "./server/sqlite": {
+      "types": "./server/sqlite.d.ts",
+      "import": "./server/sqlite.js",
+      "require": "./server/sqlite.cjs"
+    },
+    "./renderers/tableSource": {
+      "types": "./renderers/tableSource.d.ts",
+      "import": "./renderers/tableSource.js",
+      "require": "./renderers/tableSource.cjs"
+    },
+    "./renderers/httpTableSource": {
+      "types": "./renderers/httpTableSource.d.ts",
+      "import": "./renderers/httpTableSource.js",
+      "require": "./renderers/httpTableSource.cjs"
+    },
+    "./renderers/sqlite": {
+      "types": "./renderers/sqlite.d.ts",
+      "import": "./renderers/sqlite.js",
+      "require": "./renderers/sqlite.cjs"
+    },
+    "./renderers/tableBrowser": {
+      "types": "./renderers/tableBrowser.d.ts",
+      "import": "./renderers/tableBrowser.js",
+      "require": "./renderers/tableBrowser.cjs"
+    },
+    "./renderers/remoteTable": {
+      "types": "./renderers/remoteTable.d.ts",
+      "import": "./renderers/remoteTable.js",
+      "require": "./renderers/remoteTable.cjs"
+    },
+    "./sqlite/vfs": {
+      "types": "./sqlite/vfs.d.ts",
+      "import": "./sqlite/vfs.js",
+      "require": "./sqlite/vfs.cjs"
+    },
+    "./sqlite/db": {
+      "types": "./sqlite/db.d.ts",
+      "import": "./sqlite/db.js",
+      "require": "./sqlite/db.cjs"
+    },
+    "./sqlite/tableSource": {
+      "types": "./sqlite/tableSource.d.ts",
+      "import": "./sqlite/tableSource.js",
+      "require": "./sqlite/tableSource.cjs"
+    },
+    "./sqlite/blockCache": {
+      "types": "./sqlite/blockCache.d.ts",
+      "import": "./sqlite/blockCache.js",
+      "require": "./sqlite/blockCache.cjs"
     }
   },
   "keywords": [
@@ -151,7 +201,8 @@
     "remark-gfm": "^3 || ^4",
     "jq-web": "^0.6",
     "use-prms": "^0.4",
-    "yaml": "^2"
+    "yaml": "^2",
+    "wa-sqlite": "^1"
   },
   "peerDependenciesMeta": {
     "react": {
