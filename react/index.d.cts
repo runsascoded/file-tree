@@ -4,6 +4,8 @@ import { Entry, Store, ZipEntriesResult, GetResult } from '../index.cjs';
 import { TreeSource } from '../renderers/treeSource.cjs';
 export { ChildrenRequest, Snapshot, TreeLevel, TreeNode, TreeSourceCapabilities, TreeTooLargeError } from '../renderers/treeSource.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
+import { a as Parsed } from '../parsePath-CLQfXstk.cjs';
+export { A as AUDIO, C as CODE_LANG, I as IMAGE, P as ParsePathOptions, T as TEXTY, V as VIDEO, b as basename, e as extOf, k as keyToSplat, p as parsePath } from '../parsePath-CLQfXstk.cjs';
 export { WalkTreeSourceOptions, walkTreeSource } from '../renderers/walkTreeSource.cjs';
 
 interface Crumb {
@@ -90,78 +92,6 @@ interface DirListingProps {
     treeSource?: TreeSource;
 }
 declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, filterPlaceholder, usePersistedState, markdownRenderer, renderCell, treeSource }: DirListingProps): react_jsx_runtime.JSX.Element;
-
-/** Parse a URL path-suffix into a renderable view kind + store key.
- *
- * `splat` is the URL after the route base (e.g. `<FileTree routeBase="/files" />`
- * receives the `pathname.replace(/^\/files\/?/, "")` part). It's
- * percent-encoded; we decode before building the store key so entry names
- * with spaces or unicode round-trip correctly.
- *
- * Zip entries use the [pkzip-URI convention][1] of `!/` between the
- * archive path and the entry name (`<zip>!/<entry>`). Currently parsed
- * but rendered as `binary` in v1 (zip support TBD).
- *
- * [1]: https://docs.gradle.org/current/userguide/declaring_repositories.html#zip_uri
- */
-declare const TEXTY: Set<string>;
-/** Map file extension → highlight.js / shiki language id. Subset of
- *  TEXTY; extensions not in this map fall through to plaintext. */
-declare const CODE_LANG: Record<string, string>;
-declare const IMAGE: Set<string>;
-declare const VIDEO: Set<string>;
-declare const AUDIO: Set<string>;
-type Parsed = {
-    kind: 'dir';
-    prefix: string;
-} | {
-    kind: 'zip';
-    path: string;
-} | {
-    kind: 'zipEntry';
-    path: string;
-    entry: string;
-} | {
-    kind: 'text';
-    path: string;
-} | {
-    kind: 'parquet';
-    path: string;
-} | {
-    kind: 'notebook';
-    path: string;
-} | {
-    kind: 'pdf';
-    path: string;
-} | {
-    kind: 'image';
-    path: string;
-} | {
-    kind: 'video';
-    path: string;
-} | {
-    kind: 'audio';
-    path: string;
-} | {
-    kind: 'binary';
-    path: string;
-};
-interface ParsePathOptions {
-    /** Optional root prefix prepended to every key. E.g. `'raw/'` makes
-     *  `parsePath('njdot/data/')` resolve to `{ kind: 'dir', prefix: 'raw/njdot/data/' }`.
-     *  Default: empty string (splat is the full key). */
-    rootPrefix?: string;
-    /** Additional file extensions to render as text. Merged with the default
-     *  TEXTY set. */
-    extraTexty?: string[];
-}
-declare function extOf(name: string): string;
-declare function parsePath(splat: string, opts?: ParsePathOptions): Parsed;
-/** Strip the root prefix from a store key to produce a route-relative
- *  splat for `<Link to=...>`. Inverse of `parsePath` when given the
- *  same `rootPrefix`. */
-declare function keyToSplat(key: string, rootPrefix?: string): string;
-declare function basename(key: string): string;
 
 /** What a viewer is handed. Every viewer takes these; anything else it
  *  needs comes from its entry's `options`. */
@@ -483,4 +413,4 @@ declare function fmtSize(n: number | undefined): string;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { AUDIO, type AsyncBuffer, Breadcrumb, CODE_LANG, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, PersistedState, RegistryViewer, TEXTY, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, VIDEO, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, basename, extOf, findViewer, fmtSize, keyToSplat, makeMatcher, parsePath, readZipEntries, readZipEntry };
+export { type AsyncBuffer, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PersistedState, RegistryViewer, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, findViewer, fmtSize, makeMatcher, readZipEntries, readZipEntry };
