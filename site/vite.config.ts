@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import { createTableHandlers } from '@rdub/file-tree/server/sqlite'
+import { memoryBlockCache } from '@rdub/file-tree/sqlite/blockCache'
 import { CATALOG_SQLITE } from './src/fixtures/catalog'
 
 const require_ = createRequire(import.meta.url)
@@ -50,6 +51,12 @@ function tableApi() {
     {
       wasm: { wasmBinary: readFileSync(require_.resolve('wa-sqlite/dist/wa-sqlite-async.wasm')) },
       basePath: '/api/tables',
+      // In a Worker this would be `workersBlockCache()` — blocks in
+      // `caches.default`, shared by every isolate in the colo, so an
+      // evicted isolate costs a wasm compile and no reads. Here the
+      // middleware is one long-lived Node process, so a `Map` is the
+      // equivalent: shared across requests, gone on restart.
+      blockCache: memoryBlockCache(),
     },
   )
   return {

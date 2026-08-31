@@ -323,13 +323,46 @@ Then modes 2 and 3 (`494df05`):
 - The site runs `createTableHandlers` in a dev-time Vite middleware, and
   the demo has an engine toggle: same view either way.
 
-Not built yet:
+Then the shared block cache:
 
-- **The Durable Object.** `maxConnections` gives a warm Worker isolate a
-  connection cache, which is best-effort — the platform may evict the
-  isolate whenever it likes. A DO holding one connection is the version
-  that guarantees it, and the numbers say the page cache matters more
-  here than anything else.
+- `src/sqlite/blockCache.ts` — `cachedRangeReader`, an L2 under the VFS.
+  Fixed-size aligned blocks (the VFS's are neither, since readahead
+  grows them), contiguous misses coalesced into one read, and
+  `workersBlockCache()` over `caches.default`.
+- `cachedRangeReaderFromStore` caches the *size* too. Learning it is a
+  separate round-trip before the first block can be read, so without
+  this a warm isolate still pays one — and the version key pins the size
+  as surely as it pins the pages.
+- Keys name contents, not location: `httpTableCatalog({ version })`
+  forwards a `version`, and the server uses the block cache only when
+  one is present. A key of path alone would serve a re-uploaded database
+  out of the previous one's pages, and a wrong hit is silent corruption
+  where a miss is only a read.
+- Same fix applied to the *connection* cache, which had the bug already:
+  keyed on path alone, a warm isolate kept serving a replaced file from
+  the old connection's pages. `test/fixtures/sample-v2.sqlite` exists so
+  that is observable rather than asserted against itself.
+- Measured on `sample.sqlite` (`test/sqlite-block-cache.test.ts`), one
+  query with an unindexed sort: 7 store reads cold through the VFS
+  alone, 4 cold with 64 KiB blocks underneath, **0** on a fresh handler
+  over a warm cache.
+
+Not built, and now deliberately not next:
+
+- **The Durable Object.** The original argument was that `maxConnections`
+  is best-effort — Cloudflare may evict the isolate whenever it likes —
+  and a DO holding one connection is the version that guarantees it.
+  That argument survives, but it was aimed at the wrong cost. What
+  eviction actually loses is the *page cache*, and `caches.default`
+  keeps that across isolates for one option and no infrastructure. A DO
+  brings a migration in every consumer's `wrangler.toml`, a hand-pinned
+  `locationHint` (a DO placed near the first *reader* rather than near
+  the bucket inverts the entire reason to run the engine server-side —
+  note ctbk's Worker already uses Smart Placement, which a DO opts out
+  of), and head-of-line blocking between readers of one file. Worth it
+  when a measurement says the remaining cost — wasm compile and
+  connection open, both local CPU — is what hurts. There is no such
+  measurement.
 - **Parquet and CSV behind `TableSource`.** They work as they are; the
   seam only pays off once something else consumes it. Doing it would
   also let `<TableBrowser>` replace their bespoke chrome, at the cost of

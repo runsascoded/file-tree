@@ -39,6 +39,15 @@ export interface HttpTableCatalogOptions {
   baseUrl: string
   /** Store key of the file being browsed, forwarded as `path`. */
   path: string
+  /** Version of the file's *contents* — an etag, or the `lastModified`
+   *  the directory listing already carries.
+   *
+   *  Forwarded as `version`, and the server's shared block cache is
+   *  keyed on it. Omit it and that cache is skipped entirely: a key of
+   *  path alone would serve a re-uploaded database out of the previous
+   *  one's pages, and a wrong hit is silent corruption where a miss is
+   *  only a read. Costs nothing to send, so send it when you have it. */
+  version?: string
   /** Escape hatch for auth headers, credentials, an `AbortSignal`, or a
    *  test double. Defaults to global `fetch`. */
   fetch?: typeof fetch
@@ -77,10 +86,17 @@ export function httpTableCatalog(opts: HttpTableCatalogOptions): TableCatalog {
 
   let objectsPromise: Promise<readonly TableObject[]> | null = null
 
+  /** The parameters every request carries. */
+  const identity = () => {
+    const params = new URLSearchParams({ path: opts.path })
+    if (opts.version) params.set('version', opts.version)
+    return params
+  }
+
   return {
     objects() {
       objectsPromise ??= getJson<{ objects: TableObject[] }>(
-        doFetch, `${base}/objects?${new URLSearchParams({ path: opts.path })}`,
+        doFetch, `${base}/objects?${identity()}`,
       ).then(r => r.objects)
       return objectsPromise
     },
@@ -89,12 +105,10 @@ export function httpTableCatalog(opts: HttpTableCatalogOptions): TableCatalog {
       let columnsPromise: Promise<readonly TableColumn[]> | null = null
 
       const page = async (req: PageRequest): Promise<PageResult> => {
-        const params = new URLSearchParams({
-          path: opts.path,
-          table,
-          offset: String(req.offset),
-          limit: String(req.limit),
-        })
+        const params = identity()
+        params.set('table', table)
+        params.set('offset', String(req.offset))
+        params.set('limit', String(req.limit))
         if (req.filter?.trim()) params.set('filter', req.filter)
         if (req.sort) { params.set('sort', req.sort.column); params.set('dir', req.sort.dir) }
         return getJson<PageResult>(doFetch, `${base}/page?${params}`)

@@ -994,3 +994,12 @@ const BASE64 = [
 
 export const CATALOG_SQLITE: Uint8Array = Uint8Array.from(
   atob(BASE64), c => c.charCodeAt(0))
+
+/** Content hash, for the remote engine's block cache.
+ *
+ *  A real deployment sends an etag, or the `lastModified` the file
+ *  listing already carries; a fixture compiled into the bundle has
+ *  neither, so its digest stands in. The point is the same either way:
+ *  the key names these bytes, so re-generating the fixture cannot be
+ *  served out of the previous one's pages. */
+export const CATALOG_VERSION = '55971009ad7ee3ff'

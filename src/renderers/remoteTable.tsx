@@ -25,7 +25,7 @@ export interface RemoteTableViewerOptions extends TableBrowserOptions,
   Omit<HttpTableCatalogOptions, 'path'> {}
 
 export function RemoteTableViewer({
-  path, usePersistedState, baseUrl, fetch: doFetch, capabilities, ...browser
+  path, usePersistedState, baseUrl, version, fetch: doFetch, capabilities, ...browser
 }: { path: string; usePersistedState?: PersistedState } & RemoteTableViewerOptions) {
   const [objects, setObjects] = useState<readonly TableObject[] | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -34,6 +34,7 @@ export function RemoteTableViewer({
     () => httpTableCatalog({
       baseUrl,
       path,
+      ...(version ? { version } : {}),
       ...(doFetch ? { fetch: doFetch } : {}),
       ...(capabilities ? { capabilities } : {}),
     }),
@@ -41,7 +42,7 @@ export function RemoteTableViewer({
     // rebuilding the catalog on its identity would discard every
     // memoised source and refetch on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseUrl, path, doFetch])
+    [baseUrl, path, version, doFetch])
 
   useEffect(() => {
     let live = true

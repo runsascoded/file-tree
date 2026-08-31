@@ -171,6 +171,11 @@
       "types": "./dist/sqlite/tableSource.d.ts",
       "import": "./dist/sqlite/tableSource.js",
       "require": "./dist/sqlite/tableSource.cjs"
+    },
+    "./sqlite/blockCache": {
+      "types": "./dist/sqlite/blockCache.d.ts",
+      "import": "./dist/sqlite/blockCache.js",
+      "require": "./dist/sqlite/blockCache.cjs"
     }
   },
   "scripts": {

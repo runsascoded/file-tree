@@ -32,6 +32,7 @@ import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import type { TableCellCtx } from '@rdub/file-tree/renderers/table'
 import type { Store } from '@rdub/file-tree'
 import type { PersistedState } from '@rdub/file-tree/react'
+import { CATALOG_VERSION } from '../fixtures/catalog'
 
 const LINK: React.CSSProperties = { color: '#4a9eff', cursor: 'pointer', textDecoration: 'underline' }
 
@@ -87,7 +88,7 @@ export default function CatalogViewer(props: {
     <>
       {import.meta.env.DEV && <EngineToggle engine={engine} setEngine={setEngine} />}
       {engine === 'server'
-        ? <RemoteTableViewer {...shared} path={props.path} baseUrl="/api/tables" />
+        ? <RemoteTableViewer {...shared} path={props.path} baseUrl="/api/tables" version={CATALOG_VERSION} />
         : <SqliteViewer {...shared} {...props} wasm={{ wasmUrl }} showStats />}
     </>
   )

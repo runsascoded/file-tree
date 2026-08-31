@@ -17,6 +17,7 @@ export default defineConfig({
     'src/sqlite/vfs.ts',
     'src/sqlite/db.ts',
     'src/sqlite/tableSource.ts',
+    'src/sqlite/blockCache.ts',
     'src/renderers/table.ts',
     'src/renderers/tableSource.ts',
     'src/renderers/httpTableSource.ts',

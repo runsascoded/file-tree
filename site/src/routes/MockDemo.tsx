@@ -412,6 +412,18 @@ export function MockDemo() {
           a static build has nowhere to run the middleware.)
         </p>
         <p>
+          The server mode also runs a <strong>shared block cache</strong> under the VFS. A
+          Worker isolate holds its connection — and that connection's page cache — only for as
+          long as Cloudflare keeps the isolate around, which is at the platform's discretion; the
+          part that eviction actually loses is the reads, and those are network. So the blocks go
+          in <code>caches.default</code>, which every isolate in the colo shares, and here in a{' '}
+          <code>Map</code> in the middleware. The client sends a <code>version</code> alongside{' '}
+          <code>path</code> — an etag, or the <code>lastModified</code> the directory listing
+          already carries, and for this fixture a digest of the bytes — because the key has to
+          name the file's <em>contents</em>: a re-uploaded database served from the old one's
+          pages is silent corruption, where a miss is only a read.
+        </p>
+        <p>
           The fixture is an <code>{'{ key: content }'}</code> object literal in{' '}
           <code>site/src/fixtures/demo.ts</code>. <code>MockStore</code> wraps it with the same{' '}
           <code>Store</code> interface real backends (R2, HTTP, …) implement, so{' '}
