@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@disk-tree/react':
+        specifier: github:runsascoded/disk-tree#bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7
+        version: https://codeload.github.com/runsascoded/disk-tree/tar.gz/bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@floating-ui/react':
         specifier: ^0.27.20
         version: 0.27.20(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -148,6 +151,20 @@ packages:
   '@babel/types@7.29.0':
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
+
+  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7':
+    resolution: {tarball: https://codeload.github.com/runsascoded/disk-tree/tar.gz/bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7}
+    version: 0.1.0-dist.6ed3eed
+    peerDependencies:
+      d3-hierarchy: '>=3'
+      d3-voronoi-treemap: '>=1.1'
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      d3-hierarchy:
+        optional: true
+      d3-voronoi-treemap:
+        optional: true
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -1146,6 +1163,11 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
+
+  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true

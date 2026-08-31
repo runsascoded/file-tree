@@ -68,6 +68,40 @@ test.describe('MockDemo', () => {
     await expect(regionsRow.getByRole('cell').nth(1)).toHaveText('207 B')
   })
 
+  test('the treemap toggle renders the tree as area, and drills', async ({ page }) => {
+    await page.goto('/mock')
+    // The list↔map toggle only appears when both a treeSource and a
+    // treemapRenderer are wired. Switching to the map persists to
+    // ?view=tree and renders @disk-tree/react's <Treemap> over the same
+    // walked source that fills the dir-size cells.
+    await page.getByRole('button', { name: 'Treemap view' }).click()
+    await expect(page).toHaveURL(/\?view=tree$/)
+    // The map's own crumb bar reports the rooted node + its recursive
+    // total (86.6 KB = samples 84.7K + the small dirs/files).
+    await expect(page.getByText('root').first()).toBeVisible()
+    await expect(page.getByText('86.6 KB')).toBeVisible()
+    // samples dominates the map; its cell carries label + size. Locate
+    // the branch cell itself (the click handler) rather than the label
+    // span inside it, which the cell div intercepts pointer events for.
+    const samples = page.locator('.dt-treemap-cell.branch', { hasText: 'samples' }).first()
+    await expect(samples).toBeVisible()
+
+    // Clicking a directory tile drills in via loadChildren — no
+    // navigation, the crumb becomes root / samples and the biggest
+    // child (catalog.sqlite, 72 KB) is now the dominant cell. Click the
+    // label strip (top-left) so a nested child tile can't intercept.
+    await samples.click({ position: { x: 30, y: 10 } })
+    await expect(page.getByText('84.7 KB')).toBeVisible()
+    const catalog = page.locator('.dt-treemap-cell', { hasText: 'catalog.sqlite' }).first()
+    await expect(catalog).toBeVisible()
+    await expect(catalog).toContainText('72.0 KB')
+
+    // Toggling back to the list restores the table and drops ?view=tree.
+    await page.getByRole('button', { name: 'List view' }).click()
+    await expect(page).not.toHaveURL(/view=tree/)
+    await expect(page.getByRole('row').filter({ hasText: /📁\s*samples\// })).toBeVisible()
+  })
+
   test('filters entries', async ({ page }) => {
     await page.goto('/mock')
     await expect(page.getByText('7 entries')).toBeVisible()

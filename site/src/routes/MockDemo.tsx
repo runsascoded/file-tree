@@ -10,6 +10,7 @@ import { renderJsonTree } from '@rdub/file-tree/renderers/json'
 import { makeCsvViewer } from '@rdub/file-tree/renderers/csv'
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
+import { TreeMapView } from '@rdub/file-tree/renderers/treemap'
 import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
 import { isS2Cell, S2Cell } from '../components/S2CellPreview'
@@ -337,6 +338,7 @@ export function MockDemo() {
         routeBase="/mock"
         title="MockStore demo"
         treeSource={treeSource}
+        treemapRenderer={TreeMapView}
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
         parquetOptions={parquetOptions}

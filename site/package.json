@@ -21,7 +21,8 @@
     "remark-gfm": "^4.0.1",
     "s2js": "^1.44.0",
     "wa-sqlite": "^1.0.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "@disk-tree/react": "github:runsascoded/disk-tree#bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7"
   },
   "devDependencies": {
     "@types/react": "^18.3.27",

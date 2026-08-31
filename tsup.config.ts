@@ -23,6 +23,7 @@ export default defineConfig({
     'src/renderers/tableSource.ts',
     'src/renderers/treeSource.ts',
     'src/renderers/walkTreeSource.ts',
+    'src/renderers/treemap.tsx',
     'src/renderers/httpTableSource.ts',
     'src/renderers/sqlite.tsx',
     'src/renderers/tableBrowser.tsx',
@@ -56,5 +57,6 @@ export default defineConfig({
     'jq-web',
     'wa-sqlite',
     'use-prms',
+    '@disk-tree/react',
   ],
 })

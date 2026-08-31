@@ -15,6 +15,9 @@ importers:
         specifier: ^0.6
         version: 0.6.2
     devDependencies:
+      '@disk-tree/react':
+        specifier: github:runsascoded/disk-tree#bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7
+        version: https://codeload.github.com/runsascoded/disk-tree/tar.gz/bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@playwright/test':
         specifier: ^1.59.1
         version: 1.59.1
@@ -65,6 +68,20 @@ importers:
         version: 2.9.0
 
 packages:
+
+  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7':
+    resolution: {tarball: https://codeload.github.com/runsascoded/disk-tree/tar.gz/bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7}
+    version: 0.1.0-dist.6ed3eed
+    peerDependencies:
+      d3-hierarchy: '>=3'
+      d3-voronoi-treemap: '>=1.1'
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      d3-hierarchy:
+        optional: true
+      d3-voronoi-treemap:
+        optional: true
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -1274,6 +1291,11 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true

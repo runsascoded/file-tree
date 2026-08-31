@@ -20,7 +20,7 @@ import { TextViewer } from './TextViewer'
 import { ZipEntryList } from './ZipEntryList'
 import { ZipEntryPreview } from './ZipEntryPreview'
 import { type Parsed, parsePath, basename, keyToSplat, extOf, CODE_LANG } from './parsePath'
-import { type PersistedState } from './persistedState'
+import { defaultUseState, type PersistedState } from './persistedState'
 import { findViewer, RegistryViewer, type ViewerEntry } from './viewers'
 
 export type { PersistedState } from './persistedState'
@@ -49,6 +49,15 @@ export type MarkdownRenderer = (source: string) => ReactNode
  *  renderer, which a custom one is free to ignore. */
 export interface ParquetRendererProps { store: Store; path: string; usePersistedState?: PersistedState }
 export type ParquetRenderer = ComponentType<ParquetRendererProps>
+
+/** Optional component that renders a `TreeSource` as a treemap.
+ *  Pluggable so the lib doesn't bundle `@disk-tree/react` (an optional
+ *  peer): `<TreeMapView>` from `@rdub/file-tree/renderers/treemap` is
+ *  the reference impl. When provided *and* a `treeSource` is set, the
+ *  directory view gains a list↔map toggle; `path` is the current dir
+ *  (tree-relative splat) so the map opens where the browser is. */
+export interface TreemapRendererProps { source: TreeSource; path?: string; rootLabel?: string }
+export type TreemapRenderer = ComponentType<TreemapRendererProps>
 
 /** Whatever `R` accepts *beyond* the three props `<FileTree>` supplies
  *  itself — i.e. exactly what's left to configure. Collapses to `never`
@@ -104,6 +113,12 @@ export interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
    *  right for small/medium trees; large trees want a snapshot-backed
    *  source. See `specs/tree-sources-and-treemap.md`. */
   treeSource?: TreeSource
+  /** Optional treemap renderer (see `TreemapRenderer`). When set
+   *  alongside `treeSource`, the directory view gains a list↔map toggle
+   *  and can render the current subtree as a treemap. Pluggable so the
+   *  lib doesn't bundle `@disk-tree/react`; wire `<TreeMapView>` from
+   *  `@rdub/file-tree/renderers/treemap` (lazy-loaded). */
+  treemapRenderer?: TreemapRenderer
   /** Viewer registry — an ordered list of `{ id, match, load, options }`,
    *  consulted for every file before the built-in renderers, so a
    *  consumer can add formats (or override one) without the library
@@ -173,7 +188,7 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource }: FileTreeProps<R>) {
+export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -206,12 +221,12 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} rightSlot={right} renderCrumb={renderCrumb} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} treemapRenderer={treemapRenderer} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState; treeSource?: TreeSource }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState; treeSource?: TreeSource; treemapRenderer?: TreemapRenderer }) {
   // The registry wins over the built-ins: a consumer registering a
   // `.parquet` viewer means they want theirs, not the prop's. `dir` and
   // `zipEntry` are excluded — the first isn't a file, and the second is
@@ -223,8 +238,21 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
   }
 
   switch (parsed.kind) {
-    case 'dir':
-      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} />
+    case 'dir': {
+      const listing = <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} />
+      if (!treeSource || !treemapRenderer) return listing
+      return (
+        <DirView
+          treeSource={treeSource}
+          treemapRenderer={treemapRenderer}
+          prefix={parsed.prefix}
+          rootPrefix={rootPrefix}
+          rootLabel={store.describe?.() ?? 'root'}
+          usePersistedState={usePersistedState}
+          listing={listing}
+        />
+      )
+    }
     case 'text': {
       const ext = extOf(parsed.path)
       const isMd = ext === 'md' || ext === 'markdown'
@@ -276,6 +304,66 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
         </div>
       )
   }
+}
+
+/** The directory body when both a `treeSource` and a `treemapRenderer`
+ *  are wired: a list↔map toggle over one shared source. `view` persists
+ *  via the same `usePersistedState` the rest of the browser uses, so
+ *  `useUrlPersistedState` puts it in `?view=tree`. Only the selected
+ *  view is mounted — the listing is passed in already-built, and the
+ *  map's own drill state is cheap enough to rebuild on each toggle that
+ *  keeping both mounted (and their fetches alive) isn't worth it. */
+function DirView({ treeSource, treemapRenderer: Map, prefix, rootPrefix, rootLabel, usePersistedState, listing }: {
+  treeSource: TreeSource
+  treemapRenderer: TreemapRenderer
+  prefix: string
+  rootPrefix: string
+  rootLabel: string
+  usePersistedState?: PersistedState
+  listing: ReactNode
+}) {
+  const use = usePersistedState ?? defaultUseState
+  const [view, setView] = use('view', 'list' as 'list' | 'tree')
+  const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, '')
+  return (
+    <div>
+      <ViewToggle view={view === 'tree' ? 'tree' : 'list'} setView={setView} />
+      {view === 'tree'
+        ? <Map source={treeSource} path={treePath} rootLabel={rootLabel} />
+        : listing}
+    </div>
+  )
+}
+
+/** Two-state segmented toggle (list / treemap). Inline SVGs
+ *  (Heroicons `list-bullet` + `squares-2x2`), `currentColor` so they
+ *  track the theme. */
+function ViewToggle({ view, setView }: { view: 'list' | 'tree'; setView: (v: 'list' | 'tree') => void }) {
+  const btn = (v: 'list' | 'tree', label: string, path: ReactNode) => (
+    <button
+      type="button"
+      onClick={() => setView(v)}
+      aria-pressed={view === v}
+      aria-label={label}
+      title={label}
+      style={{
+        display: 'inline-flex', alignItems: 'center', padding: '0.15em 0.45em',
+        background: view === v ? 'var(--ft-toggle-on, #e0e0e0)' : 'transparent',
+        border: '1px solid var(--ft-border, #ccc)', cursor: 'pointer', color: 'inherit',
+        lineHeight: 1,
+      }}
+    >
+      <svg viewBox="0 0 24 24" width="1.15em" height="1.15em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {path}
+      </svg>
+    </button>
+  )
+  return (
+    <div style={{ display: 'inline-flex', gap: 0, marginBottom: '0.5em' }} role="group" aria-label="View">
+      {btn('list', 'List view', <><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" /></>)}
+      {btn('tree', 'Treemap view', <><rect x="3" y="3" width="8" height="8" rx="1" /><rect x="13" y="3" width="8" height="5" rx="1" /><rect x="13" y="10" width="8" height="11" rx="1" /><rect x="3" y="13" width="8" height="8" rx="1" /></>)}
+    </div>
+  )
 }
 
 /** Resolve a downloadable URL for `path`, preferring async `getDownloadUrl`

@@ -191,6 +191,11 @@
       "types": "./dist/test/treeConformance.d.ts",
       "import": "./dist/test/treeConformance.js",
       "require": "./dist/test/treeConformance.cjs"
+    },
+    "./renderers/treemap": {
+      "types": "./dist/renderers/treemap.d.ts",
+      "import": "./dist/renderers/treemap.js",
+      "require": "./dist/renderers/treemap.cjs"
     }
   },
   "scripts": {
@@ -231,7 +236,8 @@
     "remark-gfm": "^3 || ^4",
     "use-prms": "^0.4",
     "yaml": "^2",
-    "wa-sqlite": "^1"
+    "wa-sqlite": "^1",
+    "@disk-tree/react": "*"
   },
   "peerDependenciesMeta": {
     "yaml": {
@@ -266,6 +272,9 @@
     },
     "wa-sqlite": {
       "optional": true
+    },
+    "@disk-tree/react": {
+      "optional": true
     }
   },
   "devDependencies": {
@@ -284,7 +293,8 @@
     "use-prms": "^0.4.1",
     "vitest": "^2.1.8",
     "wa-sqlite": "^1.0.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "@disk-tree/react": "github:runsascoded/disk-tree#bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20"
