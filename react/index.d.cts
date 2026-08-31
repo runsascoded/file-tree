@@ -1,7 +1,10 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode, ComponentType, ComponentProps } from 'react';
 import { Entry, Store, ZipEntriesResult, GetResult } from '../index.cjs';
+import { TreeSource } from '../renderers/treeSource.cjs';
+export { ChildrenRequest, Snapshot, TreeLevel, TreeNode, TreeSourceCapabilities, TreeTooLargeError } from '../renderers/treeSource.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
+export { WalkTreeSourceOptions, walkTreeSource } from '../renderers/walkTreeSource.cjs';
 
 interface Crumb {
     label: string;
@@ -78,8 +81,15 @@ interface DirListingProps {
     markdownRenderer?: (source: string) => ReactNode;
     /** Optional per-cell render hook (see `CellRenderer`). */
     renderCell?: CellRenderer;
+    /** When set, directory rows show their *recursive* size (instead of
+     *  `—`): the listing calls `treeSource.children(prefix)` once and reads
+     *  each child directory's rollup. A `TreeTooLargeError` (or any
+     *  failure) is swallowed — the `—` stays, so an oversized tree degrades
+     *  to today's behaviour rather than erroring. File sizes still come
+     *  from the store's own listing. */
+    treeSource?: TreeSource;
 }
-declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, filterPlaceholder, usePersistedState, markdownRenderer, renderCell }: DirListingProps): react_jsx_runtime.JSX.Element;
+declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, filterPlaceholder, usePersistedState, markdownRenderer, renderCell, treeSource }: DirListingProps): react_jsx_runtime.JSX.Element;
 
 /** Parse a URL path-suffix into a renderable view kind + store key.
  *
@@ -226,6 +236,18 @@ interface ParquetRendererProps {
     usePersistedState?: PersistedState;
 }
 type ParquetRenderer = ComponentType<ParquetRendererProps>;
+/** Optional component that renders a `TreeSource` as a treemap.
+ *  Pluggable so the lib doesn't bundle `@disk-tree/react` (an optional
+ *  peer): `<TreeMapView>` from `@rdub/file-tree/renderers/treemap` is
+ *  the reference impl. When provided *and* a `treeSource` is set, the
+ *  directory view gains a list↔map toggle; `path` is the current dir
+ *  (tree-relative splat) so the map opens where the browser is. */
+interface TreemapRendererProps {
+    source: TreeSource;
+    path?: string;
+    rootLabel?: string;
+}
+type TreemapRenderer = ComponentType<TreemapRendererProps>;
 /** Whatever `R` accepts *beyond* the three props `<FileTree>` supplies
  *  itself — i.e. exactly what's left to configure. Collapses to `never`
  *  for a renderer that takes nothing extra, so handing options to one
@@ -266,6 +288,22 @@ interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
      *  CSS can own (color, alignment, theme) belongs in CSS, not here.
      *  Options baked in by `makeParquetViewer` win over these. */
     parquetOptions?: ParquetOptionsOf<R>;
+    /** Optional recursive-size source for the directory listing. When set,
+     *  directory rows show their *recursive* size (from a scan) instead of
+     *  `—`. Root it at the same `rootPrefix` the tree is mounted under, so
+     *  its node paths line up with the browser's splat space.
+     *
+     *  `walkTreeSource(store)` (from `@rdub/file-tree/renderers/walkTreeSource`)
+     *  is the zero-infrastructure default — it walks the store live and is
+     *  right for small/medium trees; large trees want a snapshot-backed
+     *  source. See `specs/tree-sources-and-treemap.md`. */
+    treeSource?: TreeSource;
+    /** Optional treemap renderer (see `TreemapRenderer`). When set
+     *  alongside `treeSource`, the directory view gains a list↔map toggle
+     *  and can render the current subtree as a treemap. Pluggable so the
+     *  lib doesn't bundle `@disk-tree/react`; wire `<TreeMapView>` from
+     *  `@rdub/file-tree/renderers/treemap` (lazy-loaded). */
+    treemapRenderer?: TreemapRenderer;
     /** Viewer registry — an ordered list of `{ id, match, load, options }`,
      *  consulted for every file before the built-in renderers, so a
      *  consumer can add formats (or override one) without the library
@@ -342,7 +380,7 @@ interface ViewerActionCtx {
     /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
     entry?: string;
 }
-declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
+declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
 
 /** Adapter from `Store` to hyparquet's `AsyncBuffer` shape
  *  (`{ byteLength: number; slice(start, end?): Promise<ArrayBuffer> }`).
@@ -445,4 +483,4 @@ declare function fmtSize(n: number | undefined): string;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { AUDIO, type AsyncBuffer, Breadcrumb, CODE_LANG, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, PersistedState, RegistryViewer, TEXTY, TextViewer, type TextViewerProps, VIDEO, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, basename, extOf, findViewer, fmtSize, keyToSplat, makeMatcher, parsePath, readZipEntries, readZipEntry };
+export { AUDIO, type AsyncBuffer, Breadcrumb, CODE_LANG, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, IMAGE, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, type ParsePathOptions, type Parsed, PersistedState, RegistryViewer, TEXTY, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, VIDEO, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, basename, extOf, findViewer, fmtSize, keyToSplat, makeMatcher, parsePath, readZipEntries, readZipEntry };

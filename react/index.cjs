@@ -30,6 +30,7 @@ __export(react_exports, {
   RegistryViewer: () => RegistryViewer,
   TEXTY: () => TEXTY,
   TextViewer: () => TextViewer,
+  TreeTooLargeError: () => TreeTooLargeError,
   VIDEO: () => VIDEO,
   ZipEntryList: () => ZipEntryList,
   ZipEntryPreview: () => ZipEntryPreview,
@@ -42,7 +43,8 @@ __export(react_exports, {
   makeMatcher: () => makeMatcher,
   parsePath: () => parsePath,
   readZipEntries: () => readZipEntries,
-  readZipEntry: () => readZipEntry
+  readZipEntry: () => readZipEntry,
+  walkTreeSource: () => walkTreeSource
 });
 module.exports = __toCommonJS(react_exports);
 
@@ -177,7 +179,37 @@ var defaultUseState = (_key, defaultValue) => (0, import_react.useState)(default
 
 // src/react/DirListing.tsx
 var import_jsx_runtime2 = require("react/jsx-runtime");
-function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, filterPlaceholder = "filter", usePersistedState, markdownRenderer, renderCell }) {
+function useDirSizes(treeSource, prefix, rootPrefix) {
+  const [sizes, setSizes] = (0, import_react2.useState)(null);
+  (0, import_react2.useEffect)(() => {
+    setSizes(null);
+    if (!treeSource) return;
+    let cancelled = false;
+    const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, "");
+    treeSource.children({ path: treePath }).then(
+      (level) => {
+        if (cancelled) return;
+        const m = /* @__PURE__ */ new Map();
+        for (const c of level.children) {
+          if (c.kind === "dir" && c.size != null) m.set(`${prefix}${c.name}/`, c.size);
+        }
+        setSizes(m);
+      },
+      () => {
+        if (!cancelled) setSizes(null);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [treeSource, prefix, rootPrefix]);
+  return sizes;
+}
+function dirSize(sizes, key) {
+  const s = sizes?.get(key);
+  return s == null ? "\u2014" : fmtSize(s);
+}
+function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, filterPlaceholder = "filter", usePersistedState, markdownRenderer, renderCell, treeSource }) {
   const [entries, setEntries] = (0, import_react2.useState)(null);
   const [error, setError] = (0, import_react2.useState)(null);
   const [cursor, setCursor] = (0, import_react2.useState)(void 0);
@@ -226,6 +258,7 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
     setEntries((prev) => [...prev ?? [], ...r.entries]);
     setCursor(r.cursor);
   }
+  const dirSizes = useDirSizes(treeSource, prefix, rootPrefix);
   const matcher = (0, import_react2.useMemo)(() => makeMatcher(q), [q]);
   const filtered = (0, import_react2.useMemo)(() => {
     if (!entries) return null;
@@ -302,7 +335,7 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
             name,
             e.isDir ? "/" : ""
           ] })) }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: e.isDir ? 0.4 : 1 }, children: cell("size", e.isDir ? "\u2014" : fmtSize(e.size)) }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: e.isDir && !dirSizes?.has(e.key) ? 0.4 : 1 }, children: cell("size", e.isDir ? dirSize(dirSizes, e.key) : fmtSize(e.size)) }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.3em 0", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6, fontSize: "0.9em" }, children: cell("modified", e.lastModified?.slice(0, 10) ?? "") })
         ] }, e.key);
       }) })
@@ -832,7 +865,7 @@ function RegistryViewer({ entry, store, path, usePersistedState, fallback }) {
 
 // src/react/FileTree.tsx
 var import_jsx_runtime8 = require("react/jsx-runtime");
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }) {
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
   const location = (0, import_react_router_dom4.useLocation)();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
@@ -855,17 +888,31 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
   return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className, style, children: [
     title && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
     /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState })
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer })
   ] });
 }
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
   if (parsed.kind !== "dir" && parsed.kind !== "zipEntry") {
     const entry = findViewer(viewers, parsed.path);
     if (entry) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(RegistryViewer, { entry, store, path: parsed.path, usePersistedState });
   }
   switch (parsed.kind) {
-    case "dir":
-      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState });
+    case "dir": {
+      const listing = /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource });
+      if (!treeSource || !treemapRenderer) return listing;
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        DirView,
+        {
+          treeSource,
+          treemapRenderer,
+          prefix: parsed.prefix,
+          rootPrefix,
+          rootLabel: store.describe?.() ?? "root",
+          usePersistedState,
+          listing
+        }
+      );
+    }
     case "text": {
       const ext = extOf(parsed.path);
       const isMd = ext === "md" || ext === "markdown";
@@ -914,6 +961,54 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
     case "binary":
       return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { opacity: 0.7 }, children: "Preview not supported for this file type." });
   }
+}
+function DirView({ treeSource, treemapRenderer: Map2, prefix, rootPrefix, rootLabel, usePersistedState, listing }) {
+  const use = usePersistedState ?? defaultUseState;
+  const [view, setView] = use("view", "list");
+  const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, "");
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ViewToggle, { view: view === "tree" ? "tree" : "list", setView }),
+    view === "tree" ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Map2, { source: treeSource, path: treePath, rootLabel }) : listing
+  ] });
+}
+function ViewToggle({ view, setView }) {
+  const btn = (v, label, path) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+    "button",
+    {
+      type: "button",
+      onClick: () => setView(v),
+      "aria-pressed": view === v,
+      "aria-label": label,
+      title: label,
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "0.15em 0.45em",
+        background: view === v ? "var(--ft-toggle-on, #e0e0e0)" : "transparent",
+        border: "1px solid var(--ft-border, #ccc)",
+        cursor: "pointer",
+        color: "inherit",
+        lineHeight: 1
+      },
+      children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("svg", { viewBox: "0 0 24 24", width: "1.15em", height: "1.15em", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: path })
+    }
+  );
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "inline-flex", gap: 0, marginBottom: "0.5em" }, role: "group", "aria-label": "View", children: [
+    btn("list", "List view", /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M8 6h13" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M8 12h13" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M8 18h13" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M3 6h.01" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M3 12h.01" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M3 18h.01" })
+    ] })),
+    btn("tree", "Treemap view", /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("rect", { x: "3", y: "3", width: "8", height: "8", rx: "1" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("rect", { x: "13", y: "3", width: "8", height: "5", rx: "1" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("rect", { x: "13", y: "10", width: "8", height: "11", rx: "1" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("rect", { x: "3", y: "13", width: "8", height: "8", rx: "1" })
+    ] }))
+  ] });
 }
 function useDownloadHref(store, path) {
   const syncHref = path != null && typeof store.getUrl === "function" ? store.getUrl(path) : null;
@@ -1028,6 +1123,133 @@ async function asyncBufferFromStore(store, path) {
     }
   };
 }
+
+// src/renderers/treeSource.ts
+var TreeTooLargeError = class extends Error {
+  constructor(message, nodesWalked) {
+    super(message);
+    this.nodesWalked = nodesWalked;
+  }
+  nodesWalked;
+  name = "TreeTooLargeError";
+};
+function nodeName(path) {
+  const trimmed = path.replace(/\/+$/, "");
+  const i = trimmed.lastIndexOf("/");
+  return i < 0 ? trimmed : trimmed.slice(i + 1);
+}
+
+// src/renderers/walkTreeSource.ts
+var DEFAULT_MAX_NODES = 5e4;
+function toEpoch(iso) {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? Math.floor(ms / 1e3) : null;
+}
+function maxMtime(a, b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return Math.max(a, b);
+}
+async function listAll(store, prefix) {
+  const out = [];
+  let cursor;
+  for (let i = 0; i < 1e3; i++) {
+    const r = await store.list(prefix, cursor ? { cursor } : void 0);
+    out.push(...r.entries);
+    if (!r.cursor) return out;
+    cursor = r.cursor;
+  }
+  throw new Error(`walkTreeSource: cursor did not terminate under ${prefix}`);
+}
+function walkTreeSource(store, opts = {}) {
+  const root = opts.root ?? "";
+  const rootLabel = opts.rootLabel ?? "root";
+  const maxNodes = opts.maxNodes ?? DEFAULT_MAX_NODES;
+  const levels = /* @__PURE__ */ new Map();
+  const inflight = /* @__PURE__ */ new Map();
+  const keyFor = (path) => path ? `${root}${path}/` : root;
+  async function build(path, walked) {
+    const entries = await listAll(store, keyFor(path));
+    const children2 = [];
+    let size = 0;
+    let nDesc = 0;
+    let mtime = null;
+    for (const e of entries) {
+      walked.n++;
+      if (walked.n > maxNodes) {
+        throw new TreeTooLargeError(
+          `tree under ${keyFor(path) || "(root)"} exceeds ${maxNodes} entries`,
+          walked.n
+        );
+      }
+      const name = nodeName(e.key);
+      const childPath = path ? `${path}/${name}` : name;
+      if (e.isDir) {
+        const sub = await build(childPath, walked);
+        children2.push(sub);
+        size += sub.node.size ?? 0;
+        nDesc += 1 + (sub.node.nDesc ?? 0);
+        mtime = maxMtime(mtime, sub.node.mtime ?? null);
+      } else {
+        const fileMtime = toEpoch(e.lastModified);
+        children2.push({
+          node: {
+            path: childPath,
+            name,
+            kind: "file",
+            size: e.size ?? 0,
+            mtime: fileMtime
+          },
+          children: []
+        });
+        size += e.size ?? 0;
+        nDesc += 1;
+        mtime = maxMtime(mtime, fileMtime);
+      }
+    }
+    const node = {
+      path,
+      name: path ? nodeName(path) : rootLabel,
+      kind: "dir",
+      size,
+      nChildren: children2.length,
+      nDesc,
+      mtime
+    };
+    return { node, children: children2 };
+  }
+  function cache(built) {
+    levels.set(built.node.path, {
+      node: built.node,
+      children: built.children.map((c) => c.node)
+    });
+    for (const c of built.children) if (c.node.kind === "dir") cache(c);
+  }
+  async function children(req = {}) {
+    const path = (req.path ?? "").replace(/^\/+|\/+$/g, "");
+    const cached = levels.get(path);
+    if (cached) return cached;
+    let pending = inflight.get(path);
+    if (!pending) {
+      pending = (async () => {
+        try {
+          const built = await build(path, { n: 0 });
+          cache(built);
+          return levels.get(path);
+        } finally {
+          inflight.delete(path);
+        }
+      })();
+      inflight.set(path, pending);
+    }
+    return pending;
+  }
+  return {
+    capabilities: { history: false, diff: false, scan: false, lazy: true },
+    children
+  };
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   AUDIO,
@@ -1040,6 +1262,7 @@ async function asyncBufferFromStore(store, path) {
   RegistryViewer,
   TEXTY,
   TextViewer,
+  TreeTooLargeError,
   VIDEO,
   ZipEntryList,
   ZipEntryPreview,
@@ -1052,6 +1275,7 @@ async function asyncBufferFromStore(store, path) {
   makeMatcher,
   parsePath,
   readZipEntries,
-  readZipEntry
+  readZipEntry,
+  walkTreeSource
 });
 //# sourceMappingURL=index.cjs.map

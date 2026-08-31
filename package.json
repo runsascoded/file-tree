@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.92c4542",
+  "version": "0.0.1-dist.412a456",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -173,6 +173,26 @@
       "types": "./sqlite/blockCache.d.ts",
       "import": "./sqlite/blockCache.js",
       "require": "./sqlite/blockCache.cjs"
+    },
+    "./renderers/treeSource": {
+      "types": "./renderers/treeSource.d.ts",
+      "import": "./renderers/treeSource.js",
+      "require": "./renderers/treeSource.cjs"
+    },
+    "./renderers/walkTreeSource": {
+      "types": "./renderers/walkTreeSource.d.ts",
+      "import": "./renderers/walkTreeSource.js",
+      "require": "./renderers/walkTreeSource.cjs"
+    },
+    "./test/treeConformance": {
+      "types": "./test/treeConformance.d.ts",
+      "import": "./test/treeConformance.js",
+      "require": "./test/treeConformance.cjs"
+    },
+    "./renderers/treemap": {
+      "types": "./renderers/treemap.d.ts",
+      "import": "./renderers/treemap.js",
+      "require": "./renderers/treemap.cjs"
     }
   },
   "keywords": [
@@ -202,7 +222,8 @@
     "jq-web": "^0.6",
     "use-prms": "^0.4",
     "yaml": "^2",
-    "wa-sqlite": "^1"
+    "wa-sqlite": "^1",
+    "@disk-tree/react": "*"
   },
   "peerDependenciesMeta": {
     "react": {
