@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { FileTree, type CellRenderer, type ViewerEntry } from '@rdub/file-tree/react'
+import { FileTree, walkTreeSource, type CellRenderer, type ViewerEntry } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import { DEMO_FIXTURE } from '../fixtures/demo'
 import { renderMarkdown } from '@rdub/file-tree/renderers/markdown'
@@ -317,6 +317,11 @@ const renderCell: CellRenderer = ({ entry, column, defaultNode }) => {
 
 export function MockDemo() {
   const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100, describe: 'mock://demo-bucket/' }), [])
+  // Layer 0: walk the store live and roll sizes up in JS. No backend, no
+  // scan infra — every directory row shows its recursive size instead of
+  // `—`. For a bucket too big to walk live this would be a snapshot-
+  // backed source; the fixture is tiny, so the walk is instant.
+  const treeSource = useMemo(() => walkTreeSource(store), [store])
   // Held here, beside the tree rather than inside it: the panel is a
   // *sibling* of the table, which is the whole reason these are
   // callbacks and not a render slot the viewer could fill.
@@ -331,6 +336,7 @@ export function MockDemo() {
         store={store}
         routeBase="/mock"
         title="MockStore demo"
+        treeSource={treeSource}
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
         parquetOptions={parquetOptions}

@@ -176,6 +176,21 @@
       "types": "./dist/sqlite/blockCache.d.ts",
       "import": "./dist/sqlite/blockCache.js",
       "require": "./dist/sqlite/blockCache.cjs"
+    },
+    "./renderers/treeSource": {
+      "types": "./dist/renderers/treeSource.d.ts",
+      "import": "./dist/renderers/treeSource.js",
+      "require": "./dist/renderers/treeSource.cjs"
+    },
+    "./renderers/walkTreeSource": {
+      "types": "./dist/renderers/walkTreeSource.d.ts",
+      "import": "./dist/renderers/walkTreeSource.js",
+      "require": "./dist/renderers/walkTreeSource.cjs"
+    },
+    "./test/treeConformance": {
+      "types": "./dist/test/treeConformance.d.ts",
+      "import": "./dist/test/treeConformance.js",
+      "require": "./dist/test/treeConformance.cjs"
     }
   },
   "scripts": {

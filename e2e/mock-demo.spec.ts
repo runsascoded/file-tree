@@ -50,6 +50,24 @@ test.describe('MockDemo', () => {
     await expect(breadcrumb).toContainText('docs')
   })
 
+  test('directory rows show their recursive size, not —', async ({ page }) => {
+    await page.goto('/mock')
+    // `walkTreeSource` rolls the store up in JS; the size cell of a dir
+    // row is its recursive byte total. `docs/` = guide 120 + regions
+    // 207 + intro.md 132 = 459 B; assert the whole row so a regression
+    // that drops the rollup (back to —) fails loudly.
+    const docsRow = page.getByRole('row').filter({ hasText: /📁\s*docs\// })
+    await expect(docsRow.getByRole('cell').nth(1)).toHaveText('459 B')
+
+    // Drilling in, the level's own rows roll up their subtrees and stay
+    // additive with the parent.
+    await page.getByRole('link', { name: /^📁\s*docs\/$/ }).click()
+    const guideRow = page.getByRole('row').filter({ hasText: /📁\s*guide\// })
+    await expect(guideRow.getByRole('cell').nth(1)).toHaveText('120 B')
+    const regionsRow = page.getByRole('row').filter({ hasText: /📁\s*regions\// })
+    await expect(regionsRow.getByRole('cell').nth(1)).toHaveText('207 B')
+  })
+
   test('filters entries', async ({ page }) => {
     await page.goto('/mock')
     await expect(page.getByText('7 entries')).toBeVisible()

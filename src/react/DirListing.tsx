@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Entry, Store } from '../types'
+import type { TreeSource } from '../renderers/treeSource'
 import { fmtSize } from './fmt'
 import { makeMatcher } from './match'
 import { basename, keyToSplat } from './parsePath'
@@ -58,9 +59,59 @@ export interface DirListingProps {
   markdownRenderer?: (source: string) => ReactNode
   /** Optional per-cell render hook (see `CellRenderer`). */
   renderCell?: CellRenderer
+  /** When set, directory rows show their *recursive* size (instead of
+   *  `—`): the listing calls `treeSource.children(prefix)` once and reads
+   *  each child directory's rollup. A `TreeTooLargeError` (or any
+   *  failure) is swallowed — the `—` stays, so an oversized tree degrades
+   *  to today's behaviour rather than erroring. File sizes still come
+   *  from the store's own listing. */
+  treeSource?: TreeSource
 }
 
-export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', usePersistedState, markdownRenderer, renderCell }: DirListingProps) {
+/** Recursive directory sizes for the current level, keyed by store key.
+ *  `null` while loading or unavailable — callers fall back to `—`.
+ *
+ *  A `treeSource`'s node paths are relative to *its* root, which is
+ *  expected to equal the `<FileTree rootPrefix>` (so they live in the
+ *  same splat space `keyToSplat` produces). We ask it for the current
+ *  level's children by that relative path, then re-key each child's
+ *  rollup by store key for the listing to look up. */
+function useDirSizes(
+  treeSource: TreeSource | undefined,
+  prefix: string,
+  rootPrefix: string,
+): Map<string, number> | null {
+  const [sizes, setSizes] = useState<Map<string, number> | null>(null)
+  useEffect(() => {
+    setSizes(null)
+    if (!treeSource) return
+    let cancelled = false
+    const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, '')
+    treeSource.children({ path: treePath }).then(
+      level => {
+        if (cancelled) return
+        const m = new Map<string, number>()
+        for (const c of level.children) {
+          if (c.kind === 'dir' && c.size != null) m.set(`${prefix}${c.name}/`, c.size)
+        }
+        setSizes(m)
+      },
+      () => { if (!cancelled) setSizes(null) },
+    )
+    return () => { cancelled = true }
+  }, [treeSource, prefix, rootPrefix])
+  return sizes
+}
+
+/** A directory row's size cell: its recursive rollup when the tree
+ *  source has answered, `—` otherwise (no source, still loading, or the
+ *  tree was too large to walk). */
+function dirSize(sizes: Map<string, number> | null, key: string): ReactNode {
+  const s = sizes?.get(key)
+  return s == null ? '—' : fmtSize(s)
+}
+
+export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', usePersistedState, markdownRenderer, renderCell, treeSource }: DirListingProps) {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
@@ -123,6 +174,8 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
     setEntries(prev => [...(prev ?? []), ...r.entries])
     setCursor(r.cursor)
   }
+
+  const dirSizes = useDirSizes(treeSource, prefix, rootPrefix)
 
   const matcher = useMemo(() => makeMatcher(q), [q])
   const filtered = useMemo(() => {
@@ -200,8 +253,8 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
                     </Link>
                   ))}
                 </td>
-                <td style={{ padding: '0.3em 0.6em', textAlign: 'right', fontVariantNumeric: 'tabular-nums', opacity: e.isDir ? 0.4 : 1 }}>
-                  {cell('size', e.isDir ? '—' : fmtSize(e.size))}
+                <td style={{ padding: '0.3em 0.6em', textAlign: 'right', fontVariantNumeric: 'tabular-nums', opacity: e.isDir && !dirSizes?.has(e.key) ? 0.4 : 1 }}>
+                  {cell('size', e.isDir ? dirSize(dirSizes, e.key) : fmtSize(e.size))}
                 </td>
                 <td style={{ padding: '0.3em 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums', opacity: 0.6, fontSize: '0.9em' }}>
                   {cell('modified', e.lastModified?.slice(0, 10) ?? '')}

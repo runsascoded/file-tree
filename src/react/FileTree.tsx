@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState, type ComponentProps, type ComponentType, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Store } from '../types'
+import type { TreeSource } from '../renderers/treeSource'
 import { Breadcrumb, type Crumb, type CrumbRenderer } from './Breadcrumb'
 import { DirListing, type CellRenderer } from './DirListing'
 import { MediaViewer } from './MediaViewer'
@@ -93,6 +94,16 @@ export interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
    *  CSS can own (color, alignment, theme) belongs in CSS, not here.
    *  Options baked in by `makeParquetViewer` win over these. */
   parquetOptions?: ParquetOptionsOf<R>
+  /** Optional recursive-size source for the directory listing. When set,
+   *  directory rows show their *recursive* size (from a scan) instead of
+   *  `—`. Root it at the same `rootPrefix` the tree is mounted under, so
+   *  its node paths line up with the browser's splat space.
+   *
+   *  `walkTreeSource(store)` (from `@rdub/file-tree/renderers/walkTreeSource`)
+   *  is the zero-infrastructure default — it walks the store live and is
+   *  right for small/medium trees; large trees want a snapshot-backed
+   *  source. See `specs/tree-sources-and-treemap.md`. */
+  treeSource?: TreeSource
   /** Viewer registry — an ordered list of `{ id, match, load, options }`,
    *  consulted for every file before the built-in renderers, so a
    *  consumer can add formats (or override one) without the library
@@ -162,7 +173,7 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState }: FileTreeProps<R>) {
+export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource }: FileTreeProps<R>) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -195,12 +206,12 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} rightSlot={right} renderCrumb={renderCrumb} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState; treeSource?: TreeSource }) {
   // The registry wins over the built-ins: a consumer registering a
   // `.parquet` viewer means they want theirs, not the prop's. `dir` and
   // `zipEntry` are excluded — the first isn't a file, and the second is
@@ -213,7 +224,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
 
   switch (parsed.kind) {
     case 'dir':
-      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} />
+      return <DirListing store={store} prefix={parsed.prefix} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} />
     case 'text': {
       const ext = extOf(parsed.path)
       const isMd = ext === 'md' || ext === 'markdown'
