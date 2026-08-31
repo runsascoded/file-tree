@@ -196,6 +196,11 @@
       "types": "./dist/renderers/treemap.d.ts",
       "import": "./dist/renderers/treemap.js",
       "require": "./dist/renderers/treemap.cjs"
+    },
+    "./og": {
+      "types": "./dist/og/index.d.ts",
+      "import": "./dist/og/index.js",
+      "require": "./dist/og/index.cjs"
     }
   },
   "scripts": {

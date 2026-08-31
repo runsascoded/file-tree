@@ -24,6 +24,7 @@ export default defineConfig({
     'src/renderers/treeSource.ts',
     'src/renderers/walkTreeSource.ts',
     'src/renderers/treemap.tsx',
+    'src/og/index.ts',
     'src/renderers/httpTableSource.ts',
     'src/renderers/sqlite.tsx',
     'src/renderers/tableBrowser.tsx',

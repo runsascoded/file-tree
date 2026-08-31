@@ -1,4 +1,5 @@
 import { Link, Route, Routes } from 'react-router-dom'
+import { OgPreview } from './routes/OgPreview'
 import { Home } from './routes/Home'
 import { MockDemo } from './routes/MockDemo'
 import { HttpDemo } from './routes/HttpDemo'
@@ -35,6 +36,8 @@ export function App() {
           <Route path="/gcs" element={<GcsDemo />} />
           <Route path="/gcs/:slug/*" element={<GcsDemo />} />
           <Route path="/sql" element={<SqlStub />} />
+          <Route path="/og" element={<OgPreview />} />
+          <Route path="/og/*" element={<OgPreview />} />
         </Routes>
       </main>
     </>
