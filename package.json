@@ -299,7 +299,7 @@
     "vitest": "^2.1.8",
     "wa-sqlite": "^1.0.0",
     "yaml": "^2.9.0",
-    "@disk-tree/react": "github:runsascoded/disk-tree#bdfe23ac7ad19dc15aae041b05e3d9e91c5755c7"
+    "@disk-tree/react": "github:runsascoded/disk-tree#0c486606d377581411f4bf7590af77fecfa34d36"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20"

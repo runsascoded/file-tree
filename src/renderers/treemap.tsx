@@ -92,7 +92,19 @@ export function TreeMapView({ source, path = '', rootLabel = 'root', height = '7
 
   return (
     <div className={className} style={{ height, ...style }}>
-      <Treemap<TreeNode> root={root} formatSize={fmtSize} {...accessors} />
+      <Treemap<TreeNode>
+        root={root}
+        formatSize={fmtSize}
+        // Give a dominant-child tree's tail its own legible side-by-side
+        // band instead of full-height slivers. `remainderTail`'s sliver
+        // cutoff is `minCellSide`, whose default (7px) is below the
+        // width of these columns — raise it so the tail is caught (with
+        // `remainderTail` on, the widget skips its own thin-fold, so this
+        // only widens the band, it doesn't hide anything).
+        remainderTail={0.2}
+        minCellSide={24}
+        {...accessors}
+      />
     </div>
   )
 }

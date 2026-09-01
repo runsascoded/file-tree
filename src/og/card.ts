@@ -18,7 +18,7 @@
  *  statically and marked `external`, exactly as `renderers/treemap` does.
  *  See `specs/cfp-og-images.md`.
  */
-import { squarify, DEFAULT_PALETTE } from '@disk-tree/react'
+import { squarifyRemainder, DEFAULT_PALETTE } from '@disk-tree/react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
 import { basename, keyToSplat, parsePath, extOf, type ParsePathOptions } from '../react/parsePath'
@@ -144,7 +144,13 @@ function renderTreemapBody(
   palette: readonly string[],
   ink: string,
 ): string {
-  const rects = squarify([...children], x, y, w, h, c => c.size)
+  // `squarifyRemainder` gives a dominant-child tree's long tail its own
+  // legible 2D band instead of unreadable slivers; it falls back to a
+  // plain squarify when nothing is cramped, so it's safe unconditionally.
+  // The card body is short and wide (~1080×270), so a "sliver" here is a
+  // column tens of px wide — raise `minSide` past that so the tail is
+  // detected, and give the band ~a quarter of the width so it reads.
+  const rects = squarifyRemainder([...children], x, y, w, h, c => c.size, 48, 0.24)
   const out: string[] = []
   rects.forEach((r, i) => {
     const fill = palette[i % palette.length]
