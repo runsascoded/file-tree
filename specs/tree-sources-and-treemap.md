@@ -409,10 +409,14 @@ library like ours. Plan:
   tile to descend), so it needs no router. `@disk-tree/react` is an *optional
   peer*, statically imported here and marked `external`, so it never lands in
   the main bundle — a consumer installs it and lazy-loads this subpath.
-- `<FileTree treemapRenderer={…} treeSource={…}>` gains a list↔map toggle in
-  the dir view (`DirView`/`ViewToggle`), persisted to `?view=tree` via the same
-  `usePersistedState` everything else uses. `treemapRenderer` is pluggable (like
-  `parquetRenderer`) so the core never imports the peer.
+- `<FileTree treemapRenderer={…} treeSource={…}>` gains a **list / map / split**
+  toggle in the dir view (`DirView`/`ViewToggle`), persisted to `?view=tree` /
+  `?view=split` via the same `usePersistedState` everything else uses.
+  `treemapRenderer` is pluggable (like `parquetRenderer`) so the core never
+  imports the peer. `split` stacks the listing above a shorter (`45vh`) map off
+  the one shared `treeSource` — `TreemapRendererProps` grew an optional `height`
+  for that. (Cross-highlight "scrub" between the two panes — hover a row → light
+  its tile — is a natural follow-up; `<Treemap>` already exposes hover.)
 - The pin that unblocked this: `@disk-tree/react` is now git-pinnable at the
   dist-branch root — DT added an npm-dist `package_dir` input that flattens
   `packages/react` to the branch root, so

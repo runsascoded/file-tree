@@ -16,6 +16,7 @@ import type { TreeSource } from '../renderers/treeSource'
 import { Breadcrumb, type Crumb, type CrumbRenderer } from './Breadcrumb'
 import { DirListing, type CellRenderer } from './DirListing'
 import { MediaViewer } from './MediaViewer'
+import { PdfViewer } from './PdfViewer'
 import { TextViewer } from './TextViewer'
 import { ZipEntryList } from './ZipEntryList'
 import { ZipEntryPreview } from './ZipEntryPreview'
@@ -54,9 +55,11 @@ export type ParquetRenderer = ComponentType<ParquetRendererProps>
  *  Pluggable so the lib doesn't bundle `@disk-tree/react` (an optional
  *  peer): `<TreeMapView>` from `@rdub/file-tree/renderers/treemap` is
  *  the reference impl. When provided *and* a `treeSource` is set, the
- *  directory view gains a list↔map toggle; `path` is the current dir
- *  (tree-relative splat) so the map opens where the browser is. */
-export interface TreemapRendererProps { source: TreeSource; path?: string; rootLabel?: string }
+ *  directory view gains a list / map / split toggle; `path` is the
+ *  current dir (tree-relative splat) so the map opens where the browser
+ *  is. `height` lets the split view render a shorter map beneath the
+ *  listing (the reference impl defaults to `70vh`). */
+export interface TreemapRendererProps { source: TreeSource; path?: string; rootLabel?: string; height?: number | string }
 export type TreemapRenderer = ComponentType<TreemapRendererProps>
 
 /** Whatever `R` accepts *beyond* the three props `<FileTree>` supplies
@@ -146,6 +149,11 @@ export interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
    *  this component (typically a cell-by-cell view with rendered
    *  markdown cells + code outputs). */
   notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>
+  /** Optional PDF renderer. When set, `.pdf` paths render via this
+   *  component (e.g. a pdf.js viewer with text selection / search)
+   *  instead of the built-in `<PdfViewer>`, which embeds the file in a
+   *  native `<iframe>` — the browser's own PDF chrome, no peer needed. */
+  pdfRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>
   /** Optional code-highlighting renderer. When set, TEXTY paths whose
    *  extension maps to a language in `CODE_LANG` (e.g. `.ts`, `.py`,
    *  `.go`) render via this fn (`(source, lang) => ReactNode`) instead
@@ -188,7 +196,7 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>) {
+export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
@@ -221,12 +229,12 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
     <div className={className} style={style}>
       {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
       <Breadcrumb crumbs={crumbs} rightSlot={right} renderCrumb={renderCrumb} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} treemapRenderer={treemapRenderer} />
+      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} pdfRenderer={pdfRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} treemapRenderer={treemapRenderer} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState; treeSource?: TreeSource; treemapRenderer?: TreemapRenderer }) {
+function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; pdfRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState; treeSource?: TreeSource; treemapRenderer?: TreemapRenderer }) {
   // The registry wins over the built-ins: a consumer registering a
   // `.parquet` viewer means they want theirs, not the prop's. `dir` and
   // `zipEntry` are excluded — the first isn't a file, and the second is
@@ -295,8 +303,13 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       return <MediaViewer store={store} path={parsed.path} kind="video" />
     case 'audio':
       return <MediaViewer store={store} path={parsed.path} kind="audio" />
-    case 'pdf':
-      return <UnsupportedView label="PDF preview" />
+    case 'pdf': {
+      if (pdfRenderer) {
+        const Component = pdfRenderer
+        return <Component store={store} path={parsed.path} usePersistedState={usePersistedState} />
+      }
+      return <PdfViewer store={store} path={parsed.path} />
+    }
     case 'binary':
       return (
         <div style={{ opacity: 0.7 }}>
@@ -306,13 +319,18 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
   }
 }
 
+/** The three view modes offered when a treemap is wired: `list` (the
+ *  listing alone), `tree` (the map alone), `split` (listing above a
+ *  shorter map, both off the one shared source). */
+type DirViewMode = 'list' | 'tree' | 'split'
+
 /** The directory body when both a `treeSource` and a `treemapRenderer`
- *  are wired: a list↔map toggle over one shared source. `view` persists
- *  via the same `usePersistedState` the rest of the browser uses, so
- *  `useUrlPersistedState` puts it in `?view=tree`. Only the selected
- *  view is mounted — the listing is passed in already-built, and the
- *  map's own drill state is cheap enough to rebuild on each toggle that
- *  keeping both mounted (and their fetches alive) isn't worth it. */
+ *  are wired: a list / map / split toggle over one shared source.
+ *  `view` persists via the same `usePersistedState` the rest of the
+ *  browser uses, so `useUrlPersistedState` puts it in `?view=tree` /
+ *  `?view=split`. The listing is passed in already-built; the map's own
+ *  drill state is cheap to rebuild on toggle, so `list`/`tree` mount
+ *  only the selected view, while `split` mounts both. */
 function DirView({ treeSource, treemapRenderer: Map, prefix, rootPrefix, rootLabel, usePersistedState, listing }: {
   treeSource: TreeSource
   treemapRenderer: TreemapRenderer
@@ -323,23 +341,29 @@ function DirView({ treeSource, treemapRenderer: Map, prefix, rootPrefix, rootLab
   listing: ReactNode
 }) {
   const use = usePersistedState ?? defaultUseState
-  const [view, setView] = use('view', 'list' as 'list' | 'tree')
+  const [stored, setView] = use('view', 'list' as DirViewMode)
+  const view: DirViewMode = stored === 'tree' || stored === 'split' ? stored : 'list'
   const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, '')
+  const map = (height?: string) => <Map source={treeSource} path={treePath} rootLabel={rootLabel} {...(height ? { height } : {})} />
   return (
     <div>
-      <ViewToggle view={view === 'tree' ? 'tree' : 'list'} setView={setView} />
-      {view === 'tree'
-        ? <Map source={treeSource} path={treePath} rootLabel={rootLabel} />
-        : listing}
+      <ViewToggle view={view} setView={setView} />
+      {view === 'tree' && map()}
+      {view === 'list' && listing}
+      {view === 'split' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1em' }}>
+          {listing}
+          {map('45vh')}
+        </div>
+      )}
     </div>
   )
 }
 
-/** Two-state segmented toggle (list / treemap). Inline SVGs
- *  (Heroicons `list-bullet` + `squares-2x2`), `currentColor` so they
- *  track the theme. */
-function ViewToggle({ view, setView }: { view: 'list' | 'tree'; setView: (v: 'list' | 'tree') => void }) {
-  const btn = (v: 'list' | 'tree', label: string, path: ReactNode) => (
+/** Three-state segmented toggle (list / treemap / split). Inline SVGs,
+ *  `currentColor` so they track the theme. */
+function ViewToggle({ view, setView }: { view: DirViewMode; setView: (v: DirViewMode) => void }) {
+  const btn = (v: DirViewMode, label: string, path: ReactNode) => (
     <button
       type="button"
       onClick={() => setView(v)}
@@ -362,6 +386,7 @@ function ViewToggle({ view, setView }: { view: 'list' | 'tree'; setView: (v: 'li
     <div style={{ display: 'inline-flex', gap: 0, marginBottom: '0.5em' }} role="group" aria-label="View">
       {btn('list', 'List view', <><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" /></>)}
       {btn('tree', 'Treemap view', <><rect x="3" y="3" width="8" height="8" rx="1" /><rect x="13" y="3" width="8" height="5" rx="1" /><rect x="13" y="10" width="8" height="11" rx="1" /><rect x="3" y="13" width="8" height="8" rx="1" /></>)}
+      {btn('split', 'Split view (list + map)', <><path d="M4 6h16" /><path d="M4 9h16" /><rect x="4" y="13" width="7" height="7" rx="1" /><rect x="13" y="13" width="7" height="7" rx="1" /></>)}
     </div>
   )
 }
