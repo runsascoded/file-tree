@@ -10,6 +10,7 @@
     "tc": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@disk-tree/react": "github:runsascoded/disk-tree#0c486606d377581411f4bf7590af77fecfa34d36",
     "@floating-ui/react": "^0.27.20",
     "@rdub/file-tree": "link:..",
     "highlight.js": "^11.11.1",
@@ -21,14 +22,14 @@
     "remark-gfm": "^4.0.1",
     "s2js": "^1.44.0",
     "wa-sqlite": "^1.0.0",
-    "yaml": "^2.9.0",
-    "@disk-tree/react": "github:runsascoded/disk-tree#0c486606d377581411f4bf7590af77fecfa34d36"
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.27",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.7.0",
     "hyparquet-writer": "^0.16.5",
+    "pdf-lib": "^1.17.1",
     "typescript": "^5.9.0",
     "vite": "^6.4.1"
   }
