@@ -1,5 +1,5 @@
 // src/og/card.ts
-import { squarify, DEFAULT_PALETTE } from "@disk-tree/react";
+import { squarifyRemainder, DEFAULT_PALETTE } from "@disk-tree/react";
 
 // src/react/fmt.ts
 function fmtSize(n) {
@@ -117,7 +117,7 @@ function renderOgCard(data, opts = {}) {
   return parts.join("");
 }
 function renderTreemapBody(children, x, y, w, h, palette, ink) {
-  const rects = squarify([...children], x, y, w, h, (c) => c.size);
+  const rects = squarifyRemainder([...children], x, y, w, h, (c) => c.size, 48, 0.24);
   const out = [];
   rects.forEach((r, i) => {
     const fill = palette[i % palette.length];

@@ -54,7 +54,16 @@ function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", c
     error.message
   ] });
   if (!root) return /* @__PURE__ */ jsx("div", { style: { opacity: 0.7 }, children: "Loading treemap\u2026" });
-  return /* @__PURE__ */ jsx("div", { className, style: { height, ...style }, children: /* @__PURE__ */ jsx(Treemap, { root, formatSize: fmtSize, ...accessors }) });
+  return /* @__PURE__ */ jsx("div", { className, style: { height, ...style }, children: /* @__PURE__ */ jsx(
+    Treemap,
+    {
+      root,
+      formatSize: fmtSize,
+      remainderTail: 0.2,
+      minCellSide: 24,
+      ...accessors
+    }
+  ) });
 }
 export {
   TreeMapView

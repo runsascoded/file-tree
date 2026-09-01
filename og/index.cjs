@@ -148,7 +148,7 @@ function renderOgCard(data, opts = {}) {
   return parts.join("");
 }
 function renderTreemapBody(children, x, y, w, h, palette, ink) {
-  const rects = (0, import_react.squarify)([...children], x, y, w, h, (c) => c.size);
+  const rects = (0, import_react.squarifyRemainder)([...children], x, y, w, h, (c) => c.size, 48, 0.24);
   const out = [];
   rects.forEach((r, i) => {
     const fill = palette[i % palette.length];
