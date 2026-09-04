@@ -8,15 +8,15 @@ importers:
 
   .:
     dependencies:
-      '@disk-tree/react':
-        specifier: github:runsascoded/disk-tree#b7d3f71e60e81d0549a7d763cda29dab42555616
-        version: https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@floating-ui/react':
         specifier: ^0.27.20
         version: 0.27.20(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@rdub/file-tree':
         specifier: link:..
         version: link:..
+      '@rdub/treemap':
+        specifier: github:runsascoded/disk-tree#b047e3754dd1d49dc8bfcbc2d45998b10b2753fc
+        version: https://codeload.github.com/runsascoded/disk-tree/tar.gz/b047e3754dd1d49dc8bfcbc2d45998b10b2753fc(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       highlight.js:
         specifier: ^11.11.1
         version: 11.11.1
@@ -154,20 +154,6 @@ packages:
   '@babel/types@7.29.0':
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
-
-  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616':
-    resolution: {tarball: https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616}
-    version: 0.1.0-dist.2204f1a
-    peerDependencies:
-      d3-hierarchy: '>=3'
-      d3-voronoi-treemap: '>=1.1'
-      react: '>=18'
-      react-dom: '>=18'
-    peerDependenciesMeta:
-      d3-hierarchy:
-        optional: true
-      d3-voronoi-treemap:
-        optional: true
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -367,6 +353,20 @@ packages:
 
   '@pdf-lib/upng@1.0.1':
     resolution: {integrity: sha512-dQK2FUMQtowVP00mtIksrlZhdFXQZPC+taih1q4CvPZ5vqdxR/LKBaFg0oAfzd1GlHZXXSPdQfzQnt+ViGvEIQ==}
+
+  '@rdub/treemap@https://codeload.github.com/runsascoded/disk-tree/tar.gz/b047e3754dd1d49dc8bfcbc2d45998b10b2753fc':
+    resolution: {tarball: https://codeload.github.com/runsascoded/disk-tree/tar.gz/b047e3754dd1d49dc8bfcbc2d45998b10b2753fc}
+    version: 0.1.0-dist.25f3dc0
+    peerDependencies:
+      d3-hierarchy: '>=3'
+      d3-voronoi-treemap: '>=1.1'
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      d3-hierarchy:
+        optional: true
+      d3-voronoi-treemap:
+        optional: true
 
   '@remix-run/router@1.23.2':
     resolution: {integrity: sha512-Ic6m2U/rMjTkhERIa/0ZtXJP17QUi2CbWE7cqx4J58M8aA3QTfW+2UlQ4psvTX9IO1RfNVhK3pcpdjej7L+t2w==}
@@ -1182,11 +1182,6 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
-    dependencies:
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
-
   '@esbuild/aix-ppc64@0.25.12':
     optional: true
 
@@ -1316,6 +1311,11 @@ snapshots:
   '@pdf-lib/upng@1.0.1':
     dependencies:
       pako: 1.0.11
+
+  '@rdub/treemap@https://codeload.github.com/runsascoded/disk-tree/tar.gz/b047e3754dd1d49dc8bfcbc2d45998b10b2753fc(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
 
   '@remix-run/router@1.23.2': {}
 

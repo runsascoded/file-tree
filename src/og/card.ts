@@ -5,7 +5,7 @@
  *     no network, no React, no DOM; runs in a Worker and is tested by
  *     asserting SVG structure. A *file* card is breadcrumb + name + size
  *     + type badge; a *dir* card draws its children as a treemap via
- *     `@disk-tree/react`'s pure `squarify` + `DEFAULT_PALETTE`, so the
+ *     `@rdub/treemap`'s pure `squarify` + `DEFAULT_PALETTE`, so the
  *     share image and the interactive view read the same.
  *   - `ogCardData({ store, treeSource?, splat })` — the impure resolver
  *     that fills `OgCardData` from a `Store` (+ optional `TreeSource`).
@@ -14,11 +14,11 @@
  *
  *  The edge (a CF Pages Function) resolves data, renders SVG, and
  *  rasterizes to PNG with `@resvg/resvg-wasm`; unfurlers want PNG at
- *  1200×630. `@disk-tree/react` is an optional peer here, imported
+ *  1200×630. `@rdub/treemap` is an optional peer here, imported
  *  statically and marked `external`, exactly as `renderers/treemap` does.
  *  See `specs/cfp-og-images.md`.
  */
-import { squarifyRemainder, DEFAULT_PALETTE } from '@disk-tree/react'
+import { squarifyRemainder, DEFAULT_PALETTE } from '@rdub/treemap'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
 import { basename, keyToSplat, parsePath, extOf, type ParsePathOptions } from '../react/parsePath'
@@ -55,7 +55,7 @@ export interface OgCardOptions {
   background?: string
   ink?: string
   muted?: string
-  /** Palette for treemap tiles. Default `@disk-tree/react`'s. */
+  /** Palette for treemap tiles. Default `@rdub/treemap`'s. */
   palette?: readonly string[]
 }
 

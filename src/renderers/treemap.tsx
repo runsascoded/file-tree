@@ -1,4 +1,4 @@
-/** A treemap view over a `TreeSource`, wrapping `@disk-tree/react`'s
+/** A treemap view over a `TreeSource`, wrapping `@rdub/treemap`'s
  *  generic `<Treemap>`.
  *
  *  This is the *aggregate* half of the browser: `<DirListing>` renders
@@ -7,10 +7,10 @@
  *  — the same recursive-size numbers that fill the listing's dir rows
  *  drive the map — so a consumer wires the source once and offers both.
  *
- *  `@disk-tree/react` is an *optional peer*: this module statically
+ *  `@rdub/treemap` is an *optional peer*: this module statically
  *  imports it and is marked external, so it never lands in the main
  *  bundle. Consumers install it (pin the `dist` branch by SHA, e.g.
- *  `@disk-tree/react`: `github:runsascoded/disk-tree#<dist-sha>`) and
+ *  `@rdub/treemap`: `github:runsascoded/disk-tree#<dist-sha>`) and
  *  lazy-load this subpath (`@rdub/file-tree/renderers/treemap`), then
  *  pass the component to `<FileTree treemapRenderer={…}>` — so a page
  *  that never opens the map downloads neither the peer nor this chunk.
@@ -25,7 +25,7 @@
  *  See `specs/tree-sources-and-treemap.md`.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Treemap, type CellStyle } from '@disk-tree/react'
+import { Treemap, type CellStyle } from '@rdub/treemap'
 import { fmtSize } from '../react/fmt'
 import type { TreeNode, TreeSource } from './treeSource'
 

@@ -70,3 +70,27 @@ The new pin carries both treemap features file-tree was waiting on:
   `/mock/samples?view=split` (or `/mock/logs`): hovering a row rings the matching
   map cell (and vice-versa) in the default `gaps` tiling — no forced `shared`.
 - Once green, this spec → `specs/done/`.
+
+## Landed (2026-09-04)
+
+Rename + re-pin only — **§3 (the brushing integration) was already shipped**
+earlier this session against the old `@disk-tree/react#b7d3f71` pin (pluggable
+`BrushStyle` with `brushSpotlight`/`brushRing`/`brushBold`, bidirectional
+`onHoverPath`, default `gaps`, workarounds dropped). So this pass was purely the
+dependency swap.
+
+Two spots beyond the spec's package.json table also had to move:
+
+- **`site/package.json`** — the demo's own dep + pin (site installs
+  independently; its own lockfile).
+- **`tsup.config.ts`** `external` list — so the renamed optional peer stays
+  un-bundled.
+
+Both lockfiles (`pnpm-lock.yaml`, `site/pnpm-lock.yaml`) regenerated to
+`@rdub/treemap@0.1.0-dist.25f3dc0` (pin `b047e375`, `dependencies: {}`). Comment
+mentions swept in `treemap.tsx`, `og/card.ts`, `FileTree.tsx`, and the e2e spec;
+`treeSource.ts` / README / historical specs left as-is (they name *disk-tree the
+scanner/project*, not the package). `pnpm typecheck` + `build` + 244 unit tests +
+35 mock e2e all green; brush ring verified live under the new package. The old
+`@disk-tree/react` pin remains resolvable, so no consumer is forced to move yet —
+but file-tree's optional peer is now `@rdub/treemap` (BIC, noted above).

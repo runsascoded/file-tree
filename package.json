@@ -242,7 +242,7 @@
     "use-prms": "^0.4",
     "yaml": "^2",
     "wa-sqlite": "^1",
-    "@disk-tree/react": "*"
+    "@rdub/treemap": "*"
   },
   "peerDependenciesMeta": {
     "yaml": {
@@ -278,7 +278,7 @@
     "wa-sqlite": {
       "optional": true
     },
-    "@disk-tree/react": {
+    "@rdub/treemap": {
       "optional": true
     }
   },
@@ -299,7 +299,7 @@
     "vitest": "^2.1.8",
     "wa-sqlite": "^1.0.0",
     "yaml": "^2.9.0",
-    "@disk-tree/react": "github:runsascoded/disk-tree#b7d3f71e60e81d0549a7d763cda29dab42555616"
+    "@rdub/treemap": "github:runsascoded/disk-tree#b047e3754dd1d49dc8bfcbc2d45998b10b2753fc"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20"

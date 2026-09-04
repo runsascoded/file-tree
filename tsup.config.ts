@@ -58,6 +58,6 @@ export default defineConfig({
     'jq-web',
     'wa-sqlite',
     'use-prms',
-    '@disk-tree/react',
+    '@rdub/treemap',
   ],
 })

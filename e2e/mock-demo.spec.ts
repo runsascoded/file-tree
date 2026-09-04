@@ -73,7 +73,7 @@ test.describe('MockDemo', () => {
     await page.goto('/mock')
     // The list↔map toggle only appears when both a treeSource and a
     // treemapRenderer are wired. Switching to the map persists to
-    // ?view=tree and renders @disk-tree/react's <Treemap> over the same
+    // ?view=tree and renders @rdub/treemap's <Treemap> over the same
     // walked source that fills the dir-size cells.
     await page.getByRole('button', { name: 'Treemap view' }).click()
     await expect(page).toHaveURL(/\?view=tree$/)
