@@ -27,7 +27,7 @@ __export(treemap_exports, {
 });
 module.exports = __toCommonJS(treemap_exports);
 var import_react = require("react");
-var import_react2 = require("@disk-tree/react");
+var import_treemap = require("@rdub/treemap");
 
 // src/react/fmt.ts
 function fmtSize(n) {
@@ -91,7 +91,7 @@ function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", h
   ] });
   if (!root) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { opacity: 0.7 }, children: "Loading treemap\u2026" });
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className, style: { height, ...style }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-    import_react2.Treemap,
+    import_treemap.Treemap,
     {
       root,
       formatSize: fmtSize,

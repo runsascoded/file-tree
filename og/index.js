@@ -1,5 +1,5 @@
 // src/og/card.ts
-import { squarifyRemainder, DEFAULT_PALETTE } from "@disk-tree/react";
+import { squarifyRemainder, DEFAULT_PALETTE } from "@rdub/treemap";
 
 // src/react/fmt.ts
 function fmtSize(n) {

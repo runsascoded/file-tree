@@ -1,6 +1,6 @@
 // src/renderers/treemap.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Treemap } from "@disk-tree/react";
+import { Treemap } from "@rdub/treemap";
 
 // src/react/fmt.ts
 function fmtSize(n) {

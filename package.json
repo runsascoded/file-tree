@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.e2b1d9f",
+  "version": "0.0.1-dist.046514b",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -228,7 +228,8 @@
     "use-prms": "^0.4",
     "yaml": "^2",
     "wa-sqlite": "^1",
-    "@disk-tree/react": "*"
+    "@disk-tree/react": "*",
+    "@rdub/treemap": "*"
   },
   "peerDependenciesMeta": {
     "react": {

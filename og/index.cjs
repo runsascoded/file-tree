@@ -30,7 +30,7 @@ __export(og_exports, {
 module.exports = __toCommonJS(og_exports);
 
 // src/og/card.ts
-var import_react = require("@disk-tree/react");
+var import_treemap = require("@rdub/treemap");
 
 // src/react/fmt.ts
 function fmtSize(n) {
@@ -114,7 +114,7 @@ function clipMiddle(s, n) {
 }
 function renderOgCard(data, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
-  const palette = opts.palette ?? import_react.DEFAULT_PALETTE;
+  const palette = opts.palette ?? import_treemap.DEFAULT_PALETTE;
   const W = OG_WIDTH, H = OG_HEIGHT;
   const pad = 60;
   const header = [data.storeLabel, ...data.crumbs].filter(Boolean).join(" / ");
@@ -148,7 +148,7 @@ function renderOgCard(data, opts = {}) {
   return parts.join("");
 }
 function renderTreemapBody(children, x, y, w, h, palette, ink) {
-  const rects = (0, import_react.squarifyRemainder)([...children], x, y, w, h, (c) => c.size, 48, 0.24);
+  const rects = (0, import_treemap.squarifyRemainder)([...children], x, y, w, h, (c) => c.size, 48, 0.24);
   const out = [];
   rects.forEach((r, i) => {
     const fill = palette[i % palette.length];

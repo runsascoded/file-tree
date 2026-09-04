@@ -33,7 +33,7 @@ interface OgCardOptions {
     background?: string;
     ink?: string;
     muted?: string;
-    /** Palette for treemap tiles. Default `@disk-tree/react`'s. */
+    /** Palette for treemap tiles. Default `@rdub/treemap`'s. */
     palette?: readonly string[];
 }
 /** Render `OgCardData` to a 1200×630 SVG string. Pure. */

@@ -1,6 +1,6 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { CSSProperties } from 'react';
-import { CellStyle } from '@disk-tree/react';
+import { CellStyle } from '@rdub/treemap';
 import { TreeNode, TreeSource } from './treeSource.cjs';
 
 interface TreeMapViewProps {

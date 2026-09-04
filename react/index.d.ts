@@ -180,7 +180,7 @@ interface ParquetRendererProps {
 }
 type ParquetRenderer = ComponentType<ParquetRendererProps>;
 /** Optional component that renders a `TreeSource` as a treemap.
- *  Pluggable so the lib doesn't bundle `@disk-tree/react` (an optional
+ *  Pluggable so the lib doesn't bundle `@rdub/treemap` (an optional
  *  peer): `<TreeMapView>` from `@rdub/file-tree/renderers/treemap` is
  *  the reference impl. When provided *and* a `treeSource` is set, the
  *  directory view gains a list / map / split toggle; `path` is the
@@ -262,7 +262,7 @@ interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
     /** Optional treemap renderer (see `TreemapRenderer`). When set
      *  alongside `treeSource`, the directory view gains a list↔map toggle
      *  and can render the current subtree as a treemap. Pluggable so the
-     *  lib doesn't bundle `@disk-tree/react`; wire `<TreeMapView>` from
+     *  lib doesn't bundle `@rdub/treemap`; wire `<TreeMapView>` from
      *  `@rdub/file-tree/renderers/treemap` (lazy-loaded). */
     treemapRenderer?: TreemapRenderer;
     /** Viewer registry — an ordered list of `{ id, match, load, options }`,
