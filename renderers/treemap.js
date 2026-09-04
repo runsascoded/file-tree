@@ -13,7 +13,16 @@ function fmtSize(n) {
 
 // src/renderers/treemap.tsx
 import { jsx, jsxs } from "react/jsx-runtime";
-function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", className, style }) {
+var RING = "#ffffff";
+var OUTSET = false;
+var SELECTED_ACCENT = "#4a9eff";
+function tintFill(s, accent, pct) {
+  return s.bg ? `color-mix(in oklch, ${s.bg}, ${accent} ${pct}%)` : accent;
+}
+var brushRing = (s, { role }) => role === "selected" ? { ...s, bg: tintFill(s, SELECTED_ACCENT, 30), ink: RING, ring: { color: RING, width: 5, inset: OUTSET }, opacity: 1 } : role === "hovered" ? { ...s, bg: tintFill(s, RING, 14), ink: RING, ring: { color: RING, width: 3, inset: OUTSET }, opacity: 1 } : null;
+var brushSpotlight = (s, { role }) => role === "selected" ? { ...s, ring: { color: RING, width: 5, inset: OUTSET }, opacity: 1 } : role === "hovered" ? { ...s, ring: { color: RING, width: 3, inset: OUTSET }, opacity: 1 } : { ...s, opacity: 0.22 };
+var brushBold = (s, { role }) => role === "selected" ? { ...s, ring: { color: RING, width: 7, inset: OUTSET } } : role === "hovered" ? { ...s, ring: { color: RING, width: 4, inset: OUTSET } } : null;
+function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", highlightedPath, selectedPath, onSelectPath, onHoverPath, brushStyle = brushRing, className, style }) {
   const norm = path.replace(/^\/+|\/+$/g, "");
   const [root, setRoot] = useState(null);
   const [error, setError] = useState(null);
@@ -59,6 +68,16 @@ function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", c
     {
       root,
       formatSize: fmtSize,
+      lens: selectedPath == null && highlightedPath == null ? void 0 : (n, _path, _depth, _ctx, s) => {
+        const role = selectedPath != null && n.path === selectedPath ? "selected" : highlightedPath != null && n.path === highlightedPath ? "hovered" : "other";
+        return brushStyle(s, { role, node: n });
+      },
+      onCellClick: onSelectPath == null ? void 0 : (n) => {
+        if (n.kind === "dir") return;
+        onSelectPath(n.path === selectedPath ? null : n.path);
+        return true;
+      },
+      onCellHover: onHoverPath == null ? void 0 : (n) => onHoverPath(n ? n.path : null),
       remainderTail: 0.2,
       minCellSide: 24,
       ...accessors
@@ -66,6 +85,9 @@ function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", c
   ) });
 }
 export {
-  TreeMapView
+  TreeMapView,
+  brushBold,
+  brushRing,
+  brushSpotlight
 };
 //# sourceMappingURL=treemap.js.map

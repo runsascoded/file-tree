@@ -90,8 +90,21 @@ interface DirListingProps {
      *  to today's behaviour rather than erroring. File sizes still come
      *  from the store's own listing. */
     treeSource?: TreeSource;
+    /** Cross-highlight ("scrub") callback: fired with a row's tree-relative
+     *  path (no trailing slash) on hover-in, `null` on hover-out. `<FileTree>`
+     *  wires this in split view so hovering a row can emphasize the matching
+     *  treemap tile. Optional — omitted outside split view. */
+    onHoverPath?: (path: string | null) => void;
+    /** The path to highlight (from the shared scrub state): the row whose
+     *  tree-relative path equals this gets an emphasized background. `null`
+     *  for none. Optional. */
+    highlightedPath?: string | null;
+    /** The persistently-selected path (a pinned file tile in the split
+     *  map): its row gets a distinct, persistent background. `null` for
+     *  none. A hover (`highlightedPath`) takes visual priority. Optional. */
+    selectedPath?: string | null;
 }
-declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, filterPlaceholder, usePersistedState, markdownRenderer, renderCell, treeSource }: DirListingProps): react_jsx_runtime.JSX.Element;
+declare function DirListing({ store, prefix, routeBase, rootPrefix, q: qExternal, setQ: setQExternal, filterPlaceholder, usePersistedState, markdownRenderer, renderCell, treeSource, onHoverPath, highlightedPath, selectedPath }: DirListingProps): react_jsx_runtime.JSX.Element;
 
 /** What a viewer is handed. Every viewer takes these; anything else it
  *  needs comes from its entry's `options`. */
@@ -170,12 +183,30 @@ type ParquetRenderer = ComponentType<ParquetRendererProps>;
  *  Pluggable so the lib doesn't bundle `@disk-tree/react` (an optional
  *  peer): `<TreeMapView>` from `@rdub/file-tree/renderers/treemap` is
  *  the reference impl. When provided *and* a `treeSource` is set, the
- *  directory view gains a list↔map toggle; `path` is the current dir
- *  (tree-relative splat) so the map opens where the browser is. */
+ *  directory view gains a list / map / split toggle; `path` is the
+ *  current dir (tree-relative splat) so the map opens where the browser
+ *  is. `height` lets the split view render a shorter map beneath the
+ *  listing (the reference impl defaults to `70vh`). `highlightedPath` is
+ *  the split view's cross-highlight ("scrub") input: the tree-relative
+ *  path (no trailing slash) of the listing row under the cursor, so the
+ *  map can emphasize the matching tile. `null` when nothing is hovered.
+ *  `selectedPath` + `onSelectPath` are the persistent (click-to-pin)
+ *  companion: the reference map toggles selection when a *file* tile is
+ *  clicked (dir tiles still drill), emphasizing it more strongly than a
+ *  hover, so the split listing can keep that row lit. */
 interface TreemapRendererProps {
     source: TreeSource;
     path?: string;
     rootLabel?: string;
+    height?: number | string;
+    highlightedPath?: string | null;
+    selectedPath?: string | null;
+    onSelectPath?: (path: string | null) => void;
+    /** The reverse brush edge (map → listing): the tree-relative path of the
+     *  tile under the cursor, `null` when the cursor leaves the map. The split
+     *  view wires it to the same hover state the listing drives, so hovering a
+     *  tile lights its row just as hovering a row lights its tile. */
+    onHoverPath?: (path: string | null) => void;
 }
 type TreemapRenderer = ComponentType<TreemapRendererProps>;
 /** Whatever `R` accepts *beyond* the three props `<FileTree>` supplies
@@ -270,6 +301,15 @@ interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
         path: string;
         usePersistedState?: PersistedState;
     }>;
+    /** Optional PDF renderer. When set, `.pdf` paths render via this
+     *  component (e.g. a pdf.js viewer with text selection / search)
+     *  instead of the built-in `<PdfViewer>`, which embeds the file in a
+     *  native `<iframe>` — the browser's own PDF chrome, no peer needed. */
+    pdfRenderer?: ComponentType<{
+        store: Store;
+        path: string;
+        usePersistedState?: PersistedState;
+    }>;
     /** Optional code-highlighting renderer. When set, TEXTY paths whose
      *  extension maps to a language in `CODE_LANG` (e.g. `.ts`, `.py`,
      *  `.go`) render via this fn (`(source, lang) => ReactNode`) instead
@@ -310,7 +350,7 @@ interface ViewerActionCtx {
     /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
     entry?: string;
 }
-declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
+declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
 
 /** Adapter from `Store` to hyparquet's `AsyncBuffer` shape
  *  (`{ byteLength: number; slice(start, end?): Promise<ArrayBuffer> }`).
@@ -407,10 +447,16 @@ interface MediaViewerProps {
 }
 declare function MediaViewer({ store, path, kind }: MediaViewerProps): react_jsx_runtime.JSX.Element;
 
+interface PdfViewerProps {
+    store: Store;
+    path: string;
+}
+declare function PdfViewer({ store, path }: PdfViewerProps): react_jsx_runtime.JSX.Element;
+
 declare function fmtSize(n: number | undefined): string;
 
 /** Filter-string → predicate. Substring (case-insensitive) by default;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { type AsyncBuffer, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PersistedState, RegistryViewer, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, findViewer, fmtSize, makeMatcher, readZipEntries, readZipEntry };
+export { type AsyncBuffer, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PdfViewer, type PdfViewerProps, PersistedState, RegistryViewer, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, findViewer, fmtSize, makeMatcher, readZipEntries, readZipEntry };

@@ -20,7 +20,10 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/renderers/treemap.tsx
 var treemap_exports = {};
 __export(treemap_exports, {
-  TreeMapView: () => TreeMapView
+  TreeMapView: () => TreeMapView,
+  brushBold: () => brushBold,
+  brushRing: () => brushRing,
+  brushSpotlight: () => brushSpotlight
 });
 module.exports = __toCommonJS(treemap_exports);
 var import_react = require("react");
@@ -37,7 +40,16 @@ function fmtSize(n) {
 
 // src/renderers/treemap.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
-function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", className, style }) {
+var RING = "#ffffff";
+var OUTSET = false;
+var SELECTED_ACCENT = "#4a9eff";
+function tintFill(s, accent, pct) {
+  return s.bg ? `color-mix(in oklch, ${s.bg}, ${accent} ${pct}%)` : accent;
+}
+var brushRing = (s, { role }) => role === "selected" ? { ...s, bg: tintFill(s, SELECTED_ACCENT, 30), ink: RING, ring: { color: RING, width: 5, inset: OUTSET }, opacity: 1 } : role === "hovered" ? { ...s, bg: tintFill(s, RING, 14), ink: RING, ring: { color: RING, width: 3, inset: OUTSET }, opacity: 1 } : null;
+var brushSpotlight = (s, { role }) => role === "selected" ? { ...s, ring: { color: RING, width: 5, inset: OUTSET }, opacity: 1 } : role === "hovered" ? { ...s, ring: { color: RING, width: 3, inset: OUTSET }, opacity: 1 } : { ...s, opacity: 0.22 };
+var brushBold = (s, { role }) => role === "selected" ? { ...s, ring: { color: RING, width: 7, inset: OUTSET } } : role === "hovered" ? { ...s, ring: { color: RING, width: 4, inset: OUTSET } } : null;
+function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", highlightedPath, selectedPath, onSelectPath, onHoverPath, brushStyle = brushRing, className, style }) {
   const norm = path.replace(/^\/+|\/+$/g, "");
   const [root, setRoot] = (0, import_react.useState)(null);
   const [error, setError] = (0, import_react.useState)(null);
@@ -83,6 +95,16 @@ function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", c
     {
       root,
       formatSize: fmtSize,
+      lens: selectedPath == null && highlightedPath == null ? void 0 : (n, _path, _depth, _ctx, s) => {
+        const role = selectedPath != null && n.path === selectedPath ? "selected" : highlightedPath != null && n.path === highlightedPath ? "hovered" : "other";
+        return brushStyle(s, { role, node: n });
+      },
+      onCellClick: onSelectPath == null ? void 0 : (n) => {
+        if (n.kind === "dir") return;
+        onSelectPath(n.path === selectedPath ? null : n.path);
+        return true;
+      },
+      onCellHover: onHoverPath == null ? void 0 : (n) => onHoverPath(n ? n.path : null),
       remainderTail: 0.2,
       minCellSide: 24,
       ...accessors
@@ -91,6 +113,9 @@ function TreeMapView({ source, path = "", rootLabel = "root", height = "70vh", c
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  TreeMapView
+  TreeMapView,
+  brushBold,
+  brushRing,
+  brushSpotlight
 });
 //# sourceMappingURL=treemap.cjs.map
