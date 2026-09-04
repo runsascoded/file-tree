@@ -31,8 +31,23 @@ export const DEMO_FIXTURE = {
     'the `events.parquet` rows tagged `nyc` land here.\n',
   'docs/regions/sfo.md': '# SFO\n\nSan Francisco. Timezone `America/Los_Angeles`.\n',
   'docs/regions/lax.md': '# LAX\n\nLos Angeles. Timezone `America/Los_Angeles`.\n',
+  // A spread of sizes so the treemap is non-trivial: one dominant day (an
+  // error storm), a couple of mid-size days, and a few quiet ones — enough
+  // tiles at enough different areas to exercise squarify + the brush styles.
   'logs/2026-01-01.log': '[INFO] System started\n[DEBUG] Connected to db\n',
   'logs/2026-01-02.log': '[INFO] Processing batch 1\n[INFO] Processing batch 2\n',
+  'logs/2026-01-03.log': Array.from({ length: 40 }, (_, i) =>
+    `[ERROR] request ${1000 + i} failed: upstream timeout after 30s (retry ${i % 3})`,
+  ).join('\n') + '\n',
+  'logs/2026-01-04.log': Array.from({ length: 14 }, (_, i) =>
+    `[WARN] queue depth ${120 + i * 7} exceeds soft limit; shedding load`,
+  ).join('\n') + '\n',
+  'logs/2026-01-05.log': '[INFO] Nightly compaction started\n' +
+    '[INFO] Compacted 3 segments (-> 1)\n[INFO] Reclaimed 412 MB\n[INFO] Done in 8.4s\n',
+  'logs/2026-01-06.log': Array.from({ length: 24 }, (_, i) =>
+    `[INFO] batch ${i} ok (${90 + i} rows, ${(i * 1.3).toFixed(1)}ms)`,
+  ).join('\n') + '\n',
+  'logs/2026-01-07.log': '[INFO] Idle\n',
   // Deliberately 4 levels deep (root → server → tls → ciphers): the JSON
   // viewer's `initialOpenDepth` and expand-all behavior are only
   // meaningfully exercised by nesting.

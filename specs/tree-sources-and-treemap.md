@@ -415,8 +415,15 @@ library like ours. Plan:
   `treemapRenderer` is pluggable (like `parquetRenderer`) so the core never
   imports the peer. `split` stacks the listing above a shorter (`45vh`) map off
   the one shared `treeSource` — `TreemapRendererProps` grew an optional `height`
-  for that. (Cross-highlight "scrub" between the two panes — hover a row → light
-  its tile — is a natural follow-up; `<Treemap>` already exposes hover.)
+  for that. **Cross-highlight ("scrub"), table → map**, is built: `DirView` owns
+  an ephemeral `hovered` path, `DirListing` fires `onHoverPath` on row
+  enter/leave (and lights the matched row), and `<TreeMapView>` takes
+  `highlightedPath` and passes a `lens` that rings the matched tile white — safe,
+  since non-matches are left unchanged, so a drilled-elsewhere map never dims
+  wrongly. The **map → table** half needs `<Treemap>` to emit hover outward;
+  speced to DT as `onCellHover` (`~/c/disk-tree/specs/treemap-cell-hover.md`).
+  When it lands, `DirView` passes `onHoverPath` to the map and the
+  row-highlight-in path (already built) completes the loop with no consumer glue.
 - The pin that unblocked this: `@disk-tree/react` is now git-pinnable at the
   dist-branch root — DT added an npm-dist `package_dir` input that flattens
   `packages/react` to the branch root, so

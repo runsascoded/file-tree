@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { FileTree, walkTreeSource, type CellRenderer, type ViewerEntry } from '@rdub/file-tree/react'
+import { FileTree, walkTreeSource, type CellRenderer, type TreemapRendererProps, type ViewerEntry } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import { DEMO_FIXTURE } from '../fixtures/demo'
 import { renderMarkdown } from '@rdub/file-tree/renderers/markdown'
@@ -10,7 +10,7 @@ import { renderJsonTree } from '@rdub/file-tree/renderers/json'
 import { makeCsvViewer } from '@rdub/file-tree/renderers/csv'
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
-import { TreeMapView } from '@rdub/file-tree/renderers/treemap'
+import { TreeMapView, brushRing, brushSpotlight, brushBold, type BrushStyle } from '@rdub/file-tree/renderers/treemap'
 import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
 import { isS2Cell, S2Cell } from '../components/S2CellPreview'
@@ -316,8 +316,66 @@ const renderCell: CellRenderer = ({ entry, column, defaultNode }) => {
   return m ? <>{defaultNode}{label(`${m[2].toUpperCase()} ${m[1]}`)}</> : defaultNode
 }
 
+/** The brush strategies this demo offers. Each `fn` is a `BrushStyle` from the
+ *  lib (`brushSpotlight` etc.) — or could be your own — handed to the map's
+ *  `brushStyle` prop. The point of the panel is that emphasis is a *hook*
+ *  (the map's `lens`), not something baked in: same tree, four looks. */
+const BRUSHES = {
+  spotlight: { label: 'Spotlight', fn: brushSpotlight, blurb: 'dim the whole field; the focus keeps its colour + a bold white ring' },
+  ring: { label: 'Ring + tint', fn: brushRing, blurb: 'a white border plus a gentle blue fill tint' },
+  bold: { label: 'Bold border', fn: brushBold, blurb: 'a thick white frame and nothing else' },
+} as const
+type BrushKey = keyof typeof BRUSHES
+
+/** Context so the (referentially stable) treemap renderer can read the current
+ *  brush without its component identity changing — swapping brushes then just
+ *  re-runs the map's `lens`, with no remount / reload of the tree. */
+const BrushContext = createContext<BrushStyle | undefined>(undefined)
+
+/** `treemapRenderer` for `<FileTree>`: the reference `TreeMapView` wearing
+ *  whatever brush the panel currently selects. */
+function BrushableTreeMap(props: TreemapRendererProps) {
+  const brushStyle = useContext(BrushContext)
+  return <TreeMapView {...props} brushStyle={brushStyle} />
+}
+
+/** A little segmented control demoing the map's `brushStyle` hook (visible in
+ *  the split/map views — hover a row or tile, or click a file tile to pin). */
+function BrushPanel({ value, onChange }: { value: BrushKey; onChange: (k: BrushKey) => void }) {
+  const border = '1px solid rgba(128,128,128,0.4)'
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0.5em', margin: '1em 0 0', fontSize: '0.9em' }}>
+      <span style={{ opacity: 0.7 }}>treemap brush:</span>
+      <div style={{ display: 'inline-flex', border, borderRadius: 6, overflow: 'hidden' }}>
+        {(Object.keys(BRUSHES) as BrushKey[]).map((k, i) => (
+          <button
+            key={k}
+            onClick={() => onChange(k)}
+            style={{
+              padding: '0.3em 0.7em',
+              border: 'none',
+              borderLeft: i === 0 ? 'none' : border,
+              background: k === value ? '#4a9eff' : 'transparent',
+              color: k === value ? '#fff' : 'inherit',
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
+            {BRUSHES[k].label}
+          </button>
+        ))}
+      </div>
+      <span style={{ opacity: 0.55 }}>{BRUSHES[value].blurb}</span>
+    </div>
+  )
+}
+
 export function MockDemo() {
   const store = useMemo(() => MockStore(DEMO_FIXTURE, { pageSize: 100, describe: 'mock://demo-bucket/' }), [])
+  // Which emphasis strategy the treemap wears; drives the `brushStyle` hook
+  // via `BrushContext`. Defaults to Spotlight — dimming the field reads as
+  // "this is the one" better than lightening the target ever did.
+  const [brushKey, setBrushKey] = useState<BrushKey>('spotlight')
   // Layer 0: walk the store live and roll sizes up in JS. No backend, no
   // scan infra — every directory row shows its recursive size instead of
   // `—`. For a bucket too big to walk live this would be a snapshot-
@@ -333,12 +391,13 @@ export function MockDemo() {
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5em' }}>
       <div style={{ display: 'flex', gap: '1em', alignItems: 'flex-start' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
+      <BrushContext.Provider value={BRUSHES[brushKey].fn}>
       <FileTree
         store={store}
         routeBase="/mock"
         title="MockStore demo"
         treeSource={treeSource}
-        treemapRenderer={TreeMapView}
+        treemapRenderer={BrushableTreeMap}
         markdownRenderer={renderMarkdown}
         parquetRenderer={ParquetViewer}
         parquetOptions={parquetOptions}
@@ -351,6 +410,8 @@ export function MockDemo() {
         viewerActions={renderViewerActions}
         usePersistedState={useUrlPersistedState}
       />
+      </BrushContext.Provider>
+      <BrushPanel value={brushKey} onChange={setBrushKey} />
       </div>
       {asideState.page && <PageAside {...asideState} />}
       </div>
