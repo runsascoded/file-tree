@@ -25,7 +25,7 @@
  *  See `specs/tree-sources-and-treemap.md`.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Treemap } from '@disk-tree/react'
+import { Treemap, type CellStyle } from '@disk-tree/react'
 import { fmtSize } from '../react/fmt'
 import type { TreeNode, TreeSource } from './treeSource'
 
@@ -40,15 +40,101 @@ export interface TreeMapViewProps {
   /** Height of the map area. `<Treemap>` fills its container, so it
    *  needs an explicit one; default `'70vh'`. */
   height?: number | string
+  /** Cross-highlight ("scrub") input: the tree-relative path of the tile
+   *  to emphasize (the listing row under the cursor, in `<FileTree>`'s
+   *  split view). `null`/absent emphasizes nothing. */
+  highlightedPath?: string | null
+  /** Persistent selection: the tree-relative path of a pinned tile,
+   *  emphasized more strongly (and differently) than a hover. Set by
+   *  `onSelectPath` when a *file* tile is clicked. */
+  selectedPath?: string | null
+  /** Called to toggle selection when a file (leaf) tile is clicked — the
+   *  clicked node's path, or `null` to clear (clicking the selected tile
+   *  again). Directory tiles are left to drill as usual. */
+  onSelectPath?: (path: string | null) => void
+  /** The reverse brush edge (map → listing): the tree-relative path of the
+   *  tile under the cursor, or `null` when the cursor leaves every cell. Wire
+   *  it to the listing's row highlight for bidirectional linked highlighting. */
+  onHoverPath?: (path: string | null) => void
+  /** How a brushed cell (and, for spotlight-style strategies, every *other*
+   *  cell) is styled. A `BrushStyle` maps a cell's role — `selected`,
+   *  `hovered`, or `other` — plus its resolved `CellStyle` to an override (or
+   *  `null` to leave it as-is). Defaults to {@link brushRing}. Swap in
+   *  {@link brushSpotlight}/{@link brushSaturate}/{@link brushBold}, or pass
+   *  your own — the whole point of the `lens` hook is that this is yours to
+   *  define. Only consulted while *something* is brushed. */
+  brushStyle?: BrushStyle
   className?: string
   style?: CSSProperties
 }
+
+/** Which brush a cell is wearing when the map recomputes styles: the pinned
+ *  `selected` cell, the transient `hovered` one, or any `other` cell (only
+ *  ever passed while something else is selected/hovered, so a strategy can
+ *  fade the field around the focus). */
+export type BrushRole = 'selected' | 'hovered' | 'other'
+export interface BrushContext {
+  role: BrushRole
+  /** The cell's node, for strategies that vary by kind/size/depth. */
+  node: TreeNode
+}
+/** A pluggable emphasis strategy: given a cell's resolved `CellStyle` and its
+ *  {@link BrushRole}, return an override `CellStyle` (or `null` to leave the
+ *  cell untouched). Every field DT resolves is fair game — `bg` (fill),
+ *  `ink` (label), `ring` (a mode-independent emphasis border), `opacity`,
+ *  `hatch` — so a strategy can lighten, ring, dim, or desaturate at will. */
+export type BrushStyle = (s: CellStyle, ctx: BrushContext) => CellStyle | null
+
+/** The emphasis border is white so it pops on any tile fill (a blue ring on a
+ *  blue tile vanishes). Selected rings are drawn thicker than hovered ones, so
+ *  the two read apart even though both are white. */
+const RING = '#ffffff'
+/** Draw the ring *outset* (in the gutter), not inset. DT paints each cell's
+ *  fill on a full-bleed layer that sits *over* an inset ring — so an inset ring
+ *  in the default `gaps` tiling only bleeds through at the fill's ~8%
+ *  translucency (all but invisible). An outset ring lands in the inter-cell
+ *  gutter, above the fill, and reads as a crisp frame. */
+const OUTSET = false
+/** Used for the *fill* tint + label recolour in the ring brush (not the ring
+ *  itself) — the one place a hue still says "selected". */
+const SELECTED_ACCENT = '#4a9eff'
+
+/** Mix `accent` into the cell's own fill (DT's `ageFade`/`dimUnmatched` idiom),
+ *  falling back to the flat accent when the resolved style has no `bg`. */
+function tintFill(s: CellStyle, accent: string, pct: number): string {
+  return s.bg ? `color-mix(in oklch, ${s.bg}, ${accent} ${pct}%)` : accent
+}
+
+/** A bold white `ring` (an outset frame in the gutter) plus a same-hue fill
+ *  tint and label recolour. The white border is the primary cue — it stands
+ *  out on any fill; the blue fill tint is the secondary "selected" hue. Other
+ *  cells untouched. This is file-tree's original brush and the default. */
+export const brushRing: BrushStyle = (s, { role }) =>
+  role === 'selected' ? { ...s, bg: tintFill(s, SELECTED_ACCENT, 30), ink: RING, ring: { color: RING, width: 5, inset: OUTSET }, opacity: 1 }
+    : role === 'hovered' ? { ...s, bg: tintFill(s, RING, 14), ink: RING, ring: { color: RING, width: 3, inset: OUTSET }, opacity: 1 }
+      : null
+
+/** Spotlight: the focus keeps its own colour (with a bold white ring so you
+ *  can't miss it) while *every other* cell fades right back. Emphasis from
+ *  dimming the field, not lightening the target — the inverse of the instinct
+ *  that a highlighted thing should get *brighter*. */
+export const brushSpotlight: BrushStyle = (s, { role }) =>
+  role === 'selected' ? { ...s, ring: { color: RING, width: 5, inset: OUTSET }, opacity: 1 }
+    : role === 'hovered' ? { ...s, ring: { color: RING, width: 3, inset: OUTSET }, opacity: 1 }
+      : { ...s, opacity: 0.22 }
+
+/** Pure border emphasis: a thick white `ring` and nothing else — no fill or
+ *  label recolour, no dimming — for when the frame alone should carry it. */
+export const brushBold: BrushStyle = (s, { role }) =>
+  role === 'selected' ? { ...s, ring: { color: RING, width: 7, inset: OUTSET } }
+    : role === 'hovered' ? { ...s, ring: { color: RING, width: 4, inset: OUTSET } }
+      : null
 
 /** `<Treemap<TreeNode>>` driven by a `TreeSource`. Loads the root level
  *  on mount (and whenever `source`/`path` change), then lets the map
  *  drive its own drill via `loadChildren`, caching each fetched level so
  *  `getChildren` can answer synchronously. */
-export function TreeMapView({ source, path = '', rootLabel = 'root', height = '70vh', className, style }: TreeMapViewProps) {
+export function TreeMapView({ source, path = '', rootLabel = 'root', height = '70vh', highlightedPath, selectedPath, onSelectPath, onHoverPath, brushStyle = brushRing, className, style }: TreeMapViewProps) {
   const norm = path.replace(/^\/+|\/+$/g, '')
   const [root, setRoot] = useState<TreeNode | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -95,6 +181,29 @@ export function TreeMapView({ source, path = '', rootLabel = 'root', height = '7
       <Treemap<TreeNode>
         root={root}
         formatSize={fmtSize}
+        // Cross-highlight: a `lens` (post-resolution style transform) tags each
+        // cell's brush role — `selected` (persistent), `hovered` (transient),
+        // or `other` — and hands it to `brushStyle` to style. Selection wins
+        // when a tile is both. Skipped entirely when nothing is brushed, so an
+        // untouched map pays nothing; once something is, every cell is offered
+        // (that's what lets a spotlight strategy fade the field around the focus).
+        lens={selectedPath == null && highlightedPath == null ? undefined : (n, _path, _depth, _ctx, s) => {
+          const role: BrushRole = selectedPath != null && n.path === selectedPath ? 'selected'
+            : highlightedPath != null && n.path === highlightedPath ? 'hovered'
+              : 'other'
+          return brushStyle(s, { role, node: n })
+        }}
+        // Click a *file* tile to toggle its selection (a dir tile is left to
+        // drill). `true` marks the click handled so the map skips its default.
+        onCellClick={onSelectPath == null ? undefined : n => {
+          if (n.kind === 'dir') return
+          onSelectPath(n.path === selectedPath ? null : n.path)
+          return true
+        }}
+        // Reverse brush edge: report the hovered tile's path up to the listing
+        // (`null` when the cursor leaves every cell), so a row lights up under
+        // the mapped tile just as a hovered row lights up its tile.
+        onCellHover={onHoverPath == null ? undefined : (n) => onHoverPath(n ? n.path : null)}
         // Give a dominant-child tree's tail its own legible side-by-side
         // band instead of full-height slivers. `remainderTail`'s sliver
         // cutoff is `minCellSide`, whose default (7px) is below the

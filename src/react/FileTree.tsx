@@ -9,7 +9,7 @@
  *     <FileTree store={store} routeBase="/files" />
  *   } />
  */
-import { useEffect, useMemo, useState, type ComponentProps, type ComponentType, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useEffect, useMemo, useState, type ComponentProps, type ComponentType, type ReactElement, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Store } from '../types'
 import type { TreeSource } from '../renderers/treeSource'
@@ -58,8 +58,28 @@ export type ParquetRenderer = ComponentType<ParquetRendererProps>
  *  directory view gains a list / map / split toggle; `path` is the
  *  current dir (tree-relative splat) so the map opens where the browser
  *  is. `height` lets the split view render a shorter map beneath the
- *  listing (the reference impl defaults to `70vh`). */
-export interface TreemapRendererProps { source: TreeSource; path?: string; rootLabel?: string; height?: number | string }
+ *  listing (the reference impl defaults to `70vh`). `highlightedPath` is
+ *  the split view's cross-highlight ("scrub") input: the tree-relative
+ *  path (no trailing slash) of the listing row under the cursor, so the
+ *  map can emphasize the matching tile. `null` when nothing is hovered.
+ *  `selectedPath` + `onSelectPath` are the persistent (click-to-pin)
+ *  companion: the reference map toggles selection when a *file* tile is
+ *  clicked (dir tiles still drill), emphasizing it more strongly than a
+ *  hover, so the split listing can keep that row lit. */
+export interface TreemapRendererProps {
+  source: TreeSource
+  path?: string
+  rootLabel?: string
+  height?: number | string
+  highlightedPath?: string | null
+  selectedPath?: string | null
+  onSelectPath?: (path: string | null) => void
+  /** The reverse brush edge (map → listing): the tree-relative path of the
+   *  tile under the cursor, `null` when the cursor leaves the map. The split
+   *  view wires it to the same hover state the listing drives, so hovering a
+   *  tile lights its row just as hovering a row lights its tile. */
+  onHoverPath?: (path: string | null) => void
+}
 export type TreemapRenderer = ComponentType<TreemapRendererProps>
 
 /** Whatever `R` accepts *beyond* the three props `<FileTree>` supplies
@@ -341,10 +361,33 @@ function DirView({ treeSource, treemapRenderer: Map, prefix, rootPrefix, rootLab
   listing: ReactNode
 }) {
   const use = usePersistedState ?? defaultUseState
-  const [stored, setView] = use('view', 'list' as DirViewMode)
+  const [stored, setView] = use('view', 'split' as DirViewMode)
   const view: DirViewMode = stored === 'tree' || stored === 'split' ? stored : 'list'
   const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, '')
-  const map = (height?: string) => <Map source={treeSource} path={treePath} rootLabel={rootLabel} {...(height ? { height } : {})} />
+  // Cross-highlight ("scrub") state, both tree-relative paths. `hovered`
+  // is transient (a listing row under the cursor); `selected` is
+  // persistent (a file tile clicked in the map). Both flow to the map
+  // (emphasize that tile) and to the listing (light that row); neither is
+  // persisted — `selected` resets when the viewed directory changes.
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  useEffect(() => { setSelected(null); setHovered(null) }, [treePath])
+  // `onHover` (the map → listing reverse brush) is wired only in split view,
+  // where a listing row is there to light up. In tree-only view the map keeps
+  // its own built-in hover affordance; feeding hover back as `highlightedPath`
+  // would just have a tile ring itself, doubling up.
+  const map = (height?: string, onHover?: (p: string | null) => void) =>
+    <Map source={treeSource} path={treePath} rootLabel={rootLabel} height={height}
+      highlightedPath={hovered} selectedPath={selected} onSelectPath={setSelected} onHoverPath={onHover} />
+  // Inject scrub props into the already-built listing element (Body owns
+  // its construction; only split view needs the wiring, so clone rather
+  // than thread the props through every mode).
+  const scrubListing = isValidElement(listing)
+    ? cloneElement(
+        listing as ReactElement<{ highlightedPath?: string | null; selectedPath?: string | null; onHoverPath?: (p: string | null) => void }>,
+        { highlightedPath: hovered, selectedPath: selected, onHoverPath: setHovered },
+      )
+    : listing
   return (
     <div>
       <ViewToggle view={view} setView={setView} />
@@ -352,8 +395,8 @@ function DirView({ treeSource, treemapRenderer: Map, prefix, rootPrefix, rootLab
       {view === 'list' && listing}
       {view === 'split' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1em' }}>
-          {listing}
-          {map('45vh')}
+          {scrubListing}
+          {map('45vh', setHovered)}
         </div>
       )}
     </div>

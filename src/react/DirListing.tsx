@@ -66,6 +66,19 @@ export interface DirListingProps {
    *  to today's behaviour rather than erroring. File sizes still come
    *  from the store's own listing. */
   treeSource?: TreeSource
+  /** Cross-highlight ("scrub") callback: fired with a row's tree-relative
+   *  path (no trailing slash) on hover-in, `null` on hover-out. `<FileTree>`
+   *  wires this in split view so hovering a row can emphasize the matching
+   *  treemap tile. Optional — omitted outside split view. */
+  onHoverPath?: (path: string | null) => void
+  /** The path to highlight (from the shared scrub state): the row whose
+   *  tree-relative path equals this gets an emphasized background. `null`
+   *  for none. Optional. */
+  highlightedPath?: string | null
+  /** The persistently-selected path (a pinned file tile in the split
+   *  map): its row gets a distinct, persistent background. `null` for
+   *  none. A hover (`highlightedPath`) takes visual priority. Optional. */
+  selectedPath?: string | null
 }
 
 /** Recursive directory sizes for the current level, keyed by store key.
@@ -111,7 +124,7 @@ function dirSize(sizes: Map<string, number> | null, key: string): ReactNode {
   return s == null ? '—' : fmtSize(s)
 }
 
-export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', usePersistedState, markdownRenderer, renderCell, treeSource }: DirListingProps) {
+export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', usePersistedState, markdownRenderer, renderCell, treeSource, onHoverPath, highlightedPath, selectedPath }: DirListingProps) {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
@@ -241,10 +254,21 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
             const name = basename(e.key)
             const splat = keyToSplat(e.key, rootPrefix)
             const href = `${baseTrimmed}/${splat}`
+            const rowPath = splat.replace(/\/+$/, '')
             const cell = (column: CellColumn, defaultNode: ReactNode) =>
               renderCell ? renderCell({ entry: e, column, prefix, href, defaultNode }) : defaultNode
             return (
-              <tr key={e.key} style={{ borderTop: '1px solid rgba(127,127,127,0.2)' }}>
+              <tr
+                key={e.key}
+                onMouseEnter={onHoverPath ? () => onHoverPath(rowPath) : undefined}
+                onMouseLeave={onHoverPath ? () => onHoverPath(null) : undefined}
+                style={{
+                  borderTop: '1px solid rgba(127,127,127,0.2)',
+                  background: highlightedPath === rowPath ? 'rgba(127,127,127,0.16)'
+                    : selectedPath === rowPath ? 'rgba(74,158,255,0.18)'
+                      : undefined,
+                }}
+              >
                 <td style={{ padding: '0.3em 0.6em 0.3em 0', fontFamily: 'ui-monospace, monospace' }}>
                   {cell('name', (
                     <Link to={href}>
