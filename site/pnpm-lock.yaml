@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@disk-tree/react':
-        specifier: github:runsascoded/disk-tree#0c486606d377581411f4bf7590af77fecfa34d36
-        version: https://codeload.github.com/runsascoded/disk-tree/tar.gz/0c486606d377581411f4bf7590af77fecfa34d36(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: github:runsascoded/disk-tree#b7d3f71e60e81d0549a7d763cda29dab42555616
+        version: https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@floating-ui/react':
         specifier: ^0.27.20
         version: 0.27.20(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -155,9 +155,9 @@ packages:
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
 
-  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/0c486606d377581411f4bf7590af77fecfa34d36':
-    resolution: {tarball: https://codeload.github.com/runsascoded/disk-tree/tar.gz/0c486606d377581411f4bf7590af77fecfa34d36}
-    version: 0.1.0-dist.e758294
+  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616':
+    resolution: {tarball: https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616}
+    version: 0.1.0-dist.2204f1a
     peerDependencies:
       d3-hierarchy: '>=3'
       d3-voronoi-treemap: '>=1.1'
@@ -1182,7 +1182,7 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/0c486606d377581411f4bf7590af77fecfa34d36(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
