@@ -39,9 +39,10 @@ test.describe('MockDemo', () => {
     await expect(page).toHaveURL(/\/mock\/docs\/?$/)
 
     await expect(page.getByRole('link', { name: 'intro.md', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'squarified-treemaps.pdf', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*guide\/$/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*regions\/$/ })).toBeVisible()
-    await expect(page.getByText('3 entries')).toBeVisible()
+    await expect(page.getByText('4 entries')).toBeVisible()
 
     // The root crumb names the store, not "root" — which bucket you're
     // looking at is the one thing the page can't otherwise tell you.
@@ -53,11 +54,11 @@ test.describe('MockDemo', () => {
   test('directory rows show their recursive size, not —', async ({ page }) => {
     await page.goto('/mock')
     // `walkTreeSource` rolls the store up in JS; the size cell of a dir
-    // row is its recursive byte total. `docs/` = guide 120 + regions
-    // 207 + intro.md 132 = 459 B; assert the whole row so a regression
-    // that drops the rollup (back to —) fails loudly.
+    // row is its recursive byte total. `docs/` = guide 120 + regions 207 +
+    // intro.md 132 + squarified-treemaps.pdf 2.8 KB = 3.2 KB; assert the
+    // whole row so a regression that drops the rollup (back to —) fails loudly.
     const docsRow = page.getByRole('row').filter({ hasText: /📁\s*docs\// })
-    await expect(docsRow.getByRole('cell').nth(1)).toHaveText('459 B')
+    await expect(docsRow.getByRole('cell').nth(1)).toHaveText('3.2 KB')
 
     // Drilling in, the level's own rows roll up their subtrees and stay
     // additive with the parent.
@@ -77,9 +78,9 @@ test.describe('MockDemo', () => {
     await page.getByRole('button', { name: 'Treemap view' }).click()
     await expect(page).toHaveURL(/\?view=tree$/)
     // The map's own crumb bar reports the rooted node + its recursive
-    // total (86.6 KB = samples 84.7K + the small dirs/files).
+    // total (93.7 KB = samples 84.7K + logs 4.4K + docs 3.2K + the rest).
     await expect(page.getByText('root').first()).toBeVisible()
-    await expect(page.getByText('86.6 KB')).toBeVisible()
+    await expect(page.getByText('93.7 KB')).toBeVisible()
     // samples dominates the map; its cell carries label + size. Locate
     // the branch cell itself (the click handler) rather than the label
     // span inside it, which the cell div intercepts pointer events for.
