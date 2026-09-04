@@ -10,7 +10,7 @@
     "tc": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@disk-tree/react": "github:runsascoded/disk-tree#0c486606d377581411f4bf7590af77fecfa34d36",
+    "@disk-tree/react": "github:runsascoded/disk-tree#b7d3f71e60e81d0549a7d763cda29dab42555616",
     "@floating-ui/react": "^0.27.20",
     "@rdub/file-tree": "link:..",
     "highlight.js": "^11.11.1",

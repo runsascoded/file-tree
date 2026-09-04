@@ -16,8 +16,8 @@ importers:
         version: 0.6.2
     devDependencies:
       '@disk-tree/react':
-        specifier: github:runsascoded/disk-tree#0c486606d377581411f4bf7590af77fecfa34d36
-        version: https://codeload.github.com/runsascoded/disk-tree/tar.gz/0c486606d377581411f4bf7590af77fecfa34d36(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: github:runsascoded/disk-tree#b7d3f71e60e81d0549a7d763cda29dab42555616
+        version: https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@playwright/test':
         specifier: ^1.59.1
         version: 1.59.1
@@ -69,9 +69,9 @@ importers:
 
 packages:
 
-  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/0c486606d377581411f4bf7590af77fecfa34d36':
-    resolution: {tarball: https://codeload.github.com/runsascoded/disk-tree/tar.gz/0c486606d377581411f4bf7590af77fecfa34d36}
-    version: 0.1.0-dist.e758294
+  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616':
+    resolution: {tarball: https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616}
+    version: 0.1.0-dist.2204f1a
     peerDependencies:
       d3-hierarchy: '>=3'
       d3-voronoi-treemap: '>=1.1'
@@ -1292,7 +1292,7 @@ packages:
 
 snapshots:
 
-  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/0c486606d377581411f4bf7590af77fecfa34d36(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@disk-tree/react@https://codeload.github.com/runsascoded/disk-tree/tar.gz/b7d3f71e60e81d0549a7d763cda29dab42555616(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
