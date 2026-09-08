@@ -34,6 +34,11 @@ export function Home() {
           {' '}S3-interop XML API. Unsigned public buckets, HMAC interop keys, or (server-side)
           OAuth bearer tokens.
         </li>
+        <li>
+          <Link to="/elide">Elide</Link> — the table viewers' <code>elide</code> option: how a
+          {' '}value too wide for its column clips, and how the clipped tail comes back (native
+          {' '}tooltip, a consumer-supplied rich tooltip, wide/x-scroll mode, or nothing).
+        </li>
       </ul>
 
       <h2>The <code>Store</code> interface</h2>
