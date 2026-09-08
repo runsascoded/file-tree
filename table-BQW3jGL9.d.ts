@@ -169,20 +169,115 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
      *  both values parse as numbers, else locale string order) reads a
      *  column wrong — a version string, an ordered enum. */
     sortComparators?: SortComparators;
+    /** How long cell values that outgrow their column are rendered — the
+     *  clip and the way the full value comes back. `true`/absent is the
+     *  batteries-included default (clip at 30em, native `title` = the full
+     *  value); `false` turns clipping off entirely; an object overrides
+     *  individual axes ({@link ElideConfig}). See {@link resolveElide}. */
+    elide?: ElideConfig | boolean;
 }
+/** One elidable cell, as an `elide` tooltip sees it. */
+interface ElideCtx<C extends TableColumn = TableColumn> {
+    value: unknown;
+    /** The full value as text — what the tooltip should show — or `undefined`
+     *  when the value has no readable scalar form (see {@link cellTitle}). */
+    text: string | undefined;
+    /** The node the cell renders (the viewer default, or a consumer
+     *  `renderCell`), for a tooltip render-prop to wrap. */
+    node: ReactNode;
+    column: C;
+    row: Record<string, unknown>;
+    path: string;
+}
+/** How a table viewer handles a value too wide for its column: the clip,
+ *  and the tooltip that brings the clipped tail back. Every field has a
+ *  default (see {@link ELIDE_DEFAULTS}); the top-level `elide: true` preset
+ *  binds them all, and each is independently overridable — so a consumer
+ *  moves along one axis without restating the rest.
+ *
+ *  Not yet exposed, but the natural next axes on this same seam:
+ *  `ellipsis: 'middle'` (keep a path's tail; needs JS measurement, as CSS
+ *  `text-overflow` only clips the end) and `onlyWhenClipped` (surface the
+ *  tooltip only when the value is *measured* to overflow, rather than on
+ *  every scalar — costs a `ResizeObserver`). */
+interface ElideConfig<C extends TableColumn = TableColumn> {
+    /** The column's width cap. A CSS length clips and ellipsizes overflow;
+     *  `false` renders at natural width so an outer scroller can reveal the
+     *  whole column (the "wide mode" escape hatch). Default `'30em'`. */
+    maxWidth?: string | false;
+    /** The tooltip that recovers the clipped tail:
+     *   - `'native'` (default): a browser `title` tooltip = the full value.
+     *     Applied only to a default-rendered scalar cell — a consumer
+     *     `renderCell` may reformat the value, so it owns its own title.
+     *   - `false`: none.
+     *   - `(ctx) => ReactNode`: your own (rich) tooltip — usually a floating
+     *     panel, though any node is fair game. `file-tree` stays free of any
+     *     tooltip dependency; you supply it, wrapping `ctx.node` and reading
+     *     `ctx.text`. Applied whether or not a `renderCell` is present —
+     *     passing it *is* the opt-in. */
+    tooltip?: 'native' | false | ((ctx: ElideCtx<C>) => ReactNode);
+    /** What the tooltip shows for a value, when not the full raw text.
+     *  Default {@link cellTitle} (scalars → their string, others → nothing). */
+    content?: (value: unknown) => string | undefined;
+}
+/** {@link ElideConfig} with every default filled in. */
+interface ResolvedElide<C extends TableColumn = TableColumn> {
+    maxWidth: string | false;
+    tooltip: 'native' | false | ((ctx: ElideCtx<C>) => ReactNode);
+    content: (value: unknown) => string | undefined;
+}
+/** The batteries-included preset `elide: true` (and the absent default)
+ *  resolve to: clip at 30em, recover the full value via a native `title`. */
+declare const ELIDE_DEFAULTS: ResolvedElide;
+/** Fold an `elide` option down to a fully-resolved strategy. `true`/absent
+ *  → the {@link ELIDE_DEFAULTS} preset; `false` → clip and tooltip both off;
+ *  an object → the preset with its axes overridden. */
+declare function resolveElide<C extends TableColumn>(elide: ElideConfig<C> | boolean | undefined): ResolvedElide<C>;
+/** The style contribution of an elide strategy: only the width cap, since
+ *  the clip idiom (`nowrap`/`overflow`/`ellipsis`) already lives in
+ *  {@link TD_STYLE}. `maxWidth: false` → `'none'` (natural width). */
+declare function elideCellStyle(el: ResolvedElide): CSSProperties;
+/** The per-cell result of an elide strategy: a `title` to hang on the
+ *  `<td>` (the native tooltip), and the node to render (possibly a tooltip
+ *  render-prop's wrapper). */
+interface ElideCell {
+    title?: string;
+    node: ReactNode;
+}
+/** Apply an elide strategy's *tooltip* to one cell — the width cap is a
+ *  style concern ({@link elideCellStyle}); this is the tooltip half.
+ *  `hasCustomRender` gates the `'native'` default (a `renderCell` owns its
+ *  own title), but a tooltip render-prop applies regardless. */
+declare function applyElide<C extends TableColumn>(el: ResolvedElide<C>, args: {
+    value: unknown;
+    node: ReactNode;
+    hasCustomRender: boolean;
+    column: C;
+    row: Record<string, unknown>;
+    path: string;
+}): ElideCell;
 /** Shared `<td>` / `<th>` styling, so the table viewers look like each
  *  other rather than merely similar. */
 declare const TD_STYLE: CSSProperties;
+/** Full-value text to hang on a cell's native `title`, so the tail that
+ *  `TD_STYLE`'s `maxWidth`/ellipsis clips stays recoverable on hover —
+ *  a long GCS path renders as a bare `…` otherwise, unreadable and
+ *  uncopyable. Returns `undefined` for values a cell draws as its *own*
+ *  node (null/undefined, byte blobs, plain objects), where a title would
+ *  only add `[object Object]` noise, not the value. Callers skip it
+ *  entirely when a consumer `renderCell` owns the cell — a custom render
+ *  carries its own title. */
+declare function cellTitle(value: unknown): string | undefined;
 declare const TH_STYLE: CSSProperties;
 declare const NUMERIC_ALIGN: CSSProperties;
 /** Resolve per-column `<td>`/`<th>` styling once per column rather than
  *  once per cell — the hooks are pure in `(column, path)`, and a table
  *  is mostly cells. */
-declare function resolveColStyles<C extends TableColumn>(columns: readonly C[], path: string, opts: Pick<TableViewerOptions<C>, 'cellProps' | 'headerProps'>, isNumeric: (col: C) => boolean): Map<string, {
+declare function resolveColStyles<C extends TableColumn>(columns: readonly C[], path: string, opts: Pick<TableViewerOptions<C>, 'cellProps' | 'headerProps'>, isNumeric: (col: C) => boolean, el?: ResolvedElide): Map<string, {
     cell: CSSProperties;
     header: CSSProperties;
     cellClass?: string;
     headerClass?: string;
 }>;
 
-export { DEFAULT_FULL_LOAD_MAX_BYTES as D, NUMERIC_ALIGN as N, type SortComparators as S, type TableViewerOptions as T, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, TD_STYLE as k, TH_STYLE as l, type TablePageCtx as m, resolveColStyles as r, sortGlyph as s, useSort as u };
+export { DEFAULT_FULL_LOAD_MAX_BYTES as D, ELIDE_DEFAULTS as E, NUMERIC_ALIGN as N, type ResolvedElide as R, type SortComparators as S, type TableViewerOptions as T, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, type ElideCell as k, type ElideConfig as l, type ElideCtx as m, TD_STYLE as n, TH_STYLE as o, type TablePageCtx as p, applyElide as q, cellTitle as r, sortGlyph as s, elideCellStyle as t, useSort as u, resolveColStyles as v, resolveElide as w };

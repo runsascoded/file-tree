@@ -79,6 +79,29 @@ import { useState } from "react";
 var defaultUseState = (_key, defaultValue) => useState(defaultValue);
 
 // src/renderers/table.ts
+var ELIDE_DEFAULTS = {
+  maxWidth: "30em",
+  tooltip: "native",
+  content: cellTitle
+};
+function resolveElide(elide) {
+  if (elide === false) return { ...ELIDE_DEFAULTS, maxWidth: false, tooltip: false };
+  if (elide === true || elide === void 0) return ELIDE_DEFAULTS;
+  return { ...ELIDE_DEFAULTS, ...elide };
+}
+function elideCellStyle(el) {
+  return { maxWidth: el.maxWidth === false ? "none" : el.maxWidth };
+}
+function applyElide(el, args) {
+  const { value, node, hasCustomRender, column, row, path } = args;
+  if (el.tooltip === false) return { node };
+  const text = el.content(value);
+  if (typeof el.tooltip === "function") {
+    return { node: el.tooltip({ value, text, node, column, row, path }) };
+  }
+  if (hasCustomRender || !text) return { node };
+  return { title: text, node };
+}
 var TD_STYLE = {
   padding: "0.2em 0.6em",
   whiteSpace: "nowrap",
@@ -86,6 +109,20 @@ var TD_STYLE = {
   overflow: "hidden",
   textOverflow: "ellipsis"
 };
+function cellTitle(value) {
+  switch (typeof value) {
+    case "string":
+      return value;
+    case "number":
+    case "bigint":
+    case "boolean":
+      return String(value);
+    case "object":
+      return value instanceof Date ? value.toISOString() : void 0;
+    default:
+      return void 0;
+  }
+}
 var TH_STYLE = {
   padding: "0.3em 0.6em",
   textAlign: "left",
@@ -93,14 +130,17 @@ var TH_STYLE = {
   borderBottom: "1px solid rgba(127,127,127,0.4)"
 };
 var NUMERIC_ALIGN = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
-function resolveColStyles(columns, path, opts, isNumeric) {
+function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   const out = /* @__PURE__ */ new Map();
+  const es = elideCellStyle(el);
   for (const c of columns) {
     const align = isNumeric(c) ? NUMERIC_ALIGN : {};
     const cp = opts.cellProps?.(c, path) || {};
     const hp = opts.headerProps?.(c, path) || {};
     out.set(c.name, {
-      cell: { ...TD_STYLE, ...align, ...cp.style },
+      // `es` overrides `TD_STYLE`'s default cap; `cp.style` still wins last,
+      // so a consumer's per-column width beats the elide default.
+      cell: { ...TD_STYLE, ...align, ...es, ...cp.style },
       header: { ...TH_STYLE, ...align, ...hp.style },
       ...cp.className ? { cellClass: cp.className } : {},
       ...hp.className ? { headerClass: hp.className } : {}
@@ -309,7 +349,8 @@ function TableBrowser({
   columnPicker = false,
   hiddenColumns,
   onPage,
-  onCellHover
+  onCellHover,
+  elide
 }) {
   const use = usePersistedState ?? defaultUseState;
   const [table, setTable] = use("table", "");
@@ -365,9 +406,10 @@ function TableBrowser({
   const unfilteredTotals = useRef2(/* @__PURE__ */ new Map());
   if (active && !filter.trim() && total !== null) unfilteredTotals.current.set(active.name, total);
   const unfilteredTotal = active ? unfilteredTotals.current.get(active.name) : void 0;
+  const el = useMemo3(() => resolveElide(elide), [elide]);
   const colStyles = useMemo3(
-    () => resolveColStyles(columns, path, { cellProps, headerProps }, (c) => NUMERIC_KINDS.has(c.kind)),
-    [columns, path, cellProps, headerProps]
+    () => resolveColStyles(columns, path, { cellProps, headerProps }, (c) => NUMERIC_KINDS.has(c.kind), el),
+    [columns, path, cellProps, headerProps, el]
   );
   const pageCtxRef = useRef2({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
   pageCtxRef.current = {
@@ -467,13 +509,16 @@ function TableBrowser({
             path,
             defaultNode: defaultTableCell(row[c.name])
           };
+          const rendered = renderCell ? renderCell(ctx) : ctx.defaultNode;
+          const { title, node } = applyElide(el, { value: ctx.value, node: rendered, hasCustomRender: !!renderCell, column: c, row, path });
           return /* @__PURE__ */ jsx2(
             "td",
             {
               style: styles?.cell ?? TD_STYLE,
               ...styles?.cellClass ? { className: styles.cellClass } : {},
+              ...title != null ? { title } : {},
               ...hoverHandlers(ctx),
-              children: renderCell ? renderCell(ctx) : ctx.defaultNode
+              children: node
             },
             c.name
           );

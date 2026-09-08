@@ -1,4 +1,4 @@
-import { a as TableColumn } from '../table-BDoOyrVw.js';
+import { a as TableColumn } from '../table-BQW3jGL9.js';
 import 'react';
 import '../persistedState-CB_wfbcb.js';
 

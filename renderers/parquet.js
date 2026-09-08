@@ -595,6 +595,29 @@ function sortGlyph(column, sort) {
 }
 
 // src/renderers/table.ts
+var ELIDE_DEFAULTS = {
+  maxWidth: "30em",
+  tooltip: "native",
+  content: cellTitle
+};
+function resolveElide(elide) {
+  if (elide === false) return { ...ELIDE_DEFAULTS, maxWidth: false, tooltip: false };
+  if (elide === true || elide === void 0) return ELIDE_DEFAULTS;
+  return { ...ELIDE_DEFAULTS, ...elide };
+}
+function elideCellStyle(el) {
+  return { maxWidth: el.maxWidth === false ? "none" : el.maxWidth };
+}
+function applyElide(el, args) {
+  const { value, node, hasCustomRender, column, row, path } = args;
+  if (el.tooltip === false) return { node };
+  const text = el.content(value);
+  if (typeof el.tooltip === "function") {
+    return { node: el.tooltip({ value, text, node, column, row, path }) };
+  }
+  if (hasCustomRender || !text) return { node };
+  return { title: text, node };
+}
 var TD_STYLE = {
   padding: "0.2em 0.6em",
   whiteSpace: "nowrap",
@@ -602,6 +625,20 @@ var TD_STYLE = {
   overflow: "hidden",
   textOverflow: "ellipsis"
 };
+function cellTitle(value) {
+  switch (typeof value) {
+    case "string":
+      return value;
+    case "number":
+    case "bigint":
+    case "boolean":
+      return String(value);
+    case "object":
+      return value instanceof Date ? value.toISOString() : void 0;
+    default:
+      return void 0;
+  }
+}
 var TH_STYLE = {
   padding: "0.3em 0.6em",
   textAlign: "left",
@@ -609,14 +646,17 @@ var TH_STYLE = {
   borderBottom: "1px solid rgba(127,127,127,0.4)"
 };
 var NUMERIC_ALIGN = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
-function resolveColStyles(columns, path, opts, isNumeric) {
+function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   const out = /* @__PURE__ */ new Map();
+  const es = elideCellStyle(el);
   for (const c of columns) {
     const align = isNumeric(c) ? NUMERIC_ALIGN : {};
     const cp = opts.cellProps?.(c, path) || {};
     const hp = opts.headerProps?.(c, path) || {};
     out.set(c.name, {
-      cell: { ...TD_STYLE, ...align, ...cp.style },
+      // `es` overrides `TD_STYLE`'s default cap; `cp.style` still wins last,
+      // so a consumer's per-column width beats the elide default.
+      cell: { ...TD_STYLE, ...align, ...es, ...cp.style },
       header: { ...TH_STYLE, ...align, ...hp.style },
       ...cp.className ? { cellClass: cp.className } : {},
       ...hp.className ? { headerClass: hp.className } : {}
@@ -633,7 +673,7 @@ function makeParquetViewer(opts = {}) {
     return /* @__PURE__ */ jsx2(ParquetViewer, { ...props, ...opts });
   };
 }
-function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }) {
+function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide }) {
   const { meta, error: metaError } = useParquetMeta(store, path);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
@@ -666,6 +706,7 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
   );
+  const el = useMemo3(() => resolveElide(elide), [elide]);
   const colStyles = useMemo3(
     // Numeric alignment keys off the *rendered* meaning, not the
     // physical type: a column read as temporal prints as text, so
@@ -674,9 +715,10 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
       meta?.schema ?? [],
       path,
       { cellProps, headerProps },
-      (c) => alignNumeric && !temporal.has(c.name) && c.physicalType !== void 0 && NUMERIC_TYPES.has(c.physicalType)
+      (c) => alignNumeric && !temporal.has(c.name) && c.physicalType !== void 0 && NUMERIC_TYPES.has(c.physicalType),
+      el
     ),
-    [meta, temporal, alignNumeric, cellProps, headerProps, path]
+    [meta, temporal, alignNumeric, cellProps, headerProps, path, el]
   );
   const pageCtxRef = useRef3({ rows: [], columns: [], path, pageStart: 0, totalRows: 0 });
   usePageNotify(onPage, pageCtxRef, [rows, rgPage, page, path, visible.join(",")]);
@@ -853,16 +895,19 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         const value = r[c.name];
         const defaultNode = fmtCell(value, temporal.get(c.name));
         const st = colStyles.get(c.name);
+        const rendered = renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode;
+        const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: r, path });
         return /* @__PURE__ */ jsx2(
           "td",
           {
             style: st?.cell ?? TD_STYLE,
             className: st?.cellClass,
+            ...title != null ? { title } : {},
             ...onCellHover ? {
               onMouseEnter: () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }),
               onMouseLeave: () => notifyHover(null)
             } : {},
-            children: renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode
+            children: node
           },
           c.name
         );

@@ -1,4 +1,4 @@
-import { a as TableColumn } from '../table-ZN60aKsl.cjs';
+import { a as TableColumn } from '../table-BtDQ-iIe.cjs';
 import 'react';
 import '../persistedState-CB_wfbcb.cjs';
 

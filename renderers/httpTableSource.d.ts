@@ -1,5 +1,5 @@
 import { TableSourceCapabilities, TableCatalog } from './tableSource.js';
-import '../table-BDoOyrVw.js';
+import '../table-BQW3jGL9.js';
 import 'react';
 import '../persistedState-CB_wfbcb.js';
 

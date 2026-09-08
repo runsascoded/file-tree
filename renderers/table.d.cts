@@ -1,3 +1,3 @@
 import 'react';
-export { N as NUMERIC_ALIGN, k as TD_STYLE, l as TH_STYLE, b as TableCellCtx, c as TableCellRenderer, a as TableColumn, d as TableColumnProps, e as TableHeaderCtx, f as TableHeaderRenderer, m as TablePageCtx, T as TableViewerOptions, r as resolveColStyles } from '../table-ZN60aKsl.cjs';
+export { E as ELIDE_DEFAULTS, k as ElideCell, l as ElideConfig, m as ElideCtx, N as NUMERIC_ALIGN, R as ResolvedElide, n as TD_STYLE, o as TH_STYLE, b as TableCellCtx, c as TableCellRenderer, a as TableColumn, d as TableColumnProps, e as TableHeaderCtx, f as TableHeaderRenderer, p as TablePageCtx, T as TableViewerOptions, q as applyElide, r as cellTitle, t as elideCellStyle, v as resolveColStyles, w as resolveElide } from '../table-BtDQ-iIe.cjs';
 import '../persistedState-CB_wfbcb.cjs';

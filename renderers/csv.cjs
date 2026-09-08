@@ -370,6 +370,29 @@ function sortGlyph(column, sort) {
 }
 
 // src/renderers/table.ts
+var ELIDE_DEFAULTS = {
+  maxWidth: "30em",
+  tooltip: "native",
+  content: cellTitle
+};
+function resolveElide(elide) {
+  if (elide === false) return { ...ELIDE_DEFAULTS, maxWidth: false, tooltip: false };
+  if (elide === true || elide === void 0) return ELIDE_DEFAULTS;
+  return { ...ELIDE_DEFAULTS, ...elide };
+}
+function elideCellStyle(el) {
+  return { maxWidth: el.maxWidth === false ? "none" : el.maxWidth };
+}
+function applyElide(el, args) {
+  const { value, node, hasCustomRender, column, row, path } = args;
+  if (el.tooltip === false) return { node };
+  const text = el.content(value);
+  if (typeof el.tooltip === "function") {
+    return { node: el.tooltip({ value, text, node, column, row, path }) };
+  }
+  if (hasCustomRender || !text) return { node };
+  return { title: text, node };
+}
 var TD_STYLE = {
   padding: "0.2em 0.6em",
   whiteSpace: "nowrap",
@@ -377,6 +400,20 @@ var TD_STYLE = {
   overflow: "hidden",
   textOverflow: "ellipsis"
 };
+function cellTitle(value) {
+  switch (typeof value) {
+    case "string":
+      return value;
+    case "number":
+    case "bigint":
+    case "boolean":
+      return String(value);
+    case "object":
+      return value instanceof Date ? value.toISOString() : void 0;
+    default:
+      return void 0;
+  }
+}
 var TH_STYLE = {
   padding: "0.3em 0.6em",
   textAlign: "left",
@@ -384,14 +421,17 @@ var TH_STYLE = {
   borderBottom: "1px solid rgba(127,127,127,0.4)"
 };
 var NUMERIC_ALIGN = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
-function resolveColStyles(columns, path, opts, isNumeric) {
+function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   const out = /* @__PURE__ */ new Map();
+  const es = elideCellStyle(el);
   for (const c of columns) {
     const align = isNumeric(c) ? NUMERIC_ALIGN : {};
     const cp = opts.cellProps?.(c, path) || {};
     const hp = opts.headerProps?.(c, path) || {};
     out.set(c.name, {
-      cell: { ...TD_STYLE, ...align, ...cp.style },
+      // `es` overrides `TD_STYLE`'s default cap; `cp.style` still wins last,
+      // so a consumer's per-column width beats the elide default.
+      cell: { ...TD_STYLE, ...align, ...es, ...cp.style },
       header: { ...TH_STYLE, ...align, ...hp.style },
       ...cp.className ? { cellClass: cp.className } : {},
       ...hp.className ? { headerClass: hp.className } : {}
@@ -407,7 +447,7 @@ function makeCsvViewer(opts = {}) {
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CsvViewer, { ...props, ...opts });
   };
 }
-function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }) {
+function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide }) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter);
   const [page, setPage] = (0, import_react5.useState)(0);
   const smallTable = total !== null && total <= fullLoadMaxBytes;
@@ -436,9 +476,10 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
     () => filteredKeyed?.map((o) => allColumns.map((c) => String(o[c.name] ?? ""))) ?? null,
     [filteredKeyed, allColumns]
   );
+  const el = (0, import_react5.useMemo)(() => resolveElide(elide), [elide]);
   const colStyles = (0, import_react5.useMemo)(
-    () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
-    [columns, path, cellProps, headerProps]
+    () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false, el),
+    [columns, path, cellProps, headerProps, el]
   );
   const pageCtxRef = (0, import_react5.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
   usePageNotify(onPage, pageCtxRef, [pageRows, allSorted, columns.length, path, smallTable]);
@@ -539,16 +580,19 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
           const st = colStyles.get(c.name);
           const j = colIndex.get(c.name);
           const value = r[j] ?? "";
+          const rendered = renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value;
+          const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: row(), path });
           return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "td",
             {
               style: st?.cell ?? TD_STYLE,
               className: st?.cellClass,
+              ...title != null ? { title } : {},
               ...onCellHover ? {
                 onMouseEnter: () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }),
                 onMouseLeave: () => notifyHover(null)
               } : {},
-              children: renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value
+              children: node
             },
             c.name
           );

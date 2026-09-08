@@ -1,5 +1,5 @@
 import { TableSourceCapabilities, TableCatalog } from './tableSource.cjs';
-import '../table-ZN60aKsl.cjs';
+import '../table-BtDQ-iIe.cjs';
 import 'react';
 import '../persistedState-CB_wfbcb.cjs';
 
