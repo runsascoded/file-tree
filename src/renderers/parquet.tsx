@@ -36,7 +36,7 @@ import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalF
 import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, usePageNotify, useStableCallback } from './tableControls'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 import {
-  resolveColStyles, TD_STYLE, TH_STYLE,
+  applyElide, resolveColStyles, resolveElide, TD_STYLE, TH_STYLE,
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
   type TableHeaderCtx, type TablePageCtx, type TableViewerOptions,
 } from './table'
@@ -122,7 +122,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -182,6 +182,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
     [meta, rows, inferTimestamps],
   )
 
+  const el = useMemo(() => resolveElide(elide), [elide])
   // Resolved once per column rather than per cell — a 100-row page of a
   // 17-column file would otherwise call `cellProps` 1,700 times a render.
   const colStyles = useMemo(
@@ -189,8 +190,8 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
     // physical type: a column read as temporal prints as text, so
     // right-aligning it would just detach it from its header.
     () => resolveColStyles(meta?.schema ?? [], path, { cellProps, headerProps },
-      c => alignNumeric && !temporal.has(c.name) && c.physicalType !== undefined && NUMERIC_TYPES.has(c.physicalType)),
-    [meta, temporal, alignNumeric, cellProps, headerProps, path])
+      c => alignNumeric && !temporal.has(c.name) && c.physicalType !== undefined && NUMERIC_TYPES.has(c.physicalType), el),
+    [meta, temporal, alignNumeric, cellProps, headerProps, path, el])
 
   // Outward-facing hooks, called before any early return — a hook after
   // a conditional `return` runs on some renders and not others, which
@@ -410,17 +411,20 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                     const value = r[c.name]
                     const defaultNode = fmtCell(value, temporal.get(c.name))
                     const st = colStyles.get(c.name)
+                    const rendered = renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode
+                    const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: r, path })
                     return (
                       <td
                         key={c.name}
                         style={st?.cell ?? TD_STYLE}
                         className={st?.cellClass}
+                        {...(title != null ? { title } : {})}
                         {...(onCellHover ? {
                           onMouseEnter: () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }),
                           onMouseLeave: () => notifyHover(null),
                         } : {})}
                       >
-                        {renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode}
+                        {node}
                       </td>
                     )
                   })}

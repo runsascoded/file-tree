@@ -132,6 +132,111 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
    *  both values parse as numbers, else locale string order) reads a
    *  column wrong — a version string, an ordered enum. */
   sortComparators?: SortComparators
+  /** How long cell values that outgrow their column are rendered — the
+   *  clip and the way the full value comes back. `true`/absent is the
+   *  batteries-included default (clip at 30em, native `title` = the full
+   *  value); `false` turns clipping off entirely; an object overrides
+   *  individual axes ({@link ElideConfig}). See {@link resolveElide}. */
+  elide?: ElideConfig | boolean
+}
+
+/** One elidable cell, as an `elide` tooltip sees it. */
+export interface ElideCtx<C extends TableColumn = TableColumn> {
+  value: unknown
+  /** The full value as text — what the tooltip should show — or `undefined`
+   *  when the value has no readable scalar form (see {@link cellTitle}). */
+  text: string | undefined
+  /** The node the cell renders (the viewer default, or a consumer
+   *  `renderCell`), for a tooltip render-prop to wrap. */
+  node: ReactNode
+  column: C
+  row: Record<string, unknown>
+  path: string
+}
+
+/** How a table viewer handles a value too wide for its column: the clip,
+ *  and the tooltip that brings the clipped tail back. Every field has a
+ *  default (see {@link ELIDE_DEFAULTS}); the top-level `elide: true` preset
+ *  binds them all, and each is independently overridable — so a consumer
+ *  moves along one axis without restating the rest.
+ *
+ *  Not yet exposed, but the natural next axes on this same seam:
+ *  `ellipsis: 'middle'` (keep a path's tail; needs JS measurement, as CSS
+ *  `text-overflow` only clips the end) and `onlyWhenClipped` (surface the
+ *  tooltip only when the value is *measured* to overflow, rather than on
+ *  every scalar — costs a `ResizeObserver`). */
+export interface ElideConfig<C extends TableColumn = TableColumn> {
+  /** The column's width cap. A CSS length clips and ellipsizes overflow;
+   *  `false` renders at natural width so an outer scroller can reveal the
+   *  whole column (the "wide mode" escape hatch). Default `'30em'`. */
+  maxWidth?: string | false
+  /** The tooltip that recovers the clipped tail:
+   *   - `'native'` (default): a browser `title` tooltip = the full value.
+   *     Applied only to a default-rendered scalar cell — a consumer
+   *     `renderCell` may reformat the value, so it owns its own title.
+   *   - `false`: none.
+   *   - `(ctx) => ReactNode`: your own (rich) tooltip — usually a floating
+   *     panel, though any node is fair game. `file-tree` stays free of any
+   *     tooltip dependency; you supply it, wrapping `ctx.node` and reading
+   *     `ctx.text`. Applied whether or not a `renderCell` is present —
+   *     passing it *is* the opt-in. */
+  tooltip?: 'native' | false | ((ctx: ElideCtx<C>) => ReactNode)
+  /** What the tooltip shows for a value, when not the full raw text.
+   *  Default {@link cellTitle} (scalars → their string, others → nothing). */
+  content?: (value: unknown) => string | undefined
+}
+
+/** {@link ElideConfig} with every default filled in. */
+export interface ResolvedElide<C extends TableColumn = TableColumn> {
+  maxWidth: string | false
+  tooltip: 'native' | false | ((ctx: ElideCtx<C>) => ReactNode)
+  content: (value: unknown) => string | undefined
+}
+
+/** The batteries-included preset `elide: true` (and the absent default)
+ *  resolve to: clip at 30em, recover the full value via a native `title`. */
+export const ELIDE_DEFAULTS: ResolvedElide = {
+  maxWidth: '30em', tooltip: 'native', content: cellTitle,
+}
+
+/** Fold an `elide` option down to a fully-resolved strategy. `true`/absent
+ *  → the {@link ELIDE_DEFAULTS} preset; `false` → clip and tooltip both off;
+ *  an object → the preset with its axes overridden. */
+export function resolveElide<C extends TableColumn>(elide: ElideConfig<C> | boolean | undefined): ResolvedElide<C> {
+  if (elide === false) return { ...ELIDE_DEFAULTS, maxWidth: false, tooltip: false }
+  if (elide === true || elide === undefined) return ELIDE_DEFAULTS
+  return { ...ELIDE_DEFAULTS, ...elide }
+}
+
+/** The style contribution of an elide strategy: only the width cap, since
+ *  the clip idiom (`nowrap`/`overflow`/`ellipsis`) already lives in
+ *  {@link TD_STYLE}. `maxWidth: false` → `'none'` (natural width). */
+export function elideCellStyle(el: ResolvedElide): CSSProperties {
+  return { maxWidth: el.maxWidth === false ? 'none' : el.maxWidth }
+}
+
+/** The per-cell result of an elide strategy: a `title` to hang on the
+ *  `<td>` (the native tooltip), and the node to render (possibly a tooltip
+ *  render-prop's wrapper). */
+export interface ElideCell { title?: string; node: ReactNode }
+
+/** Apply an elide strategy's *tooltip* to one cell — the width cap is a
+ *  style concern ({@link elideCellStyle}); this is the tooltip half.
+ *  `hasCustomRender` gates the `'native'` default (a `renderCell` owns its
+ *  own title), but a tooltip render-prop applies regardless. */
+export function applyElide<C extends TableColumn>(
+  el: ResolvedElide<C>,
+  args: { value: unknown; node: ReactNode; hasCustomRender: boolean; column: C; row: Record<string, unknown>; path: string },
+): ElideCell {
+  const { value, node, hasCustomRender, column, row, path } = args
+  if (el.tooltip === false) return { node }
+  const text = el.content(value)
+  if (typeof el.tooltip === 'function') {
+    return { node: el.tooltip({ value, text, node, column, row, path }) }
+  }
+  // 'native': the browser title, only on a default-rendered scalar with text.
+  if (hasCustomRender || !text) return { node }
+  return { title: text, node }
 }
 
 /** Shared `<td>` / `<th>` styling, so the table viewers look like each
@@ -139,6 +244,25 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
 export const TD_STYLE: CSSProperties = {
   padding: '0.2em 0.6em', whiteSpace: 'nowrap', maxWidth: '30em',
   overflow: 'hidden', textOverflow: 'ellipsis',
+}
+
+/** Full-value text to hang on a cell's native `title`, so the tail that
+ *  `TD_STYLE`'s `maxWidth`/ellipsis clips stays recoverable on hover —
+ *  a long GCS path renders as a bare `…` otherwise, unreadable and
+ *  uncopyable. Returns `undefined` for values a cell draws as its *own*
+ *  node (null/undefined, byte blobs, plain objects), where a title would
+ *  only add `[object Object]` noise, not the value. Callers skip it
+ *  entirely when a consumer `renderCell` owns the cell — a custom render
+ *  carries its own title. */
+export function cellTitle(value: unknown): string | undefined {
+  switch (typeof value) {
+    case 'string': return value
+    case 'number':
+    case 'bigint':
+    case 'boolean': return String(value)
+    case 'object': return value instanceof Date ? value.toISOString() : undefined
+    default: return undefined
+  }
 }
 export const TH_STYLE: CSSProperties = {
   padding: '0.3em 0.6em', textAlign: 'left', fontWeight: 500,
@@ -154,14 +278,18 @@ export function resolveColStyles<C extends TableColumn>(
   path: string,
   opts: Pick<TableViewerOptions<C>, 'cellProps' | 'headerProps'>,
   isNumeric: (col: C) => boolean,
+  el: ResolvedElide = ELIDE_DEFAULTS,
 ): Map<string, { cell: CSSProperties; header: CSSProperties; cellClass?: string; headerClass?: string }> {
   const out = new Map<string, { cell: CSSProperties; header: CSSProperties; cellClass?: string; headerClass?: string }>()
+  const es = elideCellStyle(el)
   for (const c of columns) {
     const align: CSSProperties = isNumeric(c) ? NUMERIC_ALIGN : {}
     const cp = opts.cellProps?.(c, path) || {}
     const hp = opts.headerProps?.(c, path) || {}
     out.set(c.name, {
-      cell: { ...TD_STYLE, ...align, ...cp.style },
+      // `es` overrides `TD_STYLE`'s default cap; `cp.style` still wins last,
+      // so a consumer's per-column width beats the elide default.
+      cell: { ...TD_STYLE, ...align, ...es, ...cp.style },
       header: { ...TH_STYLE, ...align, ...hp.style },
       ...(cp.className ? { cellClass: cp.className } : {}),
       ...(hp.className ? { headerClass: hp.className } : {}),

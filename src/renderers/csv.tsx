@@ -17,7 +17,7 @@ import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from '
 // Re-exported so the public subpath keeps every name it had; the
 // plumbing now lives in `./csvData` and is importable on its own.
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
-import { resolveColStyles, TD_STYLE, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
+import { applyElide, resolveColStyles, resolveElide, TD_STYLE, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
 import type { PersistedState } from '../react/persistedState'
 
 export type { TableCellCtx, TableCellRenderer, TableColumn, TableViewerOptions } from './table'
@@ -41,7 +41,7 @@ export function makeCsvViewer(opts: CsvViewerOptions = {}) {
   }
 }
 
-export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover }: {
+export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide }: {
   store: Store; path: string; delimiter: string; usePersistedState?: PersistedState
 } & CsvViewerOptions) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter)
@@ -78,9 +78,10 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     () => filteredKeyed?.map(o => allColumns.map(c => String(o[c.name] ?? ''))) ?? null,
     [filteredKeyed, allColumns])
 
+  const el = useMemo(() => resolveElide(elide), [elide])
   const colStyles = useMemo(
-    () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false),
-    [columns, path, cellProps, headerProps])
+    () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false, el),
+    [columns, path, cellProps, headerProps, el])
 
   // Called before the early returns — see `usePageNotify`.
   const pageCtxRef = useRef<TablePageCtx>({ rows: [], columns: [], path, pageStart: 0, totalRows: null })
@@ -201,19 +202,20 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                       const st = colStyles.get(c.name)
                       const j = colIndex.get(c.name)!
                       const value = r[j] ?? ''
+                      const rendered = renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value
+                      const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: row(), path })
                       return (
                         <td
                           key={c.name}
                           style={st?.cell ?? TD_STYLE}
                           className={st?.cellClass}
+                          {...(title != null ? { title } : {})}
                           {...(onCellHover ? {
                             onMouseEnter: () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }),
                             onMouseLeave: () => notifyHover(null),
                           } : {})}
                         >
-                          {renderCell
-                            ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value })
-                            : value}
+                          {node}
                         </td>
                       )
                     })}
