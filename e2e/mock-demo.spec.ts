@@ -442,9 +442,13 @@ test.describe('MockDemo', () => {
     // `TableCellCtx` and passed to both viewers — the `value` column
     // formats here exactly as it does in the parquet table, even though
     // CSV hands it over as a string.
+    // Retrying assertions, not a one-shot `allTextContents()`: the CSV viewer
+    // reads + parses asynchronously behind a lazy chunk, so a bare read races
+    // the load and can catch the `loading…` placeholder (as the sibling `.log`
+    // test below notes). `toHaveText` polls until the row settles.
     const rows = page.locator('tbody tr')
-    expect(await rows.first().locator('td').allTextContents()).toEqual(['2024-01-01', '$100.00'])
-    expect(await rows.nth(1).locator('td').allTextContents()).toEqual(['2024-02-01', '$150.00'])
+    await expect(rows.first().locator('td')).toHaveText(['2024-01-01', '$100.00'])
+    await expect(rows.nth(1).locator('td')).toHaveText(['2024-02-01', '$150.00'])
   })
 
   test('a consumer-registered viewer handles a format the library lacks', async ({ page }) => {
