@@ -17,8 +17,8 @@
  *  state, a separate concern from elision. */
 import { useMemo, useState, type ReactNode } from 'react'
 import {
-  autoUpdate, flip, FloatingPortal, offset, shift,
-  useDismiss, useFloating, useHover, useInteractions, useRole,
+  autoUpdate, flip, FloatingDelayGroup, FloatingPortal, offset, shift,
+  useDelayGroup, useDismiss, useFloating, useHover, useInteractions, useRole,
 } from '@floating-ui/react'
 import { CsvViewer } from '@rdub/file-tree/renderers/csv'
 import { MockStore } from '@rdub/file-tree/stores/mock'
@@ -48,18 +48,40 @@ type Tip = 'rich' | 'native' | 'none'
 
 /** A floating-ui tooltip supplied by the *consumer* — this is what the
  *  `elide.tooltip` render-prop is for. It wraps the cell's own node and
- *  shows the full value in a styled panel on hover. */
+ *  shows the full value in a styled panel on hover.
+ *
+ *  Two touches worth noting, both the consumer's call to make (`file-tree`
+ *  hands over `ctx` and stays out of it):
+ *   - it only opens when the cell is *actually clipped* — a tooltip that
+ *     just repeats a fully-visible value is noise. Measured on hover
+ *     (`scrollWidth > clientWidth`), so it costs nothing until you hover.
+ *   - a distinct surface (accent edge, elevated shadow) and a crossAxis
+ *     nudge so the path reads as an *expansion* of the cell, not a clone
+ *     of it shifted sideways. */
 function PathTip({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const { refs, floatingStyles, context } = useFloating({
     open,
-    onOpenChange: setOpen,
+    onOpenChange: (next) => {
+      if (next) {
+        const td = (refs.reference.current as HTMLElement | null)?.closest('td')
+        if (td && td.scrollWidth <= td.clientWidth + 1) return  // not clipped → don't bother
+      }
+      setOpen(next)
+    },
     placement: 'top-start',
-    middleware: [offset(6), flip(), shift({ padding: 8 })],
+    // Pull left by roughly the panel's own left inset (border + padding) so
+    // its text lines up under the cell's text rather than sitting ~1em right.
+    middleware: [offset({ mainAxis: 6, crossAxis: -10 }), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   })
+  // Share hover timing across every cell's tooltip: once one is open, moving
+  // to an adjacent cell opens the next instantly (no flicker gap), and the
+  // group's close delay bridges the td padding/border dead-zones between
+  // triggers. See the `<FloatingDelayGroup>` wrapping the table.
+  const { delay } = useDelayGroup(context)
   const { getReferenceProps, getFloatingProps } = useInteractions([
-    useHover(context, { move: false, delay: { open: 60, close: 0 } }),
+    useHover(context, { move: false, delay }),
     useRole(context, { role: 'tooltip' }),
     useDismiss(context),
   ])
@@ -74,11 +96,11 @@ function PathTip({ label, children }: { label: string; children: ReactNode }) {
             style={{
               ...floatingStyles,
               maxWidth: '46em', zIndex: 40,
-              background: '#0e0f13', color: '#f4f4f5',
-              border: '1px solid #333', borderRadius: 6,
-              padding: '0.4em 0.6em', fontSize: '0.85em',
+              background: '#0b1f3a', color: '#eaf1fb',
+              borderRadius: 6, borderLeft: '3px solid #4a9eff',
+              padding: '0.4em 0.7em', fontSize: '0.9em',
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-              overflowWrap: 'anywhere', boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
+              overflowWrap: 'anywhere', boxShadow: '0 8px 28px rgba(0,0,0,0.55)',
             }}
             {...getFloatingProps()}
           >
@@ -172,10 +194,19 @@ export function ElideDemo() {
 
       {/* Deliberately narrower than the longest path so the axes read: in
           compact mode the columns fit (and clip); in wide mode the table
-          outgrows this box and its own `overflowX:auto` scroller kicks in. */}
-      <div data-testid="elide-table" style={{ border: '1px solid #8883', borderRadius: 8, overflow: 'hidden', maxWidth: 640 }}>
-        <CsvViewer store={store} path="sweep-log.csv" delimiter="," elide={elide} resizableColumns fullLoadMaxBytes={Infinity} />
-      </div>
+          outgrows this box and its own `overflowX:auto` scroller kicks in.
+          `FloatingDelayGroup` makes the per-cell rich tooltips hand off
+          without flicker as the cursor crosses cells. */}
+      {/* `open` is small — a clipped cell exists to be read, so a hover is
+          intent to read it; it only gates the *first* cell anyway (the group
+          opens the rest instantly). `close` is the larger one: it's the
+          bridge that spans the padding/border dead-zones and keeps the
+          group's instant-phase alive as the cursor moves. */}
+      <FloatingDelayGroup delay={{ open: 100, close: 200 }}>
+        <div data-testid="elide-table" style={{ border: '1px solid #8883', borderRadius: 8, overflow: 'hidden', maxWidth: 640 }}>
+          <CsvViewer store={store} path="sweep-log.csv" delimiter="," elide={elide} resizableColumns fullLoadMaxBytes={Infinity} />
+        </div>
+      </FloatingDelayGroup>
 
       <details style={{ marginTop: '1.5em' }}>
         <summary style={{ cursor: 'pointer' }}>How this maps to <code>elide</code></summary>
@@ -200,7 +231,9 @@ export function ElideDemo() {
           <p style={{ opacity: 0.7 }}>
             Column <em>resizing</em> (<code>resizableColumns</code>, enabled here) is a separate concern —
             per-column width state, not part of <code>elide</code> — that overrides the clip for a dragged
-            column and persists per <code>(path, column)</code>.
+            column. A width is remembered per <code>(path, column)</code> by default;{' '}
+            <code>resizableColumns=&#123;&#123; scope: 'schema' | 'column' &#125;&#125;</code> widens that to
+            same-schema files or by column name (in <code>localStorage</code>).
           </p>
         </div>
       </details>

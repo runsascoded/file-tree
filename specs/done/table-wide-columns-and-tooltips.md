@@ -82,6 +82,12 @@ through `usePersistedState` (`?cw=name:220,dir:480`). `test/column-resize.test.t
 covers the persisted-string round-trip; `e2e/elide-demo.spec.ts` drives a real
 drag + double-click.
 
+Follow-up: `resizableColumns` also takes `{ scope }` to widen where a width is
+remembered — `'schema'` (same-column-set files share, keyed by a column-set
+fingerprint) or `'column'` (by name, across every table), both in `localStorage`
+rather than the per-path URL, plus a custom `(columns, path) => string`. Default
+stays `'path'`. (`columnFingerprint`/`scopeKey`, unit-tested.)
+
 All four features are now addressed, so this spec is done. The original
 feature-by-feature write-up below is retained for the rationale; read it through
 the `elide` lens above.

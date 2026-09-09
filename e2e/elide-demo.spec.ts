@@ -48,6 +48,16 @@ test.describe('ElideDemo', () => {
     expect(await tip.getAttribute('role')).toBe('tooltip')
   })
 
+  test('an un-clipped cell shows no tooltip (nothing to recover)', async ({ page }) => {
+    // `README.md` fits its column — no ellipsis, so the demo's tooltip
+    // suppresses itself rather than repeating a fully-visible value.
+    const readme = page.locator('[data-testid="elide-table"] tbody tr')
+      .filter({ hasText: 'README.md' }).locator('td').first()
+    expect(await isClipped(readme)).toBe(false)
+    await readme.hover()
+    await expect(page.getByTestId('elide-rich-tip')).toBeHidden()
+  })
+
   test('native title mode: the zero-dependency floor', async ({ page }) => {
     await page.getByRole('button', { name: 'Native', exact: true }).click()
     const cell = nameCell(page)
