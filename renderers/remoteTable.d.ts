@@ -3,7 +3,7 @@ import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
 import { HttpTableCatalogOptions } from './httpTableSource.js';
 import { TableBrowserOptions } from './tableBrowser.js';
 import './tableSource.js';
-import '../table-MKxFIsAe.js';
+import '../columnResize-CTyHANeK.js';
 import 'react';
 
 interface RemoteTableViewerOptions extends TableBrowserOptions, Omit<HttpTableCatalogOptions, 'path'> {

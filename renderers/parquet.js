@@ -1,5 +1,5 @@
 // src/renderers/parquet.tsx
-import { useEffect as useEffect3, useMemo as useMemo4, useState as useState5, useRef as useRef4 } from "react";
+import { useEffect as useEffect4, useMemo as useMemo4, useState as useState5, useRef as useRef4 } from "react";
 
 // src/renderers/parquetData.ts
 import { useEffect, useRef, useState } from "react";
@@ -556,7 +556,7 @@ function usePageNotify(onPage, ctxRef, deps) {
 }
 
 // src/renderers/columnResize.tsx
-import { useCallback as useCallback2, useMemo as useMemo2, useRef as useRef3, useState as useState4 } from "react";
+import { useCallback as useCallback2, useEffect as useEffect3, useMemo as useMemo2, useRef as useRef3, useState as useState4 } from "react";
 import { jsx as jsx2 } from "react/jsx-runtime";
 var MIN_WIDTH = 40;
 var FIT_SLACK = 2;
@@ -577,9 +577,58 @@ function parseWidths(raw) {
 function serializeWidths(m) {
   return [...m].map(([n, w]) => `${n}:${Math.round(w)}`).join(",");
 }
-function useColumnWidths(usePersistedState, key = "cw") {
+function columnFingerprint(columns) {
+  const s = columns.map((c) => c.name).sort().join("");
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h, 33) + s.charCodeAt(i) | 0;
+  return (h >>> 0).toString(36);
+}
+function scopeKey(scope, columns, path) {
+  if (typeof scope === "function") return `f:${scope(columns, path)}`;
+  if (scope === "schema") return `s:${columnFingerprint(columns)}`;
+  if (scope === "column") return "c";
+  return `p:${path}`;
+}
+function readLS(key) {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeLS(key, value) {
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
+  } catch {
+  }
+}
+function useLocalStorageString(key, initial) {
+  const [value, setValue] = useState4(() => readLS(key) ?? initial);
+  useEffect3(() => {
+    setValue(readLS(key) ?? initial);
+  }, [key, initial]);
+  useEffect3(() => {
+    if (typeof window === "undefined") return;
+    const onStorage = (e) => {
+      if (e.key === key) setValue(e.newValue ?? initial);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [key, initial]);
+  const set = useCallback2((v) => {
+    writeLS(key, v);
+    setValue(v);
+  }, [key]);
+  return [value, set];
+}
+function useColumnWidths({ on, scope, columns, path, usePersistedState }) {
   const use = usePersistedState ?? defaultUseState;
-  const [raw, setRaw] = use(key, "");
+  const [urlRaw, setUrlRaw] = use("cw", "");
+  const lsKey = useMemo2(() => `ft-colw:${scopeKey(scope, columns, path)}`, [scope, columns, path]);
+  const [lsRaw, setLsRaw] = useLocalStorageString(lsKey, "");
+  const onPath = scope === "path";
+  const raw = onPath ? urlRaw : lsRaw;
+  const setRaw = onPath ? setUrlRaw : setLsRaw;
   const persisted = useMemo2(() => parseWidths(raw), [raw]);
   const persistedRef = useRef3(persisted);
   persistedRef.current = persisted;
@@ -590,6 +639,7 @@ function useColumnWidths(usePersistedState, key = "cw") {
     setRaw(serializeWidths(m));
   }, [setRaw]);
   const startResize = useCallback2((col, e) => {
+    if (!on) return;
     const th = e.target.closest("th");
     if (!th) return;
     const startW = th.getBoundingClientRect().width;
@@ -619,8 +669,9 @@ function useColumnWidths(usePersistedState, key = "cw") {
     };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
-  }, [commit]);
+  }, [on, commit]);
   const autoFit = useCallback2((col, e) => {
+    if (!on) return;
     e.preventDefault();
     e.stopPropagation();
     const th = e.target.closest("th");
@@ -633,11 +684,12 @@ function useColumnWidths(usePersistedState, key = "cw") {
       if (td && td.cellIndex === idx) max = Math.max(max, td.scrollWidth);
     }
     commit(col, Math.ceil(max) + FIT_SLACK);
-  }, [commit]);
+  }, [on, commit]);
   const styleFor = useCallback2((col) => {
+    if (!on) return NO_STYLE;
     const w = drag && drag.col === col ? drag.w : persisted.get(col);
     return w == null ? NO_STYLE : { width: w, minWidth: w, maxWidth: w };
-  }, [drag, persisted]);
+  }, [on, drag, persisted]);
   return useMemo2(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit]);
 }
 function ColumnResizeHandle({ col, widths }) {
@@ -792,7 +844,7 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
   const [rgPage, setRgPage] = useState5(0);
-  useEffect3(() => {
+  useEffect4(() => {
     setRgPage(0);
   }, [page]);
   const smallTable = meta !== null && meta.byteSize <= fullLoadMaxBytes;
@@ -802,7 +854,7 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   const [filter, setFilter] = useFilter(usePersistedState);
   const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns);
   const error = metaError ?? (smallTable ? allError : rgError);
-  useEffect3(() => {
+  useEffect4(() => {
     if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0);
   }, [meta, page, setPage]);
   const sortedAll = useSortedRows(smallTable ? allRows : null, sort, sortComparators, meta?.schema);
@@ -821,7 +873,13 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
     [meta, rows, inferTimestamps]
   );
   const el = useMemo4(() => resolveElide(elide), [elide]);
-  const cw = useColumnWidths(usePersistedState);
+  const cw = useColumnWidths({
+    on: !!resizableColumns,
+    scope: typeof resizableColumns === "object" ? resizableColumns.scope ?? "path" : "path",
+    columns: meta?.schema ?? [],
+    path,
+    usePersistedState
+  });
   const colStyles = useMemo4(
     // Numeric alignment keys off the *rendered* meaning, not the
     // physical type: a column read as temporal prints as text, so

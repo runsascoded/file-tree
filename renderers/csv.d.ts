@@ -1,8 +1,8 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { Store } from '../index.js';
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.js';
-import { T as TableViewerOptions, a as TableColumn } from '../table-MKxFIsAe.js';
-export { b as TableCellCtx, c as TableCellRenderer } from '../table-MKxFIsAe.js';
+import { T as TableViewerOptions, a as TableColumn } from '../columnResize-CTyHANeK.js';
+export { b as TableCellCtx, c as TableCellRenderer } from '../columnResize-CTyHANeK.js';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
 import 'react';
 

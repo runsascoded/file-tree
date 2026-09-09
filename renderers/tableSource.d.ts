@@ -1,4 +1,5 @@
-import { a as TableColumn } from '../table-MKxFIsAe.js';
+import { a as TableColumn } from '../columnResize-CTyHANeK.js';
+import 'react/jsx-runtime';
 import 'react';
 import '../persistedState-CB_wfbcb.js';
 

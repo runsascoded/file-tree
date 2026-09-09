@@ -1,5 +1,5 @@
 // src/renderers/remoteTable.tsx
-import { useEffect as useEffect3, useMemo as useMemo5, useState as useState5 } from "react";
+import { useEffect as useEffect4, useMemo as useMemo5, useState as useState5 } from "react";
 
 // src/renderers/httpTableSource.ts
 var ALL = {
@@ -68,7 +68,7 @@ function httpTableCatalog(opts) {
 // src/renderers/tableBrowser.tsx
 import {
   useCallback as useCallback4,
-  useEffect as useEffect2,
+  useEffect as useEffect3,
   useMemo as useMemo4,
   useRef as useRef3,
   useState as useState4
@@ -150,7 +150,7 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
 }
 
 // src/renderers/columnResize.tsx
-import { useCallback, useMemo, useRef, useState as useState2 } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState as useState2 } from "react";
 import { jsx } from "react/jsx-runtime";
 var MIN_WIDTH = 40;
 var FIT_SLACK = 2;
@@ -171,9 +171,58 @@ function parseWidths(raw) {
 function serializeWidths(m) {
   return [...m].map(([n, w]) => `${n}:${Math.round(w)}`).join(",");
 }
-function useColumnWidths(usePersistedState, key = "cw") {
+function columnFingerprint(columns) {
+  const s = columns.map((c) => c.name).sort().join("");
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h, 33) + s.charCodeAt(i) | 0;
+  return (h >>> 0).toString(36);
+}
+function scopeKey(scope, columns, path) {
+  if (typeof scope === "function") return `f:${scope(columns, path)}`;
+  if (scope === "schema") return `s:${columnFingerprint(columns)}`;
+  if (scope === "column") return "c";
+  return `p:${path}`;
+}
+function readLS(key) {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeLS(key, value) {
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
+  } catch {
+  }
+}
+function useLocalStorageString(key, initial) {
+  const [value, setValue] = useState2(() => readLS(key) ?? initial);
+  useEffect(() => {
+    setValue(readLS(key) ?? initial);
+  }, [key, initial]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onStorage = (e) => {
+      if (e.key === key) setValue(e.newValue ?? initial);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [key, initial]);
+  const set = useCallback((v) => {
+    writeLS(key, v);
+    setValue(v);
+  }, [key]);
+  return [value, set];
+}
+function useColumnWidths({ on, scope, columns, path, usePersistedState }) {
   const use = usePersistedState ?? defaultUseState;
-  const [raw, setRaw] = use(key, "");
+  const [urlRaw, setUrlRaw] = use("cw", "");
+  const lsKey = useMemo(() => `ft-colw:${scopeKey(scope, columns, path)}`, [scope, columns, path]);
+  const [lsRaw, setLsRaw] = useLocalStorageString(lsKey, "");
+  const onPath = scope === "path";
+  const raw = onPath ? urlRaw : lsRaw;
+  const setRaw = onPath ? setUrlRaw : setLsRaw;
   const persisted = useMemo(() => parseWidths(raw), [raw]);
   const persistedRef = useRef(persisted);
   persistedRef.current = persisted;
@@ -184,6 +233,7 @@ function useColumnWidths(usePersistedState, key = "cw") {
     setRaw(serializeWidths(m));
   }, [setRaw]);
   const startResize = useCallback((col, e) => {
+    if (!on) return;
     const th = e.target.closest("th");
     if (!th) return;
     const startW = th.getBoundingClientRect().width;
@@ -213,8 +263,9 @@ function useColumnWidths(usePersistedState, key = "cw") {
     };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
-  }, [commit]);
+  }, [on, commit]);
   const autoFit = useCallback((col, e) => {
+    if (!on) return;
     e.preventDefault();
     e.stopPropagation();
     const th = e.target.closest("th");
@@ -227,11 +278,12 @@ function useColumnWidths(usePersistedState, key = "cw") {
       if (td && td.cellIndex === idx) max = Math.max(max, td.scrollWidth);
     }
     commit(col, Math.ceil(max) + FIT_SLACK);
-  }, [commit]);
+  }, [on, commit]);
   const styleFor = useCallback((col) => {
+    if (!on) return NO_STYLE;
     const w = drag && drag.col === col ? drag.w : persisted.get(col);
     return w == null ? NO_STYLE : { width: w, minWidth: w, maxWidth: w };
-  }, [drag, persisted]);
+  }, [on, drag, persisted]);
   return useMemo(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit]);
 }
 function ColumnResizeHandle({ col, widths }) {
@@ -264,7 +316,7 @@ function ColumnResizeHandle({ col, widths }) {
 }
 
 // src/renderers/tableControls.tsx
-import { useCallback as useCallback2, useEffect, useMemo as useMemo2, useRef as useRef2, useState as useState3 } from "react";
+import { useCallback as useCallback2, useEffect as useEffect2, useMemo as useMemo2, useRef as useRef2, useState as useState3 } from "react";
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
 var BTN = {
   font: "inherit",
@@ -401,7 +453,7 @@ function useStableCallback(fn) {
 }
 function usePageNotify(onPage, ctxRef, deps) {
   const notify = useStableCallback(onPage);
-  useEffect(() => {
+  useEffect2(() => {
     notify(ctxRef.current);
   }, deps);
 }
@@ -486,7 +538,7 @@ function TableBrowser({
   const can = source?.capabilities;
   const columns = result?.columns ?? [];
   const { visible, ...vis } = useColumnVisibility(columns, usePersistedState, hiddenColumns);
-  useEffect2(() => {
+  useEffect3(() => {
     if (!source) return;
     let live = true;
     setLoading(true);
@@ -511,7 +563,7 @@ function TableBrowser({
   }, [source, page, pageSize, filter, sort.column, sort.dir, can?.filter, can?.sort]);
   const queryKey = `${active?.name ?? ""}\0${filter}\0${sort.column ?? ""}${sort.dir}`;
   const lastQueryKey = useRef3(null);
-  useEffect2(() => {
+  useEffect3(() => {
     if (lastQueryKey.current !== null && lastQueryKey.current !== queryKey) setPage(0);
     lastQueryKey.current = queryKey;
   }, [queryKey, setPage]);
@@ -522,7 +574,13 @@ function TableBrowser({
   if (active && !filter.trim() && total !== null) unfilteredTotals.current.set(active.name, total);
   const unfilteredTotal = active ? unfilteredTotals.current.get(active.name) : void 0;
   const el = useMemo4(() => resolveElide(elide), [elide]);
-  const cw = useColumnWidths(usePersistedState);
+  const cw = useColumnWidths({
+    on: !!resizableColumns,
+    scope: typeof resizableColumns === "object" ? resizableColumns.scope ?? "path" : "path",
+    columns,
+    path,
+    usePersistedState
+  });
   const colStyles = useMemo4(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, (c) => NUMERIC_KINDS.has(c.kind), el),
     [columns, path, cellProps, headerProps, el]
@@ -689,7 +747,7 @@ function RemoteTableViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [baseUrl, path, version, doFetch]
   );
-  useEffect3(() => {
+  useEffect4(() => {
     let live = true;
     setObjects(null);
     setError(null);

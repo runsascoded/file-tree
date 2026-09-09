@@ -1,5 +1,6 @@
-import { ReactNode, CSSProperties } from 'react';
-import { P as PersistedState } from './persistedState-CB_wfbcb.js';
+import * as react_jsx_runtime from 'react/jsx-runtime';
+import { ReactNode, CSSProperties, PointerEvent, MouseEvent } from 'react';
+import { P as PersistedState } from './persistedState-CB_wfbcb.cjs';
 
 /** Load the whole table at or below this many bytes.
  *
@@ -178,9 +179,19 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
     /** Let the reader drag a column's right edge to pin its width (and
      *  double-click the handle to auto-fit the widest cell). Off by default
      *  — a viewer shouldn't grow a handle on every header unasked. A pinned
-     *  width overrides the `elide` cap for that column, and persists per
-     *  `(path, column)` through `usePersistedState`. See `columnResize`. */
-    resizableColumns?: boolean;
+     *  width overrides the `elide` cap for that column.
+     *
+     *  `true` remembers widths per `(path, column)` via `usePersistedState`
+     *  (shareable `?cw=…`). Pass `{ scope }` to widen that — `'schema'`
+     *  (same-column-set files share, in `localStorage`), `'column'` (by name,
+     *  global), or your own `(columns, path) => string`. See `columnResize`
+     *  and {@link ResizeScope}. */
+    resizableColumns?: boolean | ColumnResizeConfig;
+}
+/** Options for {@link TableViewerOptions.resizableColumns} beyond a bare
+ *  `true`. */
+interface ColumnResizeConfig {
+    scope?: ResizeScope;
 }
 /** One elidable cell, as an `elide` tooltip sees it. */
 interface ElideCtx<C extends TableColumn = TableColumn> {
@@ -286,4 +297,72 @@ declare function resolveColStyles<C extends TableColumn>(columns: readonly C[], 
     headerClass?: string;
 }>;
 
-export { DEFAULT_FULL_LOAD_MAX_BYTES as D, ELIDE_DEFAULTS as E, NUMERIC_ALIGN as N, type ResolvedElide as R, type SortComparators as S, type TableViewerOptions as T, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, type ElideCell as k, type ElideConfig as l, type ElideCtx as m, TD_STYLE as n, TH_STYLE as o, type TablePageCtx as p, applyElide as q, cellTitle as r, sortGlyph as s, elideCellStyle as t, useSort as u, resolveColStyles as v, resolveElide as w };
+/** `"name:220,dir:480"` → `{ name: 220, dir: 480 }`. Tolerant: skips
+ *  empty / malformed pairs rather than throwing on a hand-edited URL. */
+declare function parseWidths(raw: string): Map<string, number>;
+/** Inverse of {@link parseWidths}; widths rounded to whole px. Order is
+ *  insertion order, so the string is stable across writes that don't
+ *  change the set. */
+declare function serializeWidths(m: ReadonlyMap<string, number>): string;
+/** What identity a pinned width is remembered under — the ladder from
+ *  narrow to broad sharing:
+ *   - `'path'` (default): this exact file. Rides `usePersistedState`, so a
+ *     consumer on `useUrlPersistedState` gets a shareable `?cw=…`.
+ *   - `'schema'`: every file with the same column *set* (a fingerprint of
+ *     the sorted names) shares — so sibling parquets carry widths, but an
+ *     unrelated table doesn't bleed. Stored in `localStorage`.
+ *   - `'column'`: by column *name*, across every table — one global map,
+ *     so a `name` column keeps its width everywhere (at the cost of two
+ *     unrelated `name` columns sharing). Stored in `localStorage`.
+ *   - a function `(columns, path) => string`: your own identity.
+ *
+ *  `'schema'`/`'column'`/fn use `localStorage` (not the URL), since the
+ *  point is to carry a width *across* paths, which a per-URL param can't. */
+type ResizeScope = 'path' | 'schema' | 'column' | ((columns: readonly TableColumn[], path: string) => string);
+/** Stable fingerprint of a column *set* (order-independent), for
+ *  `'schema'` scope. A djb2 hash keeps the `localStorage` key short. */
+declare function columnFingerprint(columns: readonly TableColumn[]): string;
+/** The `localStorage` sub-key for a non-`path` scope (`path` never hits
+ *  `localStorage`; its widths live in `usePersistedState`). */
+declare function scopeKey(scope: ResizeScope, columns: readonly TableColumn[], path: string): string;
+interface UseColumnWidthsArgs {
+    /** Whether resizing is on — off short-circuits to no pinned widths and
+     *  inert gestures, so a viewer with the feature disabled ignores any
+     *  stored widths entirely. */
+    on: boolean;
+    scope: ResizeScope;
+    /** The full column set (not the visible subset — hiding a column
+     *  shouldn't change a `'schema'` fingerprint). */
+    columns: readonly TableColumn[];
+    path: string;
+    usePersistedState?: PersistedState;
+}
+interface ColumnWidths {
+    /** Style to pin one column's `<th>`/`<td>` — `width`+`min`+`max` so it
+     *  holds against content and overrides the elide cap — or `{}` when the
+     *  column has no pinned width. Reflects the live drag for the column
+     *  being dragged. */
+    styleFor(col: string): CSSProperties;
+    /** Begin a drag from a handle's `pointerdown`. Tracks the pointer on
+     *  `document` (so it keeps working past the handle's edge) and commits
+     *  on release. */
+    startResize(col: string, e: PointerEvent): void;
+    /** Auto-fit a column to its widest rendered cell (a handle's
+     *  `dblclick`), measured via `scrollWidth` so a clipped cell still
+     *  reports its full content width. */
+    autoFit(col: string, e: MouseEvent): void;
+}
+/** Per-column pinned widths, drag/auto-fit gestures, and the style each
+ *  contributes. Backed by `usePersistedState` for `'path'` scope (so the
+ *  URL stays the shareable store) and by `localStorage` for the broader
+ *  scopes. See {@link ColumnWidths} and {@link ResizeScope}. */
+declare function useColumnWidths({ on, scope, columns, path, usePersistedState }: UseColumnWidthsArgs): ColumnWidths;
+/** The drag target at a header's right edge. Invisible until hovered
+ *  (then a grip line), `col-resize` cursor throughout. `stopPropagation`
+ *  on click keeps a drag from also toggling the header's sort. */
+declare function ColumnResizeHandle({ col, widths }: {
+    col: string;
+    widths: ColumnWidths;
+}): react_jsx_runtime.JSX.Element;
+
+export { columnFingerprint as A, parseWidths as B, type ColumnResizeConfig as C, DEFAULT_FULL_LOAD_MAX_BYTES as D, ELIDE_DEFAULTS as E, scopeKey as F, serializeWidths as G, useColumnWidths as H, NUMERIC_ALIGN as N, type ResolvedElide as R, type SortComparators as S, type TableViewerOptions as T, type UseColumnWidthsArgs as U, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, type ElideCell as k, type ElideConfig as l, type ElideCtx as m, TD_STYLE as n, TH_STYLE as o, type TablePageCtx as p, applyElide as q, cellTitle as r, sortGlyph as s, elideCellStyle as t, useSort as u, resolveColStyles as v, resolveElide as w, ColumnResizeHandle as x, type ColumnWidths as y, type ResizeScope as z };

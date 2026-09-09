@@ -1,5 +1,6 @@
 import '../index.js';
-export { N as NUMERIC_TYPES, P as ParquetColumn, a as ParquetColumnStats, b as ParquetMeta, m as Predicate, R as RG_CACHE_SIZE, c as RowGroupInfo, S as SortingColumn, h as coarseKind, n as isSortedBy, p as parsePredicate, o as pruneRowGroups, r as rowGroupMatches, q as useAllRows, u as useParquetMeta, l as useRowGroup } from '../parquetData-BuecukA4.js';
-import '../table-MKxFIsAe.js';
+export { N as NUMERIC_TYPES, P as ParquetColumn, a as ParquetColumnStats, b as ParquetMeta, m as Predicate, R as RG_CACHE_SIZE, c as RowGroupInfo, S as SortingColumn, h as coarseKind, n as isSortedBy, p as parsePredicate, o as pruneRowGroups, r as rowGroupMatches, q as useAllRows, u as useParquetMeta, l as useRowGroup } from '../parquetData-ibLLNrp5.js';
+import '../columnResize-CTyHANeK.js';
+import 'react/jsx-runtime';
 import 'react';
 import '../persistedState-CB_wfbcb.js';

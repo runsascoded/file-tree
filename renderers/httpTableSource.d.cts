@@ -1,5 +1,6 @@
 import { TableSourceCapabilities, TableCatalog } from './tableSource.cjs';
-import '../table-CX2fWSgI.cjs';
+import '../columnResize-CqWdQsXY.cjs';
+import 'react/jsx-runtime';
 import 'react';
 import '../persistedState-CB_wfbcb.cjs';
 
