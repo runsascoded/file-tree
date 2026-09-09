@@ -147,6 +147,8 @@ export function ElideDemo() {
         <code>MockStore</code> of long GCS paths. Hover a clipped path: by default that's a{' '}
         <code>@floating-ui/react</code> tooltip <em>this page</em> supplies (<code>file-tree</code> ships
         none) — the tooltip you'd actually use. <em>Native</em> is the zero-dependency floor.
+        {' '}Columns here are also <strong>resizable</strong> — drag a header's right edge (double-click the
+        handle to auto-fit); a pinned width is a separate per-column state that overrides the clip.
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.2em', margin: '1em 0' }}>
@@ -172,7 +174,7 @@ export function ElideDemo() {
           compact mode the columns fit (and clip); in wide mode the table
           outgrows this box and its own `overflowX:auto` scroller kicks in. */}
       <div data-testid="elide-table" style={{ border: '1px solid #8883', borderRadius: 8, overflow: 'hidden', maxWidth: 640 }}>
-        <CsvViewer store={store} path="sweep-log.csv" delimiter="," elide={elide} fullLoadMaxBytes={Infinity} />
+        <CsvViewer store={store} path="sweep-log.csv" delimiter="," elide={elide} resizableColumns fullLoadMaxBytes={Infinity} />
       </div>
 
       <details style={{ marginTop: '1.5em' }}>
@@ -196,7 +198,9 @@ export function ElideDemo() {
             </li>
           </ul>
           <p style={{ opacity: 0.7 }}>
-            Column <em>resizing</em> is a separate concern (per-column width state), not part of <code>elide</code>.
+            Column <em>resizing</em> (<code>resizableColumns</code>, enabled here) is a separate concern —
+            per-column width state, not part of <code>elide</code> — that overrides the clip for a dragged
+            column and persists per <code>(path, column)</code>.
           </p>
         </div>
       </details>

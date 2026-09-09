@@ -79,4 +79,41 @@ test.describe('ElideDemo', () => {
     await cell.hover()
     await expect(page.getByTestId('elide-rich-tip')).toBeHidden()
   })
+
+  // `resizableColumns` — a separate axis from `elide`: drag the header's
+  // right-edge handle to pin a width, double-click it to auto-fit.
+  const nameHandle = (page: Page): Locator =>
+    page.locator('[data-testid="elide-table"] thead th').first().getByRole('separator')
+  const width = (loc: Locator): Promise<number> =>
+    loc.evaluate(el => el.getBoundingClientRect().width)
+
+  test('dragging a header handle pins the whole column wider', async ({ page }) => {
+    const th = page.locator('[data-testid="elide-table"] thead th').first()
+    const w0 = await width(th)
+    const box = await nameHandle(page).boundingBox()
+    if (!box) throw new Error('no resize handle')
+    const cx = box.x + box.width / 2
+    const cy = box.y + box.height / 2
+    await page.mouse.move(cx, cy)
+    await page.mouse.down()
+    await page.mouse.move(cx + 140, cy, { steps: 5 })
+    await page.mouse.up()
+
+    const w1 = await width(th)
+    expect(w1).toBeGreaterThan(w0 + 120)
+    expect(w1).toBeLessThan(w0 + 160)
+    // The body cells track the header — the whole column is pinned, and
+    // the pin beats the 30em elide cap (w1 > 480px).
+    const cellW = await width(nameCell(page))
+    expect(Math.round(cellW)).toBe(Math.round(w1))
+  })
+
+  test('double-clicking a handle auto-fits the column (nothing left clipped)', async ({ page }) => {
+    // Compact mode clips the long paths to start.
+    expect(await isClipped(nameCell(page))).toBe(true)
+    await nameHandle(page).dblclick()
+    const anyClipped = await page.locator('[data-testid="elide-table"] tbody tr td:first-child')
+      .evaluateAll(tds => tds.some(td => td.scrollWidth > td.clientWidth + 1))
+    expect(anyClipped).toBe(false)
+  })
 })
