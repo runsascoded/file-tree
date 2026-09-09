@@ -30,7 +30,7 @@ __export(csv_exports, {
   useCsvPage: () => useCsvPage
 });
 module.exports = __toCommonJS(csv_exports);
-var import_react5 = require("react");
+var import_react6 = require("react");
 
 // src/react/fmt.ts
 function fmtSize(n) {
@@ -440,55 +440,170 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   return out;
 }
 
-// src/renderers/csv.tsx
+// src/renderers/columnResize.tsx
+var import_react5 = require("react");
 var import_jsx_runtime2 = require("react/jsx-runtime");
+var MIN_WIDTH = 40;
+var FIT_SLACK = 2;
+var DRAG_THRESHOLD = 3;
+var NO_STYLE = {};
+function parseWidths(raw) {
+  const m = /* @__PURE__ */ new Map();
+  for (const part of raw.split(",")) {
+    if (!part) continue;
+    const i = part.lastIndexOf(":");
+    if (i <= 0) continue;
+    const name = part.slice(0, i);
+    const px = Number(part.slice(i + 1));
+    if (name && Number.isFinite(px) && px > 0) m.set(name, px);
+  }
+  return m;
+}
+function serializeWidths(m) {
+  return [...m].map(([n, w]) => `${n}:${Math.round(w)}`).join(",");
+}
+function useColumnWidths(usePersistedState, key = "cw") {
+  const use = usePersistedState ?? defaultUseState;
+  const [raw, setRaw] = use(key, "");
+  const persisted = (0, import_react5.useMemo)(() => parseWidths(raw), [raw]);
+  const persistedRef = (0, import_react5.useRef)(persisted);
+  persistedRef.current = persisted;
+  const [drag, setDrag] = (0, import_react5.useState)(null);
+  const commit = (0, import_react5.useCallback)((col, w) => {
+    const m = new Map(persistedRef.current);
+    m.set(col, Math.max(MIN_WIDTH, w));
+    setRaw(serializeWidths(m));
+  }, [setRaw]);
+  const startResize = (0, import_react5.useCallback)((col, e) => {
+    const th = e.target.closest("th");
+    if (!th) return;
+    const startW = th.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const widthAt = (clientX) => Math.max(MIN_WIDTH, startW + (clientX - startX));
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    let dragging = false;
+    const move = (ev) => {
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
+        dragging = true;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+      }
+      setDrag({ col, w: widthAt(ev.clientX) });
+    };
+    const up = (ev) => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      if (dragging) {
+        commit(col, widthAt(ev.clientX));
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevSelect;
+      }
+      setDrag(null);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  }, [commit]);
+  const autoFit = (0, import_react5.useCallback)((col, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = e.target.closest("th");
+    const table = th?.closest("table");
+    if (!th || !table) return;
+    const idx = th.cellIndex;
+    let max = th.scrollWidth;
+    for (const tr of table.querySelectorAll("tbody tr")) {
+      const td = tr.children[idx];
+      if (td && td.cellIndex === idx) max = Math.max(max, td.scrollWidth);
+    }
+    commit(col, Math.ceil(max) + FIT_SLACK);
+  }, [commit]);
+  const styleFor = (0, import_react5.useCallback)((col) => {
+    const w = drag && drag.col === col ? drag.w : persisted.get(col);
+    return w == null ? NO_STYLE : { width: w, minWidth: w, maxWidth: w };
+  }, [drag, persisted]);
+  return (0, import_react5.useMemo)(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit]);
+}
+function ColumnResizeHandle({ col, widths }) {
+  const [hot, setHot] = (0, import_react5.useState)(false);
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    "span",
+    {
+      role: "separator",
+      "aria-orientation": "vertical",
+      "aria-label": `Resize ${col} column`,
+      title: "Drag to resize \xB7 double-click to fit",
+      onPointerEnter: () => setHot(true),
+      onPointerLeave: () => setHot(false),
+      onPointerDown: (e) => widths.startResize(col, e),
+      onDoubleClick: (e) => widths.autoFit(col, e),
+      onClick: (e) => e.stopPropagation(),
+      style: {
+        position: "absolute",
+        top: 0,
+        right: 0,
+        height: "100%",
+        width: 9,
+        cursor: "col-resize",
+        touchAction: "none",
+        userSelect: "none",
+        borderRight: `2px solid ${hot ? "rgba(127,127,127,0.7)" : "transparent"}`
+      }
+    }
+  );
+}
+
+// src/renderers/csv.tsx
+var import_jsx_runtime3 = require("react/jsx-runtime");
 function makeCsvViewer(opts = {}) {
   return function BoundCsvViewer(props) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CsvViewer, { ...props, ...opts });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CsvViewer, { ...props, ...opts });
   };
 }
-function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide }) {
+function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide, resizableColumns = false }) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter);
-  const [page, setPage] = (0, import_react5.useState)(0);
+  const [page, setPage] = (0, import_react6.useState)(0);
   const smallTable = total !== null && total <= fullLoadMaxBytes;
   const { rows: pageRows, error: pageError } = useCsvPage(store, path, delimiter, page, smallTable ? null : total);
   const { rows: allRaw, error: allError } = useAllCsvRows(store, path, delimiter, smallTable);
   const sort = useSort(usePersistedState);
   const [filter, setFilter] = useFilter(usePersistedState);
   const error = headerError ?? (smallTable ? allError : pageError);
-  const allColumns = (0, import_react5.useMemo)(() => (header ?? []).map((name) => ({ name })), [header]);
+  const allColumns = (0, import_react6.useMemo)(() => (header ?? []).map((name) => ({ name })), [header]);
   const { visible, ...vis } = useColumnVisibility(allColumns, usePersistedState, hiddenColumns);
-  const columns = (0, import_react5.useMemo)(() => allColumns.filter((c) => visible.includes(c.name)), [allColumns, visible]);
-  const colIndex = (0, import_react5.useMemo)(
+  const columns = (0, import_react6.useMemo)(() => allColumns.filter((c) => visible.includes(c.name)), [allColumns, visible]);
+  const colIndex = (0, import_react6.useMemo)(
     () => new Map(allColumns.map((c, i) => [c.name, i])),
     [allColumns]
   );
-  const keyed = (0, import_react5.useMemo)(
+  const keyed = (0, import_react6.useMemo)(
     () => allRaw?.map((r) => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? ""]))) ?? null,
     [allRaw, allColumns]
   );
   const sortedKeyed = useSortedRows(keyed, sort, sortComparators, allColumns);
-  const filteredKeyed = (0, import_react5.useMemo)(
+  const filteredKeyed = (0, import_react6.useMemo)(
     () => filterRows(sortedKeyed, filter, visible),
     [sortedKeyed, filter, visible]
   );
-  const allSorted = (0, import_react5.useMemo)(
+  const allSorted = (0, import_react6.useMemo)(
     () => filteredKeyed?.map((o) => allColumns.map((c) => String(o[c.name] ?? ""))) ?? null,
     [filteredKeyed, allColumns]
   );
-  const el = (0, import_react5.useMemo)(() => resolveElide(elide), [elide]);
-  const colStyles = (0, import_react5.useMemo)(
+  const el = (0, import_react6.useMemo)(() => resolveElide(elide), [elide]);
+  const cw = useColumnWidths(usePersistedState);
+  const colStyles = (0, import_react6.useMemo)(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false, el),
     [columns, path, cellProps, headerProps, el]
   );
-  const pageCtxRef = (0, import_react5.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
+  const pageCtxRef = (0, import_react6.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
   usePageNotify(onPage, pageCtxRef, [pageRows, allSorted, columns.length, path, smallTable]);
   const notifyHover = useStableCallback(onCellHover);
-  if (error) return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (total === null || header === null) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
+  if (total === null || header === null) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
   const rows = smallTable ? allSorted : pageRows;
   const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES));
   pageCtxRef.current = {
@@ -500,24 +615,24 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
   };
   const offsetStart = page * PAGE_BYTES;
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em", position: "relative", zIndex: 2 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: allColumns.length }),
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em", position: "relative", zIndex: 2 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: allColumns.length }),
       " columns",
-      smallTable && rows ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+      smallTable && rows ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
         " \xB7 ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: rows.length.toLocaleString() }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: rows.length.toLocaleString() }),
         " rows"
       ] }) : null,
       " ",
       "\xB7 ",
       fmtSize(total),
-      columnPicker && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+      columnPicker && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
         " \xB7 ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
       ] })
     ] }),
-    smallTable && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: { opacity: 0.8, fontSize: "0.9em", margin: "0 0 0.5em" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    smallTable && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { opacity: 0.8, fontSize: "0.9em", margin: "0 0 0.5em" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       FilterInput,
       {
         value: filter,
@@ -526,16 +641,16 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
         ...sortedKeyed ? { count: { shown: rows?.length ?? 0, total: sortedKeyed.length } } : {}
       }
     ) }),
-    !smallTable && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { opacity: 0.6, fontSize: "0.85em", margin: "0 0 0.4em" }, children: [
+    !smallTable && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { opacity: 0.6, fontSize: "0.85em", margin: "0 0 0.4em" }, children: [
       fmtSize(total),
       " \u2014 streaming byte ranges; sorting needs the whole file."
     ] }),
-    pages > 1 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em", flexWrap: "wrap" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === 0, onClick: () => setPage(0), children: "\xAB" }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039" }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { opacity: 0.8 }, children: [
+    pages > 1 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em", flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: page === 0, onClick: () => setPage(0), children: "\xAB" }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039" }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { opacity: 0.8 }, children: [
         "page ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: page + 1 }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: page + 1 }),
         " / ",
         pages.toLocaleString(),
         " \xB7 bytes ",
@@ -545,13 +660,13 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
         " / ",
         total.toLocaleString()
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(page + 1), children: "\u203A" }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(pages - 1), children: "\xBB" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(page + 1), children: "\u203A" }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(pages - 1), children: "\xBB" })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "Canvas" }, children: columns.map((c) => {
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "Canvas" }, children: columns.map((c) => {
         const st = colStyles.get(c.name);
-        const defaultNode = smallTable ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+        const defaultNode = smallTable ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
           "span",
           {
             role: "button",
@@ -567,25 +682,28 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
             style: { cursor: "pointer", userSelect: "none" },
             children: [
               c.name,
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: "0.3em", fontSize: "0.85em" }, children: sortGlyph(c.name, sort) })
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: "0.3em", fontSize: "0.85em" }, children: sortGlyph(c.name, sort) })
             ]
           }
         ) : c.name;
-        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap" }, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, path, defaultNode }) : defaultNode }, c.name);
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap", ...resizableColumns ? { position: "relative" } : {}, ...cw.styleFor(c.name) }, className: st?.headerClass, children: [
+          renderHeader ? renderHeader({ column: c, path, defaultNode }) : defaultNode,
+          resizableColumns && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ColumnResizeHandle, { col: c.name, widths: cw })
+        ] }, c.name);
       }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { colSpan: columns.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { colSpan: columns.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
         let asRow = null;
         const row = () => asRow ??= Object.fromEntries(allColumns.map((c, j) => [c.name, r[j] ?? ""]));
-        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: columns.map((c) => {
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: columns.map((c) => {
           const st = colStyles.get(c.name);
           const j = colIndex.get(c.name);
           const value = r[j] ?? "";
           const rendered = renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value;
           const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: row(), path });
-          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
             "td",
             {
-              style: st?.cell ?? TD_STYLE,
+              style: { ...st?.cell ?? TD_STYLE, ...cw.styleFor(c.name) },
               className: st?.cellClass,
               ...title != null ? { title } : {},
               ...onCellHover ? {

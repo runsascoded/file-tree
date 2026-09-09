@@ -1,11 +1,11 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode } from 'react';
 import { Store } from '../index.cjs';
-import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-DWmsCaLw.cjs';
-export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as formatTemporal, j as inferColumnFormats, k as inferTemporalFormat, t as toMillis, u as useParquetMeta, l as useRowGroup } from '../parquetData-DWmsCaLw.cjs';
+import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-k9awTPO1.cjs';
+export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as formatTemporal, j as inferColumnFormats, k as inferTemporalFormat, t as toMillis, u as useParquetMeta, l as useRowGroup } from '../parquetData-k9awTPO1.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
-import { b as TableCellCtx, c as TableCellRenderer, d as TableColumnProps, e as TableHeaderCtx, T as TableViewerOptions } from '../table-BtDQ-iIe.cjs';
-export { a as TableColumn, f as TableHeaderRenderer } from '../table-BtDQ-iIe.cjs';
+import { b as TableCellCtx, c as TableCellRenderer, d as TableColumnProps, e as TableHeaderCtx, T as TableViewerOptions } from '../table-CX2fWSgI.cjs';
+export { a as TableColumn, f as TableHeaderRenderer } from '../table-CX2fWSgI.cjs';
 
 type ParquetCellCtx = TableCellCtx<ParquetColumn>;
 type ParquetCellRenderer = TableCellRenderer<ParquetColumn>;
@@ -51,7 +51,7 @@ declare function makeParquetViewer(opts?: ParquetViewerOptions): (props: {
     path: string;
     usePersistedState?: PersistedState;
 } & ParquetViewerOptions) => react_jsx_runtime.JSX.Element;
-declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, onPage, onCellHover, elide }: {
+declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, onPage, onCellHover, elide, resizableColumns }: {
     store: Store;
     path: string;
     usePersistedState?: PersistedState;

@@ -34,7 +34,7 @@ __export(parquet_exports, {
   useRowGroup: () => useRowGroup
 });
 module.exports = __toCommonJS(parquet_exports);
-var import_react5 = require("react");
+var import_react6 = require("react");
 
 // src/renderers/parquetData.ts
 var import_react = require("react");
@@ -590,15 +590,129 @@ function usePageNotify(onPage, ctxRef, deps) {
   }, deps);
 }
 
-// src/renderers/tableSort.ts
+// src/renderers/columnResize.tsx
 var import_react4 = require("react");
+var import_jsx_runtime2 = require("react/jsx-runtime");
+var MIN_WIDTH = 40;
+var FIT_SLACK = 2;
+var DRAG_THRESHOLD = 3;
+var NO_STYLE = {};
+function parseWidths(raw) {
+  const m = /* @__PURE__ */ new Map();
+  for (const part of raw.split(",")) {
+    if (!part) continue;
+    const i = part.lastIndexOf(":");
+    if (i <= 0) continue;
+    const name = part.slice(0, i);
+    const px = Number(part.slice(i + 1));
+    if (name && Number.isFinite(px) && px > 0) m.set(name, px);
+  }
+  return m;
+}
+function serializeWidths(m) {
+  return [...m].map(([n, w]) => `${n}:${Math.round(w)}`).join(",");
+}
+function useColumnWidths(usePersistedState, key = "cw") {
+  const use = usePersistedState ?? defaultUseState;
+  const [raw, setRaw] = use(key, "");
+  const persisted = (0, import_react4.useMemo)(() => parseWidths(raw), [raw]);
+  const persistedRef = (0, import_react4.useRef)(persisted);
+  persistedRef.current = persisted;
+  const [drag, setDrag] = (0, import_react4.useState)(null);
+  const commit = (0, import_react4.useCallback)((col, w) => {
+    const m = new Map(persistedRef.current);
+    m.set(col, Math.max(MIN_WIDTH, w));
+    setRaw(serializeWidths(m));
+  }, [setRaw]);
+  const startResize = (0, import_react4.useCallback)((col, e) => {
+    const th = e.target.closest("th");
+    if (!th) return;
+    const startW = th.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const widthAt = (clientX) => Math.max(MIN_WIDTH, startW + (clientX - startX));
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    let dragging = false;
+    const move = (ev) => {
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
+        dragging = true;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+      }
+      setDrag({ col, w: widthAt(ev.clientX) });
+    };
+    const up = (ev) => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      if (dragging) {
+        commit(col, widthAt(ev.clientX));
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevSelect;
+      }
+      setDrag(null);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  }, [commit]);
+  const autoFit = (0, import_react4.useCallback)((col, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = e.target.closest("th");
+    const table = th?.closest("table");
+    if (!th || !table) return;
+    const idx = th.cellIndex;
+    let max = th.scrollWidth;
+    for (const tr of table.querySelectorAll("tbody tr")) {
+      const td = tr.children[idx];
+      if (td && td.cellIndex === idx) max = Math.max(max, td.scrollWidth);
+    }
+    commit(col, Math.ceil(max) + FIT_SLACK);
+  }, [commit]);
+  const styleFor = (0, import_react4.useCallback)((col) => {
+    const w = drag && drag.col === col ? drag.w : persisted.get(col);
+    return w == null ? NO_STYLE : { width: w, minWidth: w, maxWidth: w };
+  }, [drag, persisted]);
+  return (0, import_react4.useMemo)(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit]);
+}
+function ColumnResizeHandle({ col, widths }) {
+  const [hot, setHot] = (0, import_react4.useState)(false);
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    "span",
+    {
+      role: "separator",
+      "aria-orientation": "vertical",
+      "aria-label": `Resize ${col} column`,
+      title: "Drag to resize \xB7 double-click to fit",
+      onPointerEnter: () => setHot(true),
+      onPointerLeave: () => setHot(false),
+      onPointerDown: (e) => widths.startResize(col, e),
+      onDoubleClick: (e) => widths.autoFit(col, e),
+      onClick: (e) => e.stopPropagation(),
+      style: {
+        position: "absolute",
+        top: 0,
+        right: 0,
+        height: "100%",
+        width: 9,
+        cursor: "col-resize",
+        touchAction: "none",
+        userSelect: "none",
+        borderRight: `2px solid ${hot ? "rgba(127,127,127,0.7)" : "transparent"}`
+      }
+    }
+  );
+}
+
+// src/renderers/tableSort.ts
+var import_react5 = require("react");
 var DEFAULT_FULL_LOAD_MAX_BYTES = 5 * 1024 * 1024;
 function useSort(usePersistedState) {
   const use = usePersistedState ?? defaultUseState;
   const [raw, setRaw] = use("sort", "");
   const column = raw ? raw.replace(/^-/, "") : null;
   const dir = raw.startsWith("-") ? "desc" : "asc";
-  const toggle = (0, import_react4.useCallback)((name) => {
+  const toggle = (0, import_react5.useCallback)((name) => {
     setRaw(raw === name ? `-${name}` : raw === `-${name}` ? "" : name);
   }, [raw, setRaw]);
   return { column, dir, toggle };
@@ -615,7 +729,7 @@ function compareValues(a, b) {
   return String(a).localeCompare(String(b));
 }
 function useSortedRows(rows, sort, comparators, columns) {
-  return (0, import_react4.useMemo)(() => {
+  return (0, import_react5.useMemo)(() => {
     if (!rows || !sort.column) return rows;
     const col = columns?.find((c) => c.name === sort.column);
     const cmp2 = (col && comparators?.(col)) ?? compareValues;
@@ -701,19 +815,19 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
 }
 
 // src/renderers/parquet.tsx
-var import_jsx_runtime2 = require("react/jsx-runtime");
+var import_jsx_runtime3 = require("react/jsx-runtime");
 var ROWS_PER_PAGE = 100;
 function makeParquetViewer(opts = {}) {
   return function BoundParquetViewer(props) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ParquetViewer, { ...props, ...opts });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ParquetViewer, { ...props, ...opts });
   };
 }
-function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide }) {
+function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide, resizableColumns = false }) {
   const { meta, error: metaError } = useParquetMeta(store, path);
   const use = usePersistedState ?? defaultUseState;
   const [page, setPage] = use("page", 0);
-  const [rgPage, setRgPage] = (0, import_react5.useState)(0);
-  (0, import_react5.useEffect)(() => {
+  const [rgPage, setRgPage] = (0, import_react6.useState)(0);
+  (0, import_react6.useEffect)(() => {
     setRgPage(0);
   }, [page]);
   const smallTable = meta !== null && meta.byteSize <= fullLoadMaxBytes;
@@ -723,26 +837,27 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   const [filter, setFilter] = useFilter(usePersistedState);
   const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns);
   const error = metaError ?? (smallTable ? allError : rgError);
-  (0, import_react5.useEffect)(() => {
+  (0, import_react6.useEffect)(() => {
     if (meta && (page < 0 || page >= meta.rowGroups.length)) setPage(0);
   }, [meta, page, setPage]);
   const sortedAll = useSortedRows(smallTable ? allRows : null, sort, sortComparators, meta?.schema);
-  const filteredAll = (0, import_react5.useMemo)(
+  const filteredAll = (0, import_react6.useMemo)(
     () => filterRows(sortedAll, filter, visible),
     [sortedAll, filter, visible]
   );
   const rows = smallTable ? filteredAll : rgRows;
   const predicate = smallTable ? null : parsePredicate(filter);
-  const prunedGroups = (0, import_react5.useMemo)(
+  const prunedGroups = (0, import_react6.useMemo)(
     () => predicate && meta ? pruneRowGroups(meta.rowGroups, predicate) : null,
     [predicate?.column, predicate?.op, predicate?.value, meta]
   );
-  const temporal = (0, import_react5.useMemo)(
+  const temporal = (0, import_react6.useMemo)(
     () => meta ? inferColumnFormats(meta.schema, rows, { infer: inferTimestamps }) : /* @__PURE__ */ new Map(),
     [meta, rows, inferTimestamps]
   );
-  const el = (0, import_react5.useMemo)(() => resolveElide(elide), [elide]);
-  const colStyles = (0, import_react5.useMemo)(
+  const el = (0, import_react6.useMemo)(() => resolveElide(elide), [elide]);
+  const cw = useColumnWidths(usePersistedState);
+  const colStyles = (0, import_react6.useMemo)(
     // Numeric alignment keys off the *rendered* meaning, not the
     // physical type: a column read as temporal prints as text, so
     // right-aligning it would just detach it from its header.
@@ -755,19 +870,19 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
     ),
     [meta, temporal, alignNumeric, cellProps, headerProps, path, el]
   );
-  const pageCtxRef = (0, import_react5.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: 0 });
+  const pageCtxRef = (0, import_react6.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: 0 });
   usePageNotify(onPage, pageCtxRef, [rows, rgPage, page, path, visible.join(",")]);
   const notifyHover = useStableCallback(onCellHover);
-  if (error) return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!meta) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { opacity: 0.6 }, children: "reading parquet metadata\u2026" });
+  if (!meta) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { opacity: 0.6 }, children: "reading parquet metadata\u2026" });
   const { schema: rawSchema, totalRows, byteSize, rowGroups } = meta;
   const allColumns = rawSchema.map((c) => temporal.has(c.name) ? { ...c, kind: "temporal" } : c);
   const schema = allColumns.filter((c) => visible.includes(c.name));
-  const FilterBar = () => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { opacity: 0.8, fontSize: "0.9em", margin: "0 0 0.5em", display: "flex", alignItems: "center", gap: "0.6em", flexWrap: "wrap" }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+  const FilterBar = () => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { opacity: 0.8, fontSize: "0.9em", margin: "0 0 0.5em", display: "flex", alignItems: "center", gap: "0.6em", flexWrap: "wrap" }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       FilterInput,
       {
         value: filter,
@@ -780,32 +895,32 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         ...smallTable && sortedAll ? { count: { shown: rows?.length ?? 0, total: sortedAll.length } } : {}
       }
     ),
-    predicate && prunedGroups && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { opacity: 0.7 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: prunedGroups.length }),
+    predicate && prunedGroups && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { opacity: 0.7 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: prunedGroups.length }),
       " / ",
       rowGroups.length,
       " row groups can match",
-      isSortedBy(meta, predicate.column) && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+      isSortedBy(meta, predicate.column) && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
         " \xB7 file is sorted by ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("code", { children: predicate.column })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("code", { children: predicate.column })
       ] })
     ] }),
-    !smallTable && !predicate && filter.trim() !== "" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { opacity: 0.7 }, children: [
+    !smallTable && !predicate && filter.trim() !== "" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { opacity: 0.7 }, children: [
       "streaming \u2014 only comparisons (",
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("code", { children: "col >= x" }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("code", { children: "col >= x" }),
       ") can be answered without the whole file"
     ] })
   ] });
   if (rowGroups.length === 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { opacity: 0.7 }, children: "parquet file has no row groups" });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { opacity: 0.7 }, children: "parquet file has no row groups" });
   }
   const activeGroups = prunedGroups ?? rowGroups;
   if (activeGroups.length === 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(FilterBar, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { opacity: 0.7 }, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(FilterBar, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { opacity: 0.7 }, children: [
         "No row group can contain a match for ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("code", { children: filter }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("code", { children: filter }),
         "."
       ] })
     ] });
@@ -829,52 +944,52 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
   };
   const canGoPrev = clampedRgPage > 0 || !smallTable && rgIndex > 0;
   const canGoNext = rows !== null && clampedRgPage < rgPageCount - 1 || !smallTable && rgIndex < activeGroups.length - 1;
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", display: "flex", alignItems: "center", gap: "0.6em", flexWrap: "wrap", position: "relative", zIndex: 2 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: totalRows.toLocaleString() }),
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", display: "flex", alignItems: "center", gap: "0.6em", flexWrap: "wrap", position: "relative", zIndex: 2 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: totalRows.toLocaleString() }),
         " rows \xB7 ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: allColumns.length }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: allColumns.length }),
         " columns \xB7 ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: rowGroups.length }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: rowGroups.length }),
         " row group",
         rowGroups.length === 1 ? "" : "s",
         " \xB7 ",
         fmtSize(byteSize)
       ] }),
-      columnPicker && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
+      columnPicker && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("details", { style: { marginBottom: "0.5em" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: "schema" }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: allColumns.map((c) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: c.name }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.1em 0", opacity: 0.7 }, children: typeLabel(c, temporal.get(c.name)) })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("details", { style: { marginBottom: "0.5em" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: "schema" }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tbody", { children: allColumns.map((c) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: c.name }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { style: { padding: "0.1em 0", opacity: 0.7 }, children: typeLabel(c, temporal.get(c.name)) })
       ] }, c.name)) }) })
     ] }),
-    rowGroups.length > 1 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("details", { style: { marginBottom: "0.5em" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: [
+    rowGroups.length > 1 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("details", { style: { marginBottom: "0.5em" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("summary", { style: { cursor: "pointer", fontSize: "0.9em", opacity: 0.8 }, children: [
         "row groups (",
         rowGroups.length,
         ")"
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: { padding: "0.1em 0.6em 0.1em 0", fontWeight: 400 }, children: "#" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "rows" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "compressed" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "uncompressed" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("table", { style: { borderCollapse: "collapse", marginTop: "0.3em", fontSize: "0.85em" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("th", { style: { padding: "0.1em 0.6em 0.1em 0", fontWeight: 400 }, children: "#" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "rows" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "compressed" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("th", { style: { padding: "0.1em 0.6em", fontWeight: 400, textAlign: "right" }, children: "uncompressed" })
         ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: rowGroups.map((g) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { style: { background: g.index === rgIndex ? "rgba(127,127,127,0.12)" : void 0, cursor: "pointer" }, onClick: () => setPage(g.index), children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: g.index }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: g.numRows.toLocaleString() }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.8 }, children: g.compressedBytes != null ? fmtSize(g.compressedBytes) : "\u2014" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6 }, children: fmtSize(g.uncompressedBytes) })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tbody", { children: rowGroups.map((g) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("tr", { style: { background: g.index === rgIndex ? "rgba(127,127,127,0.12)" : void 0, cursor: "pointer" }, onClick: () => setPage(g.index), children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { style: { padding: "0.1em 0.6em 0.1em 0", fontFamily: "ui-monospace, monospace" }, children: g.index }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: g.numRows.toLocaleString() }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.8 }, children: g.compressedBytes != null ? fmtSize(g.compressedBytes) : "\u2014" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { style: { padding: "0.1em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6 }, children: fmtSize(g.uncompressedBytes) })
         ] }, g.index)) })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(FilterBar, {}),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Pager, { rg, rgCount: activeGroups.length, setPage, totalRows }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(FilterBar, {}),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Pager, { rg, rgCount: activeGroups.length, setPage, totalRows }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       RowPager,
       {
         canGoPrev,
@@ -890,13 +1005,13 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         rows
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas" }, children: schema.map((c) => {
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas" }, children: schema.map((c) => {
         const st = colStyles.get(c.name);
         const stats = rg.stats.get(c.name);
         const title = statsTitle(stats, temporal.get(c.name));
-        const label = title ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { title, children: c.name }) : c.name;
-        const defaultNode = smallTable ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+        const label = title ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { title, children: c.name }) : c.name;
+        const defaultNode = smallTable ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
           "span",
           {
             role: "button",
@@ -916,26 +1031,29 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
             style: { cursor: "pointer", userSelect: "none" },
             children: [
               label,
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: "0.3em", fontSize: "0.85em" }, children: sortGlyph(c.name, sort) })
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: "0.3em", fontSize: "0.85em" }, children: sortGlyph(c.name, sort) })
             ]
           }
         ) : label;
-        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: st?.header ?? TH_STYLE, className: st?.headerClass, children: renderHeader ? renderHeader({ column: c, ...stats ? { stats } : {}, path, defaultNode }) : defaultNode }, c.name);
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("th", { style: { ...st?.header ?? TH_STYLE, ...resizableColumns ? { position: "relative" } : {}, ...cw.styleFor(c.name) }, className: st?.headerClass, children: [
+          renderHeader ? renderHeader({ column: c, ...stats ? { stats } : {}, path, defaultNode }) : defaultNode,
+          resizableColumns && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ColumnResizeHandle, { col: c.name, widths: cw })
+        ] }, c.name);
       }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: visibleRows === null ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tbody", { children: visibleRows === null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("td", { colSpan: schema.length, style: { padding: "0.5em", opacity: 0.6 }, children: [
         "loading row group ",
         rgIndex,
         "\u2026"
-      ] }) }) : visibleRows.map((r, i) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => {
+      ] }) }) : visibleRows.map((r, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: schema.map((c) => {
         const value = r[c.name];
         const defaultNode = fmtCell(value, temporal.get(c.name));
         const st = colStyles.get(c.name);
         const rendered = renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode;
         const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: r, path });
-        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
           "td",
           {
-            style: st?.cell ?? TD_STYLE,
+            style: { ...st?.cell ?? TD_STYLE, ...cw.styleFor(c.name) },
             className: st?.cellClass,
             ...title != null ? { title } : {},
             ...onCellHover ? {
@@ -952,18 +1070,18 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
 }
 function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, totalRows, pageIdx, pageCount, rows, smallTable }) {
   if (rows === null) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.5 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "rows \u2014" }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.5 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: "rows \u2014" }) });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.9 }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: !canGoPrev, onClick: goPrev, children: "\u2039" }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { fontVariantNumeric: "tabular-nums" }, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.3em 0", fontSize: "0.85em", opacity: 0.9 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: !canGoPrev, onClick: goPrev, children: "\u2039" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { fontVariantNumeric: "tabular-nums" }, children: [
       "rows ",
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: rowStart.toLocaleString() }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: rowStart.toLocaleString() }),
       "\u2013",
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: rowEnd.toLocaleString() }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: rowEnd.toLocaleString() }),
       " / ",
       totalRows.toLocaleString(),
-      pageCount > 1 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { opacity: 0.6 }, children: [
+      pageCount > 1 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { opacity: 0.6 }, children: [
         " \xB7 page ",
         pageIdx + 1,
         "/",
@@ -971,18 +1089,18 @@ function RowPager({ canGoPrev, canGoNext, goPrev, goNext, rowStart, rowEnd, tota
         smallTable ? "" : " of RG"
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: !canGoNext, onClick: goNext, children: "\u203A" })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: !canGoNext, onClick: goNext, children: "\u203A" })
   ] });
 }
 function Pager({ rg, rgCount, setPage, totalRows }) {
   if (rgCount <= 1) return null;
   const sizeLabel = rg.compressedBytes != null ? fmtSize(rg.compressedBytes) : fmtSize(rg.uncompressedBytes);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em" }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: rg.index === 0, onClick: () => setPage(0), children: "\xAB" }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: rg.index === 0, onClick: () => setPage(rg.index - 1), children: "\u2039" }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { opacity: 0.8 }, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em" }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: rg.index === 0, onClick: () => setPage(0), children: "\xAB" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: rg.index === 0, onClick: () => setPage(rg.index - 1), children: "\u2039" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { opacity: 0.8 }, children: [
       "row group ",
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { children: rg.index + 1 }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: rg.index + 1 }),
       " / ",
       rgCount,
       " \xB7 rows ",
@@ -994,8 +1112,8 @@ function Pager({ rg, rgCount, setPage, totalRows }) {
       " \xB7 ",
       sizeLabel
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rg.index + 1), children: "\u203A" }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rgCount - 1), children: "\xBB" })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rg.index + 1), children: "\u203A" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: rg.index === rgCount - 1, onClick: () => setPage(rgCount - 1), children: "\xBB" })
   ] });
 }
 function rawText(v) {
@@ -1005,10 +1123,10 @@ function rawText(v) {
   return String(v);
 }
 function fmtCell(v, temporal) {
-  if (v === null || v === void 0) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: 0.3 }, children: "\xB7" });
+  if (v === null || v === void 0) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: 0.3 }, children: "\xB7" });
   if (temporal) {
     const s = formatTemporal(v, temporal);
-    if (s !== null) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { title: rawText(v), style: { fontVariantNumeric: "tabular-nums" }, children: s });
+    if (s !== null) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { title: rawText(v), style: { fontVariantNumeric: "tabular-nums" }, children: s });
   }
   return rawText(v);
 }

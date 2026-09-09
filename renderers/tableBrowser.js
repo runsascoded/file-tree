@@ -1,10 +1,10 @@
 // src/renderers/tableBrowser.tsx
 import {
-  useCallback as useCallback3,
+  useCallback as useCallback4,
   useEffect as useEffect2,
-  useMemo as useMemo3,
-  useRef as useRef2,
-  useState as useState3
+  useMemo as useMemo4,
+  useRef as useRef3,
+  useState as useState4
 } from "react";
 
 // src/react/persistedState.ts
@@ -82,9 +82,123 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   return out;
 }
 
+// src/renderers/columnResize.tsx
+import { useCallback, useMemo, useRef, useState as useState2 } from "react";
+import { jsx } from "react/jsx-runtime";
+var MIN_WIDTH = 40;
+var FIT_SLACK = 2;
+var DRAG_THRESHOLD = 3;
+var NO_STYLE = {};
+function parseWidths(raw) {
+  const m = /* @__PURE__ */ new Map();
+  for (const part of raw.split(",")) {
+    if (!part) continue;
+    const i = part.lastIndexOf(":");
+    if (i <= 0) continue;
+    const name = part.slice(0, i);
+    const px = Number(part.slice(i + 1));
+    if (name && Number.isFinite(px) && px > 0) m.set(name, px);
+  }
+  return m;
+}
+function serializeWidths(m) {
+  return [...m].map(([n, w]) => `${n}:${Math.round(w)}`).join(",");
+}
+function useColumnWidths(usePersistedState, key = "cw") {
+  const use = usePersistedState ?? defaultUseState;
+  const [raw, setRaw] = use(key, "");
+  const persisted = useMemo(() => parseWidths(raw), [raw]);
+  const persistedRef = useRef(persisted);
+  persistedRef.current = persisted;
+  const [drag, setDrag] = useState2(null);
+  const commit = useCallback((col, w) => {
+    const m = new Map(persistedRef.current);
+    m.set(col, Math.max(MIN_WIDTH, w));
+    setRaw(serializeWidths(m));
+  }, [setRaw]);
+  const startResize = useCallback((col, e) => {
+    const th = e.target.closest("th");
+    if (!th) return;
+    const startW = th.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const widthAt = (clientX) => Math.max(MIN_WIDTH, startW + (clientX - startX));
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    let dragging = false;
+    const move = (ev) => {
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
+        dragging = true;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+      }
+      setDrag({ col, w: widthAt(ev.clientX) });
+    };
+    const up = (ev) => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      if (dragging) {
+        commit(col, widthAt(ev.clientX));
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevSelect;
+      }
+      setDrag(null);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  }, [commit]);
+  const autoFit = useCallback((col, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = e.target.closest("th");
+    const table = th?.closest("table");
+    if (!th || !table) return;
+    const idx = th.cellIndex;
+    let max = th.scrollWidth;
+    for (const tr of table.querySelectorAll("tbody tr")) {
+      const td = tr.children[idx];
+      if (td && td.cellIndex === idx) max = Math.max(max, td.scrollWidth);
+    }
+    commit(col, Math.ceil(max) + FIT_SLACK);
+  }, [commit]);
+  const styleFor = useCallback((col) => {
+    const w = drag && drag.col === col ? drag.w : persisted.get(col);
+    return w == null ? NO_STYLE : { width: w, minWidth: w, maxWidth: w };
+  }, [drag, persisted]);
+  return useMemo(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit]);
+}
+function ColumnResizeHandle({ col, widths }) {
+  const [hot, setHot] = useState2(false);
+  return /* @__PURE__ */ jsx(
+    "span",
+    {
+      role: "separator",
+      "aria-orientation": "vertical",
+      "aria-label": `Resize ${col} column`,
+      title: "Drag to resize \xB7 double-click to fit",
+      onPointerEnter: () => setHot(true),
+      onPointerLeave: () => setHot(false),
+      onPointerDown: (e) => widths.startResize(col, e),
+      onDoubleClick: (e) => widths.autoFit(col, e),
+      onClick: (e) => e.stopPropagation(),
+      style: {
+        position: "absolute",
+        top: 0,
+        right: 0,
+        height: "100%",
+        width: 9,
+        cursor: "col-resize",
+        touchAction: "none",
+        userSelect: "none",
+        borderRight: `2px solid ${hot ? "rgba(127,127,127,0.7)" : "transparent"}`
+      }
+    }
+  );
+}
+
 // src/renderers/tableControls.tsx
-import { useCallback, useEffect, useMemo, useRef, useState as useState2 } from "react";
-import { jsx, jsxs } from "react/jsx-runtime";
+import { useCallback as useCallback2, useEffect, useMemo as useMemo2, useRef as useRef2, useState as useState3 } from "react";
+import { jsx as jsx2, jsxs } from "react/jsx-runtime";
 var BTN = {
   font: "inherit",
   fontSize: "0.85em",
@@ -99,24 +213,24 @@ var BTN = {
 function useColumnVisibility(columns, usePersistedState, initialHidden = []) {
   const use = usePersistedState ?? defaultUseState;
   const [raw, setRaw] = use("hide", initialHidden.join(","));
-  const hidden = useMemo(
+  const hidden = useMemo2(
     () => new Set(raw.split(",").map((s) => s.trim()).filter(Boolean)),
     [raw]
   );
-  const toggle = useCallback((name) => {
+  const toggle = useCallback2((name) => {
     const next = new Set(hidden);
     next.delete(name) || next.add(name);
     setRaw([...next].join(","));
   }, [hidden, setRaw]);
-  const showAll = useCallback(() => setRaw(""), [setRaw]);
-  const visible = useMemo(
+  const showAll = useCallback2(() => setRaw(""), [setRaw]);
+  const visible = useMemo2(
     () => columns.map((c) => c.name).filter((n) => !hidden.has(n)),
     [columns, hidden]
   );
   return { visible, toggle, showAll, hidden };
 }
 function ColumnPicker({ columns, vis }) {
-  const [open, setOpen] = useState2(false);
+  const [open, setOpen] = useState3(false);
   const { visible, toggle, showAll, hidden } = vis;
   return (
     // Note the *host* has to be positioned with a z-index for the panel
@@ -162,7 +276,7 @@ function ColumnPicker({ columns, vis }) {
           },
           children: [
             columns.map((c) => /* @__PURE__ */ jsxs("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
-              /* @__PURE__ */ jsx(
+              /* @__PURE__ */ jsx2(
                 "input",
                 {
                   type: "checkbox",
@@ -173,7 +287,7 @@ function ColumnPicker({ columns, vis }) {
               " ",
               c.name
             ] }, c.name)),
-            hidden.size > 0 && /* @__PURE__ */ jsx("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
+            hidden.size > 0 && /* @__PURE__ */ jsx2("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
           ]
         }
       )
@@ -186,7 +300,7 @@ function useFilter(usePersistedState) {
 }
 function FilterInput({ value, onChange, count, placeholder = "filter" }) {
   return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx2(
       "input",
       {
         type: "search",
@@ -214,9 +328,9 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
   ] });
 }
 function useStableCallback(fn) {
-  const ref = useRef(fn);
+  const ref = useRef2(fn);
   ref.current = fn;
-  return useCallback((...args) => ref.current?.(...args), []);
+  return useCallback2((...args) => ref.current?.(...args), []);
 }
 function usePageNotify(onPage, ctxRef, deps) {
   const notify = useStableCallback(onPage);
@@ -226,14 +340,14 @@ function usePageNotify(onPage, ctxRef, deps) {
 }
 
 // src/renderers/tableSort.ts
-import { useCallback as useCallback2, useMemo as useMemo2 } from "react";
+import { useCallback as useCallback3, useMemo as useMemo3 } from "react";
 var DEFAULT_FULL_LOAD_MAX_BYTES = 5 * 1024 * 1024;
 function useSort(usePersistedState) {
   const use = usePersistedState ?? defaultUseState;
   const [raw, setRaw] = use("sort", "");
   const column = raw ? raw.replace(/^-/, "") : null;
   const dir = raw.startsWith("-") ? "desc" : "asc";
-  const toggle = useCallback2((name) => {
+  const toggle = useCallback3((name) => {
     setRaw(raw === name ? `-${name}` : raw === `-${name}` ? "" : name);
   }, [raw, setRaw]);
   return { column, dir, toggle };
@@ -244,7 +358,7 @@ function sortGlyph(column, sort) {
 }
 
 // src/renderers/tableBrowser.tsx
-import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
+import { jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
 var DEFAULT_PAGE_SIZE = 100;
 var BTN2 = {
   font: "inherit",
@@ -261,10 +375,10 @@ var NUMERIC_KINDS = /* @__PURE__ */ new Set(["number"]);
 var plural = (n, noun) => `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 function defaultTableCell(value) {
   if (value === null || value === void 0) {
-    return /* @__PURE__ */ jsx2("span", { style: { opacity: 0.4 }, children: "null" });
+    return /* @__PURE__ */ jsx3("span", { style: { opacity: 0.4 }, children: "null" });
   }
   if (value instanceof Uint8Array) {
-    return /* @__PURE__ */ jsx2("span", { style: { opacity: 0.6 }, children: `<${value.byteLength} bytes>` });
+    return /* @__PURE__ */ jsx3("span", { style: { opacity: 0.6 }, children: `<${value.byteLength} bytes>` });
   }
   return String(value);
 }
@@ -283,21 +397,22 @@ function TableBrowser({
   hiddenColumns,
   onPage,
   onCellHover,
-  elide
+  elide,
+  resizableColumns = false
 }) {
   const use = usePersistedState ?? defaultUseState;
   const [table, setTable] = use("table", "");
   const [page, setPage] = use("page", 0);
   const [filter, setFilter] = useFilter(usePersistedState);
   const sort = useSort(usePersistedState);
-  const [result, setResult] = useState3(null);
-  const [error, setError] = useState3(null);
-  const [loading, setLoading] = useState3(false);
-  const active = useMemo3(
+  const [result, setResult] = useState4(null);
+  const [error, setError] = useState4(null);
+  const [loading, setLoading] = useState4(false);
+  const active = useMemo4(
     () => objects.find((o) => o.name === table) ?? objects[0] ?? null,
     [objects, table]
   );
-  const source = useMemo3(
+  const source = useMemo4(
     () => active ? catalog.source(active.name) : null,
     [catalog, active]
   );
@@ -328,7 +443,7 @@ function TableBrowser({
     };
   }, [source, page, pageSize, filter, sort.column, sort.dir, can?.filter, can?.sort]);
   const queryKey = `${active?.name ?? ""}\0${filter}\0${sort.column ?? ""}${sort.dir}`;
-  const lastQueryKey = useRef2(null);
+  const lastQueryKey = useRef3(null);
   useEffect2(() => {
     if (lastQueryKey.current !== null && lastQueryKey.current !== queryKey) setPage(0);
     lastQueryKey.current = queryKey;
@@ -336,15 +451,16 @@ function TableBrowser({
   const rows = result?.rows ?? [];
   const total = result?.total ?? null;
   const pageStart = result?.offset ?? 0;
-  const unfilteredTotals = useRef2(/* @__PURE__ */ new Map());
+  const unfilteredTotals = useRef3(/* @__PURE__ */ new Map());
   if (active && !filter.trim() && total !== null) unfilteredTotals.current.set(active.name, total);
   const unfilteredTotal = active ? unfilteredTotals.current.get(active.name) : void 0;
-  const el = useMemo3(() => resolveElide(elide), [elide]);
-  const colStyles = useMemo3(
+  const el = useMemo4(() => resolveElide(elide), [elide]);
+  const cw = useColumnWidths(usePersistedState);
+  const colStyles = useMemo4(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, (c) => NUMERIC_KINDS.has(c.kind), el),
     [columns, path, cellProps, headerProps, el]
   );
-  const pageCtxRef = useRef2({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
+  const pageCtxRef = useRef3({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
   pageCtxRef.current = {
     rows,
     columns: columns.filter((c) => visible.includes(c.name)),
@@ -354,8 +470,8 @@ function TableBrowser({
   };
   usePageNotify(onPage, pageCtxRef, [rows, visible, path, pageStart, total]);
   const notifyHover = useStableCallback(onCellHover);
-  const hoverHandlers = useCallback3((ctx) => onCellHover ? { onMouseEnter: () => notifyHover(ctx), onMouseLeave: () => notifyHover(null) } : {}, [onCellHover, notifyHover]);
-  if (!objects.length) return /* @__PURE__ */ jsx2("div", { style: { opacity: 0.6 }, children: "no tables or views in this file" });
+  const hoverHandlers = useCallback4((ctx) => onCellHover ? { onMouseEnter: () => notifyHover(ctx), onMouseLeave: () => notifyHover(null) } : {}, [onCellHover, notifyHover]);
+  if (!objects.length) return /* @__PURE__ */ jsx3("div", { style: { opacity: 0.6 }, children: "no tables or views in this file" });
   const lastPage = total === null ? null : Math.max(0, Math.ceil(total / pageSize) - 1);
   const shown = columns.filter((c) => visible.includes(c.name));
   return /* @__PURE__ */ jsxs2("div", { children: [
@@ -369,7 +485,7 @@ function TableBrowser({
       position: "relative",
       zIndex: 2
     }, children: [
-      objects.length > 1 && /* @__PURE__ */ jsx2(
+      objects.length > 1 && /* @__PURE__ */ jsx3(
         "select",
         {
           value: active?.name ?? "",
@@ -386,7 +502,7 @@ function TableBrowser({
         plural(total ?? rows.length, "row"),
         total !== null && total > 0 && ` \xB7 ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}`
       ] }),
-      can?.filter && /* @__PURE__ */ jsx2(
+      can?.filter && /* @__PURE__ */ jsx3(
         FilterInput,
         {
           value: filter,
@@ -395,13 +511,13 @@ function TableBrowser({
           ...total !== null && unfilteredTotal !== void 0 ? { count: { shown: total, total: unfilteredTotal } } : {}
         }
       ),
-      columnPicker && columns.length > 0 && /* @__PURE__ */ jsx2(ColumnPicker, { columns, vis: { visible, ...vis } }),
-      loading && /* @__PURE__ */ jsx2("span", { style: { opacity: 0.5 }, children: "\u2026" }),
+      columnPicker && columns.length > 0 && /* @__PURE__ */ jsx3(ColumnPicker, { columns, vis: { visible, ...vis } }),
+      loading && /* @__PURE__ */ jsx3("span", { style: { opacity: 0.5 }, children: "\u2026" }),
       status
     ] }),
-    error && /* @__PURE__ */ jsx2("p", { style: { color: "crimson", fontSize: "0.9em" }, children: error.message }),
-    /* @__PURE__ */ jsx2("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxs2("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ jsx2("thead", { children: /* @__PURE__ */ jsx2("tr", { style: {
+    error && /* @__PURE__ */ jsx3("p", { style: { color: "crimson", fontSize: "0.9em" }, children: error.message }),
+    /* @__PURE__ */ jsx3("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxs2("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ jsx3("thead", { children: /* @__PURE__ */ jsx3("tr", { style: {
         position: "sticky",
         top: 0,
         zIndex: 1,
@@ -417,22 +533,25 @@ function TableBrowser({
             children: [
               c.name,
               " ",
-              /* @__PURE__ */ jsx2("span", { style: { opacity: sort.column === c.name ? 0.9 : 0.3 }, children: sortGlyph(c.name, sort) })
+              /* @__PURE__ */ jsx3("span", { style: { opacity: sort.column === c.name ? 0.9 : 0.3 }, children: sortGlyph(c.name, sort) })
             ]
           }
-        ) : /* @__PURE__ */ jsx2("span", { children: c.name });
-        return /* @__PURE__ */ jsx2(
+        ) : /* @__PURE__ */ jsx3("span", { children: c.name });
+        return /* @__PURE__ */ jsxs2(
           "th",
           {
-            style: styles?.header ?? TH_STYLE,
+            style: { ...styles?.header ?? TH_STYLE, ...resizableColumns ? { position: "relative" } : {}, ...cw.styleFor(c.name) },
             ...styles?.headerClass ? { className: styles.headerClass } : {},
-            children: renderHeader ? renderHeader({ column: c, path, defaultNode: label }) : label
+            children: [
+              renderHeader ? renderHeader({ column: c, path, defaultNode: label }) : label,
+              resizableColumns && /* @__PURE__ */ jsx3(ColumnResizeHandle, { col: c.name, widths: cw })
+            ]
           },
           c.name
         );
       }) }) }),
       /* @__PURE__ */ jsxs2("tbody", { children: [
-        rows.map((row, i) => /* @__PURE__ */ jsx2("tr", { children: shown.map((c) => {
+        rows.map((row, i) => /* @__PURE__ */ jsx3("tr", { children: shown.map((c) => {
           const styles = colStyles.get(c.name);
           const ctx = {
             value: row[c.name],
@@ -444,10 +563,10 @@ function TableBrowser({
           };
           const rendered = renderCell ? renderCell(ctx) : ctx.defaultNode;
           const { title, node } = applyElide(el, { value: ctx.value, node: rendered, hasCustomRender: !!renderCell, column: c, row, path });
-          return /* @__PURE__ */ jsx2(
+          return /* @__PURE__ */ jsx3(
             "td",
             {
-              style: styles?.cell ?? TD_STYLE,
+              style: { ...styles?.cell ?? TD_STYLE, ...cw.styleFor(c.name) },
               ...styles?.cellClass ? { className: styles.cellClass } : {},
               ...title != null ? { title } : {},
               ...hoverHandlers(ctx),
@@ -456,13 +575,13 @@ function TableBrowser({
             c.name
           );
         }) }, pageStart + i)),
-        rows.length === 0 && !loading && !error && /* @__PURE__ */ jsx2("tr", { children: /* @__PURE__ */ jsx2("td", { colSpan: Math.max(1, shown.length), style: { ...TD_STYLE, opacity: 0.6 }, children: filter.trim() ? "no rows match" : "no rows" }) })
+        rows.length === 0 && !loading && !error && /* @__PURE__ */ jsx3("tr", { children: /* @__PURE__ */ jsx3("td", { colSpan: Math.max(1, shown.length), style: { ...TD_STYLE, opacity: 0.6 }, children: filter.trim() ? "no rows match" : "no rows" }) })
       ] })
     ] }) }),
     /* @__PURE__ */ jsxs2("p", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginTop: "0.6em" }, children: [
-      /* @__PURE__ */ jsx2("button", { type: "button", style: BTN2, disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039 prev" }),
-      /* @__PURE__ */ jsx2("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: can?.randomAccess === false ? `rows ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}` : `page ${(page + 1).toLocaleString()}${lastPage !== null ? ` / ${(lastPage + 1).toLocaleString()}` : ""}` }),
-      /* @__PURE__ */ jsx2(
+      /* @__PURE__ */ jsx3("button", { type: "button", style: BTN2, disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039 prev" }),
+      /* @__PURE__ */ jsx3("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: can?.randomAccess === false ? `rows ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}` : `page ${(page + 1).toLocaleString()}${lastPage !== null ? ` / ${(lastPage + 1).toLocaleString()}` : ""}` }),
+      /* @__PURE__ */ jsx3(
         "button",
         {
           type: "button",

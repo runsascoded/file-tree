@@ -27,7 +27,7 @@ __export(tableBrowser_exports, {
   defaultTableCell: () => defaultTableCell
 });
 module.exports = __toCommonJS(tableBrowser_exports);
-var import_react4 = require("react");
+var import_react5 = require("react");
 
 // src/react/persistedState.ts
 var import_react = require("react");
@@ -104,9 +104,123 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   return out;
 }
 
-// src/renderers/tableControls.tsx
+// src/renderers/columnResize.tsx
 var import_react2 = require("react");
 var import_jsx_runtime = require("react/jsx-runtime");
+var MIN_WIDTH = 40;
+var FIT_SLACK = 2;
+var DRAG_THRESHOLD = 3;
+var NO_STYLE = {};
+function parseWidths(raw) {
+  const m = /* @__PURE__ */ new Map();
+  for (const part of raw.split(",")) {
+    if (!part) continue;
+    const i = part.lastIndexOf(":");
+    if (i <= 0) continue;
+    const name = part.slice(0, i);
+    const px = Number(part.slice(i + 1));
+    if (name && Number.isFinite(px) && px > 0) m.set(name, px);
+  }
+  return m;
+}
+function serializeWidths(m) {
+  return [...m].map(([n, w]) => `${n}:${Math.round(w)}`).join(",");
+}
+function useColumnWidths(usePersistedState, key = "cw") {
+  const use = usePersistedState ?? defaultUseState;
+  const [raw, setRaw] = use(key, "");
+  const persisted = (0, import_react2.useMemo)(() => parseWidths(raw), [raw]);
+  const persistedRef = (0, import_react2.useRef)(persisted);
+  persistedRef.current = persisted;
+  const [drag, setDrag] = (0, import_react2.useState)(null);
+  const commit = (0, import_react2.useCallback)((col, w) => {
+    const m = new Map(persistedRef.current);
+    m.set(col, Math.max(MIN_WIDTH, w));
+    setRaw(serializeWidths(m));
+  }, [setRaw]);
+  const startResize = (0, import_react2.useCallback)((col, e) => {
+    const th = e.target.closest("th");
+    if (!th) return;
+    const startW = th.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const widthAt = (clientX) => Math.max(MIN_WIDTH, startW + (clientX - startX));
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    let dragging = false;
+    const move = (ev) => {
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
+        dragging = true;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+      }
+      setDrag({ col, w: widthAt(ev.clientX) });
+    };
+    const up = (ev) => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      if (dragging) {
+        commit(col, widthAt(ev.clientX));
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevSelect;
+      }
+      setDrag(null);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  }, [commit]);
+  const autoFit = (0, import_react2.useCallback)((col, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = e.target.closest("th");
+    const table = th?.closest("table");
+    if (!th || !table) return;
+    const idx = th.cellIndex;
+    let max = th.scrollWidth;
+    for (const tr of table.querySelectorAll("tbody tr")) {
+      const td = tr.children[idx];
+      if (td && td.cellIndex === idx) max = Math.max(max, td.scrollWidth);
+    }
+    commit(col, Math.ceil(max) + FIT_SLACK);
+  }, [commit]);
+  const styleFor = (0, import_react2.useCallback)((col) => {
+    const w = drag && drag.col === col ? drag.w : persisted.get(col);
+    return w == null ? NO_STYLE : { width: w, minWidth: w, maxWidth: w };
+  }, [drag, persisted]);
+  return (0, import_react2.useMemo)(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit]);
+}
+function ColumnResizeHandle({ col, widths }) {
+  const [hot, setHot] = (0, import_react2.useState)(false);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    "span",
+    {
+      role: "separator",
+      "aria-orientation": "vertical",
+      "aria-label": `Resize ${col} column`,
+      title: "Drag to resize \xB7 double-click to fit",
+      onPointerEnter: () => setHot(true),
+      onPointerLeave: () => setHot(false),
+      onPointerDown: (e) => widths.startResize(col, e),
+      onDoubleClick: (e) => widths.autoFit(col, e),
+      onClick: (e) => e.stopPropagation(),
+      style: {
+        position: "absolute",
+        top: 0,
+        right: 0,
+        height: "100%",
+        width: 9,
+        cursor: "col-resize",
+        touchAction: "none",
+        userSelect: "none",
+        borderRight: `2px solid ${hot ? "rgba(127,127,127,0.7)" : "transparent"}`
+      }
+    }
+  );
+}
+
+// src/renderers/tableControls.tsx
+var import_react3 = require("react");
+var import_jsx_runtime2 = require("react/jsx-runtime");
 var BTN = {
   font: "inherit",
   fontSize: "0.85em",
@@ -121,24 +235,24 @@ var BTN = {
 function useColumnVisibility(columns, usePersistedState, initialHidden = []) {
   const use = usePersistedState ?? defaultUseState;
   const [raw, setRaw] = use("hide", initialHidden.join(","));
-  const hidden = (0, import_react2.useMemo)(
+  const hidden = (0, import_react3.useMemo)(
     () => new Set(raw.split(",").map((s) => s.trim()).filter(Boolean)),
     [raw]
   );
-  const toggle = (0, import_react2.useCallback)((name) => {
+  const toggle = (0, import_react3.useCallback)((name) => {
     const next = new Set(hidden);
     next.delete(name) || next.add(name);
     setRaw([...next].join(","));
   }, [hidden, setRaw]);
-  const showAll = (0, import_react2.useCallback)(() => setRaw(""), [setRaw]);
-  const visible = (0, import_react2.useMemo)(
+  const showAll = (0, import_react3.useCallback)(() => setRaw(""), [setRaw]);
+  const visible = (0, import_react3.useMemo)(
     () => columns.map((c) => c.name).filter((n) => !hidden.has(n)),
     [columns, hidden]
   );
   return { visible, toggle, showAll, hidden };
 }
 function ColumnPicker({ columns, vis }) {
-  const [open, setOpen] = (0, import_react2.useState)(false);
+  const [open, setOpen] = (0, import_react3.useState)(false);
   const { visible, toggle, showAll, hidden } = vis;
   return (
     // Note the *host* has to be positioned with a z-index for the panel
@@ -146,8 +260,8 @@ function ColumnPicker({ columns, vis }) {
     // `csv.tsx`. A z-index here can't do it alone: this span is a flex
     // item of that line, so it paints in the line's place in the root
     // stacking order, which is before the table.
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { position: "relative", display: "inline-block" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { position: "relative", display: "inline-block" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
         "button",
         {
           type: "button",
@@ -163,7 +277,7 @@ function ColumnPicker({ columns, vis }) {
           ]
         }
       ),
-      open && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+      open && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
         "span",
         {
           role: "group",
@@ -183,8 +297,8 @@ function ColumnPicker({ columns, vis }) {
             display: "block"
           },
           children: [
-            columns.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            columns.map((c) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
                 "input",
                 {
                   type: "checkbox",
@@ -195,7 +309,7 @@ function ColumnPicker({ columns, vis }) {
               " ",
               c.name
             ] }, c.name)),
-            hidden.size > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
+            hidden.size > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
           ]
         }
       )
@@ -207,8 +321,8 @@ function useFilter(usePersistedState) {
   return use("q", "");
 }
 function FilterInput({ value, onChange, count, placeholder = "filter" }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
       "input",
       {
         type: "search",
@@ -228,7 +342,7 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
         }
       }
     ),
-    value.trim() !== "" && count && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { opacity: 0.7 }, children: [
+    value.trim() !== "" && count && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { opacity: 0.7 }, children: [
       count.shown.toLocaleString(),
       " / ",
       count.total.toLocaleString()
@@ -236,26 +350,26 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
   ] });
 }
 function useStableCallback(fn) {
-  const ref = (0, import_react2.useRef)(fn);
+  const ref = (0, import_react3.useRef)(fn);
   ref.current = fn;
-  return (0, import_react2.useCallback)((...args) => ref.current?.(...args), []);
+  return (0, import_react3.useCallback)((...args) => ref.current?.(...args), []);
 }
 function usePageNotify(onPage, ctxRef, deps) {
   const notify = useStableCallback(onPage);
-  (0, import_react2.useEffect)(() => {
+  (0, import_react3.useEffect)(() => {
     notify(ctxRef.current);
   }, deps);
 }
 
 // src/renderers/tableSort.ts
-var import_react3 = require("react");
+var import_react4 = require("react");
 var DEFAULT_FULL_LOAD_MAX_BYTES = 5 * 1024 * 1024;
 function useSort(usePersistedState) {
   const use = usePersistedState ?? defaultUseState;
   const [raw, setRaw] = use("sort", "");
   const column = raw ? raw.replace(/^-/, "") : null;
   const dir = raw.startsWith("-") ? "desc" : "asc";
-  const toggle = (0, import_react3.useCallback)((name) => {
+  const toggle = (0, import_react4.useCallback)((name) => {
     setRaw(raw === name ? `-${name}` : raw === `-${name}` ? "" : name);
   }, [raw, setRaw]);
   return { column, dir, toggle };
@@ -266,7 +380,7 @@ function sortGlyph(column, sort) {
 }
 
 // src/renderers/tableBrowser.tsx
-var import_jsx_runtime2 = require("react/jsx-runtime");
+var import_jsx_runtime3 = require("react/jsx-runtime");
 var DEFAULT_PAGE_SIZE = 100;
 var BTN2 = {
   font: "inherit",
@@ -283,10 +397,10 @@ var NUMERIC_KINDS = /* @__PURE__ */ new Set(["number"]);
 var plural = (n, noun) => `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 function defaultTableCell(value) {
   if (value === null || value === void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: 0.4 }, children: "null" });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: 0.4 }, children: "null" });
   }
   if (value instanceof Uint8Array) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: 0.6 }, children: `<${value.byteLength} bytes>` });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: 0.6 }, children: `<${value.byteLength} bytes>` });
   }
   return String(value);
 }
@@ -305,28 +419,29 @@ function TableBrowser({
   hiddenColumns,
   onPage,
   onCellHover,
-  elide
+  elide,
+  resizableColumns = false
 }) {
   const use = usePersistedState ?? defaultUseState;
   const [table, setTable] = use("table", "");
   const [page, setPage] = use("page", 0);
   const [filter, setFilter] = useFilter(usePersistedState);
   const sort = useSort(usePersistedState);
-  const [result, setResult] = (0, import_react4.useState)(null);
-  const [error, setError] = (0, import_react4.useState)(null);
-  const [loading, setLoading] = (0, import_react4.useState)(false);
-  const active = (0, import_react4.useMemo)(
+  const [result, setResult] = (0, import_react5.useState)(null);
+  const [error, setError] = (0, import_react5.useState)(null);
+  const [loading, setLoading] = (0, import_react5.useState)(false);
+  const active = (0, import_react5.useMemo)(
     () => objects.find((o) => o.name === table) ?? objects[0] ?? null,
     [objects, table]
   );
-  const source = (0, import_react4.useMemo)(
+  const source = (0, import_react5.useMemo)(
     () => active ? catalog.source(active.name) : null,
     [catalog, active]
   );
   const can = source?.capabilities;
   const columns = result?.columns ?? [];
   const { visible, ...vis } = useColumnVisibility(columns, usePersistedState, hiddenColumns);
-  (0, import_react4.useEffect)(() => {
+  (0, import_react5.useEffect)(() => {
     if (!source) return;
     let live = true;
     setLoading(true);
@@ -350,23 +465,24 @@ function TableBrowser({
     };
   }, [source, page, pageSize, filter, sort.column, sort.dir, can?.filter, can?.sort]);
   const queryKey = `${active?.name ?? ""}\0${filter}\0${sort.column ?? ""}${sort.dir}`;
-  const lastQueryKey = (0, import_react4.useRef)(null);
-  (0, import_react4.useEffect)(() => {
+  const lastQueryKey = (0, import_react5.useRef)(null);
+  (0, import_react5.useEffect)(() => {
     if (lastQueryKey.current !== null && lastQueryKey.current !== queryKey) setPage(0);
     lastQueryKey.current = queryKey;
   }, [queryKey, setPage]);
   const rows = result?.rows ?? [];
   const total = result?.total ?? null;
   const pageStart = result?.offset ?? 0;
-  const unfilteredTotals = (0, import_react4.useRef)(/* @__PURE__ */ new Map());
+  const unfilteredTotals = (0, import_react5.useRef)(/* @__PURE__ */ new Map());
   if (active && !filter.trim() && total !== null) unfilteredTotals.current.set(active.name, total);
   const unfilteredTotal = active ? unfilteredTotals.current.get(active.name) : void 0;
-  const el = (0, import_react4.useMemo)(() => resolveElide(elide), [elide]);
-  const colStyles = (0, import_react4.useMemo)(
+  const el = (0, import_react5.useMemo)(() => resolveElide(elide), [elide]);
+  const cw = useColumnWidths(usePersistedState);
+  const colStyles = (0, import_react5.useMemo)(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, (c) => NUMERIC_KINDS.has(c.kind), el),
     [columns, path, cellProps, headerProps, el]
   );
-  const pageCtxRef = (0, import_react4.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
+  const pageCtxRef = (0, import_react5.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
   pageCtxRef.current = {
     rows,
     columns: columns.filter((c) => visible.includes(c.name)),
@@ -376,12 +492,12 @@ function TableBrowser({
   };
   usePageNotify(onPage, pageCtxRef, [rows, visible, path, pageStart, total]);
   const notifyHover = useStableCallback(onCellHover);
-  const hoverHandlers = (0, import_react4.useCallback)((ctx) => onCellHover ? { onMouseEnter: () => notifyHover(ctx), onMouseLeave: () => notifyHover(null) } : {}, [onCellHover, notifyHover]);
-  if (!objects.length) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { opacity: 0.6 }, children: "no tables or views in this file" });
+  const hoverHandlers = (0, import_react5.useCallback)((ctx) => onCellHover ? { onMouseEnter: () => notifyHover(ctx), onMouseLeave: () => notifyHover(null) } : {}, [onCellHover, notifyHover]);
+  if (!objects.length) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { opacity: 0.6 }, children: "no tables or views in this file" });
   const lastPage = total === null ? null : Math.max(0, Math.ceil(total / pageSize) - 1);
   const shown = columns.filter((c) => visible.includes(c.name));
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: {
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: {
       opacity: 0.85,
       fontSize: "0.95em",
       display: "flex",
@@ -391,24 +507,24 @@ function TableBrowser({
       position: "relative",
       zIndex: 2
     }, children: [
-      objects.length > 1 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      objects.length > 1 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         "select",
         {
           value: active?.name ?? "",
           onChange: (e) => setTable(e.target.value),
           "aria-label": "Table",
           style: { ...BTN2, cursor: "pointer" },
-          children: objects.map((o) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("option", { value: o.name, children: [
+          children: objects.map((o) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("option", { value: o.name, children: [
             o.name,
             o.type === "view" ? " (view)" : ""
           ] }, o.name))
         }
       ),
-      result && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { opacity: 0.7 }, children: [
+      result && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { opacity: 0.7 }, children: [
         plural(total ?? rows.length, "row"),
         total !== null && total > 0 && ` \xB7 ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}`
       ] }),
-      can?.filter && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      can?.filter && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         FilterInput,
         {
           value: filter,
@@ -417,20 +533,20 @@ function TableBrowser({
           ...total !== null && unfilteredTotal !== void 0 ? { count: { shown: total, total: unfilteredTotal } } : {}
         }
       ),
-      columnPicker && columns.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ColumnPicker, { columns, vis: { visible, ...vis } }),
-      loading && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: 0.5 }, children: "\u2026" }),
+      columnPicker && columns.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ColumnPicker, { columns, vis: { visible, ...vis } }),
+      loading && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: 0.5 }, children: "\u2026" }),
       status
     ] }),
-    error && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: { color: "crimson", fontSize: "0.9em" }, children: error.message }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { style: {
+    error && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { color: "crimson", fontSize: "0.9em" }, children: error.message }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { style: {
         position: "sticky",
         top: 0,
         zIndex: 1,
         background: "linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas"
       }, children: shown.map((c) => {
         const styles = colStyles.get(c.name);
-        const label = can?.sort ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+        const label = can?.sort ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
           "span",
           {
             onClick: () => sort.toggle(c.name),
@@ -439,22 +555,25 @@ function TableBrowser({
             children: [
               c.name,
               " ",
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: sort.column === c.name ? 0.9 : 0.3 }, children: sortGlyph(c.name, sort) })
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: sort.column === c.name ? 0.9 : 0.3 }, children: sortGlyph(c.name, sort) })
             ]
           }
-        ) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: c.name });
-        return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: c.name });
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
           "th",
           {
-            style: styles?.header ?? TH_STYLE,
+            style: { ...styles?.header ?? TH_STYLE, ...resizableColumns ? { position: "relative" } : {}, ...cw.styleFor(c.name) },
             ...styles?.headerClass ? { className: styles.headerClass } : {},
-            children: renderHeader ? renderHeader({ column: c, path, defaultNode: label }) : label
+            children: [
+              renderHeader ? renderHeader({ column: c, path, defaultNode: label }) : label,
+              resizableColumns && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ColumnResizeHandle, { col: c.name, widths: cw })
+            ]
           },
           c.name
         );
       }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tbody", { children: [
-        rows.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { children: shown.map((c) => {
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("tbody", { children: [
+        rows.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { children: shown.map((c) => {
           const styles = colStyles.get(c.name);
           const ctx = {
             value: row[c.name],
@@ -466,10 +585,10 @@ function TableBrowser({
           };
           const rendered = renderCell ? renderCell(ctx) : ctx.defaultNode;
           const { title, node } = applyElide(el, { value: ctx.value, node: rendered, hasCustomRender: !!renderCell, column: c, row, path });
-          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
             "td",
             {
-              style: styles?.cell ?? TD_STYLE,
+              style: { ...styles?.cell ?? TD_STYLE, ...cw.styleFor(c.name) },
               ...styles?.cellClass ? { className: styles.cellClass } : {},
               ...title != null ? { title } : {},
               ...hoverHandlers(ctx),
@@ -478,13 +597,13 @@ function TableBrowser({
             c.name
           );
         }) }, pageStart + i)),
-        rows.length === 0 && !loading && !error && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { colSpan: Math.max(1, shown.length), style: { ...TD_STYLE, opacity: 0.6 }, children: filter.trim() ? "no rows match" : "no rows" }) })
+        rows.length === 0 && !loading && !error && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { colSpan: Math.max(1, shown.length), style: { ...TD_STYLE, opacity: 0.6 }, children: filter.trim() ? "no rows match" : "no rows" }) })
       ] })
     ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginTop: "0.6em" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { type: "button", style: BTN2, disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039 prev" }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: can?.randomAccess === false ? `rows ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}` : `page ${(page + 1).toLocaleString()}${lastPage !== null ? ` / ${(lastPage + 1).toLocaleString()}` : ""}` }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginTop: "0.6em" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", style: BTN2, disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039 prev" }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: can?.randomAccess === false ? `rows ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}` : `page ${(page + 1).toLocaleString()}${lastPage !== null ? ` / ${(lastPage + 1).toLocaleString()}` : ""}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         "button",
         {
           type: "button",
