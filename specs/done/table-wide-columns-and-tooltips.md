@@ -70,11 +70,21 @@ regardless, since passing it is the opt-in.
 building block) and `onlyWhenClipped` (surface the tooltip only when the value
 is *measured* to overflow, vs. on every scalar — costs a `ResizeObserver`).
 
-**Feature #3 (resizable columns) stays separate** — it's per-column *width
-state*, not an elision strategy, so it doesn't fold into `elide`.
+**Feature #3 (resizable columns) landed separately** — it's per-column *width
+state*, not an elision strategy, so it stayed out of `elide`. Shipped as
+`resizableColumns?: boolean` (opt-in, default off; `src/renderers/columnResize.tsx`
+`useColumnWidths`/`ColumnResizeHandle`, wired into all three viewers): drag a
+header's right-edge handle to pin a width (a `pointermove` threshold keeps a
+double-click free to land), double-click it to auto-fit the widest cell (via
+`scrollWidth`, so a clipped cell still measures its full content). A pinned width
+overrides the `elide` cap for that column and persists per `(path, column)`
+through `usePersistedState` (`?cw=name:220,dir:480`). `test/column-resize.test.ts`
+covers the persisted-string round-trip; `e2e/elide-demo.spec.ts` drives a real
+drag + double-click.
 
-The original feature-by-feature write-up below is retained for the rationale;
-read it through the `elide` lens above.
+All four features are now addressed, so this spec is done. The original
+feature-by-feature write-up below is retained for the rationale; read it through
+the `elide` lens above.
 
 ## Proposed features (layered cheap → rich)
 
