@@ -18,6 +18,7 @@ import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from '
 // plumbing now lives in `./csvData` and is importable on its own.
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
 import { applyElide, resolveColStyles, resolveElide, TD_STYLE, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
+import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import type { PersistedState } from '../react/persistedState'
 
 export type { TableCellCtx, TableCellRenderer, TableColumn, TableViewerOptions } from './table'
@@ -41,7 +42,7 @@ export function makeCsvViewer(opts: CsvViewerOptions = {}) {
   }
 }
 
-export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide }: {
+export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide, resizableColumns = false }: {
   store: Store; path: string; delimiter: string; usePersistedState?: PersistedState
 } & CsvViewerOptions) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter)
@@ -79,6 +80,7 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     [filteredKeyed, allColumns])
 
   const el = useMemo(() => resolveElide(elide), [elide])
+  const cw = useColumnWidths(usePersistedState)
   const colStyles = useMemo(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false, el),
     [columns, path, cellProps, headerProps, el])
@@ -177,8 +179,9 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                   )
                   : c.name
                 return (
-                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), whiteSpace: 'nowrap' }} className={st?.headerClass}>
+                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), whiteSpace: 'nowrap', ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass}>
                     {renderHeader ? renderHeader({ column: c, path, defaultNode }) : defaultNode}
+                    {resizableColumns && <ColumnResizeHandle col={c.name} widths={cw} />}
                   </th>
                 )
               })}
@@ -207,7 +210,7 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                       return (
                         <td
                           key={c.name}
-                          style={st?.cell ?? TD_STYLE}
+                          style={{ ...(st?.cell ?? TD_STYLE), ...cw.styleFor(c.name) }}
                           className={st?.cellClass}
                           {...(title != null ? { title } : {})}
                           {...(onCellHover ? {

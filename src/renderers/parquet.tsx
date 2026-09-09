@@ -34,6 +34,7 @@ import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
 import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, usePageNotify, useStableCallback } from './tableControls'
+import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 import {
   applyElide, resolveColStyles, resolveElide, TD_STYLE, TH_STYLE,
@@ -122,7 +123,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -183,6 +184,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   )
 
   const el = useMemo(() => resolveElide(elide), [elide])
+  const cw = useColumnWidths(usePersistedState)
   // Resolved once per column rather than per cell — a 100-row page of a
   // 17-column file would otherwise call `cellProps` 1,700 times a render.
   const colStyles = useMemo(
@@ -394,8 +396,9 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                   )
                   : label
                 return (
-                  <th key={c.name} style={st?.header ?? TH_STYLE} className={st?.headerClass}>
+                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass}>
                     {renderHeader ? renderHeader({ column: c, ...(stats ? { stats } : {}), path, defaultNode }) : defaultNode}
+                    {resizableColumns && <ColumnResizeHandle col={c.name} widths={cw} />}
                   </th>
                 )
               })}
@@ -416,7 +419,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                     return (
                       <td
                         key={c.name}
-                        style={st?.cell ?? TD_STYLE}
+                        style={{ ...(st?.cell ?? TD_STYLE), ...cw.styleFor(c.name) }}
                         className={st?.cellClass}
                         {...(title != null ? { title } : {})}
                         {...(onCellHover ? {

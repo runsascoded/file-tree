@@ -102,6 +102,11 @@
       "import": "./dist/renderers/tableControls.js",
       "require": "./dist/renderers/tableControls.cjs"
     },
+    "./renderers/columnResize": {
+      "types": "./dist/renderers/columnResize.d.ts",
+      "import": "./dist/renderers/columnResize.js",
+      "require": "./dist/renderers/columnResize.cjs"
+    },
     "./renderers/tableSort": {
       "types": "./dist/renderers/tableSort.d.ts",
       "import": "./dist/renderers/tableSort.js",

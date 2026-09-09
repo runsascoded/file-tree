@@ -138,6 +138,12 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
    *  value); `false` turns clipping off entirely; an object overrides
    *  individual axes ({@link ElideConfig}). See {@link resolveElide}. */
   elide?: ElideConfig | boolean
+  /** Let the reader drag a column's right edge to pin its width (and
+   *  double-click the handle to auto-fit the widest cell). Off by default
+   *  — a viewer shouldn't grow a handle on every header unasked. A pinned
+   *  width overrides the `elide` cap for that column, and persists per
+   *  `(path, column)` through `usePersistedState`. See `columnResize`. */
+  resizableColumns?: boolean
 }
 
 /** One elidable cell, as an `elide` tooltip sees it. */
