@@ -14,6 +14,8 @@
  *  See `specs/viewer-registry.md` for where this is going. */
 import type { CSSProperties, ReactNode } from 'react'
 import type { SortComparators } from './tableSort'
+// Type-only (erased at build) — no runtime dependency on the React module.
+import type { ResizeScope } from './columnResize'
 
 /** What a viewer can say about a column without knowing its format.
  *
@@ -141,9 +143,20 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
   /** Let the reader drag a column's right edge to pin its width (and
    *  double-click the handle to auto-fit the widest cell). Off by default
    *  — a viewer shouldn't grow a handle on every header unasked. A pinned
-   *  width overrides the `elide` cap for that column, and persists per
-   *  `(path, column)` through `usePersistedState`. See `columnResize`. */
-  resizableColumns?: boolean
+   *  width overrides the `elide` cap for that column.
+   *
+   *  `true` remembers widths per `(path, column)` via `usePersistedState`
+   *  (shareable `?cw=…`). Pass `{ scope }` to widen that — `'schema'`
+   *  (same-column-set files share, in `localStorage`), `'column'` (by name,
+   *  global), or your own `(columns, path) => string`. See `columnResize`
+   *  and {@link ResizeScope}. */
+  resizableColumns?: boolean | ColumnResizeConfig
+}
+
+/** Options for {@link TableViewerOptions.resizableColumns} beyond a bare
+ *  `true`. */
+export interface ColumnResizeConfig {
+  scope?: ResizeScope
 }
 
 /** One elidable cell, as an `elide` tooltip sees it. */

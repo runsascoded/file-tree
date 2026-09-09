@@ -14,9 +14,10 @@
  *
  *  Opt-in (`resizableColumns`, default off): a viewer shouldn't grow a
  *  drag handle on every header the host didn't ask for. */
-import { useCallback, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent } from 'react'
 import type { PersistedState } from '../react/persistedState'
 import { defaultUseState } from '../react/persistedState'
+import type { TableColumn } from './table'
 
 /** A column can't be dragged narrower than this (px) — below it the
  *  header label vanishes and the handle becomes unfindable. */
@@ -51,6 +52,79 @@ export function serializeWidths(m: ReadonlyMap<string, number>): string {
   return [...m].map(([n, w]) => `${n}:${Math.round(w)}`).join(',')
 }
 
+/** What identity a pinned width is remembered under — the ladder from
+ *  narrow to broad sharing:
+ *   - `'path'` (default): this exact file. Rides `usePersistedState`, so a
+ *     consumer on `useUrlPersistedState` gets a shareable `?cw=…`.
+ *   - `'schema'`: every file with the same column *set* (a fingerprint of
+ *     the sorted names) shares — so sibling parquets carry widths, but an
+ *     unrelated table doesn't bleed. Stored in `localStorage`.
+ *   - `'column'`: by column *name*, across every table — one global map,
+ *     so a `name` column keeps its width everywhere (at the cost of two
+ *     unrelated `name` columns sharing). Stored in `localStorage`.
+ *   - a function `(columns, path) => string`: your own identity.
+ *
+ *  `'schema'`/`'column'`/fn use `localStorage` (not the URL), since the
+ *  point is to carry a width *across* paths, which a per-URL param can't. */
+export type ResizeScope =
+  | 'path' | 'schema' | 'column'
+  | ((columns: readonly TableColumn[], path: string) => string)
+
+/** Stable fingerprint of a column *set* (order-independent), for
+ *  `'schema'` scope. A djb2 hash keeps the `localStorage` key short. */
+export function columnFingerprint(columns: readonly TableColumn[]): string {
+  const s = columns.map(c => c.name).sort().join('')
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 33) + s.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
+}
+
+/** The `localStorage` sub-key for a non-`path` scope (`path` never hits
+ *  `localStorage`; its widths live in `usePersistedState`). */
+export function scopeKey(scope: ResizeScope, columns: readonly TableColumn[], path: string): string {
+  if (typeof scope === 'function') return `f:${scope(columns, path)}`
+  if (scope === 'schema') return `s:${columnFingerprint(columns)}`
+  if (scope === 'column') return 'c'
+  return `p:${path}`
+}
+
+function readLS(key: string): string | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(key) } catch { return null }
+}
+function writeLS(key: string, value: string): void {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value) } catch { /* private mode / blocked — resize just won't persist */ }
+}
+
+/** A `localStorage`-backed string, mirrored to state — with the key able
+ *  to change (navigating to a different schema) and cross-tab `storage`
+ *  events kept in sync. Every access is guarded, so a context without
+ *  storage degrades to in-memory. */
+function useLocalStorageString(key: string, initial: string): [string, (v: string) => void] {
+  const [value, setValue] = useState<string>(() => readLS(key) ?? initial)
+  useEffect(() => { setValue(readLS(key) ?? initial) }, [key, initial])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onStorage = (e: StorageEvent) => { if (e.key === key) setValue(e.newValue ?? initial) }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [key, initial])
+  const set = useCallback((v: string) => { writeLS(key, v); setValue(v) }, [key])
+  return [value, set]
+}
+
+export interface UseColumnWidthsArgs {
+  /** Whether resizing is on — off short-circuits to no pinned widths and
+   *  inert gestures, so a viewer with the feature disabled ignores any
+   *  stored widths entirely. */
+  on: boolean
+  scope: ResizeScope
+  /** The full column set (not the visible subset — hiding a column
+   *  shouldn't change a `'schema'` fingerprint). */
+  columns: readonly TableColumn[]
+  path: string
+  usePersistedState?: PersistedState
+}
+
 export interface ColumnWidths {
   /** Style to pin one column's `<th>`/`<td>` — `width`+`min`+`max` so it
    *  holds against content and overrides the elide cap — or `{}` when the
@@ -68,10 +142,20 @@ export interface ColumnWidths {
 }
 
 /** Per-column pinned widths, drag/auto-fit gestures, and the style each
- *  contributes. See {@link ColumnWidths}. */
-export function useColumnWidths(usePersistedState?: PersistedState, key = 'cw'): ColumnWidths {
+ *  contributes. Backed by `usePersistedState` for `'path'` scope (so the
+ *  URL stays the shareable store) and by `localStorage` for the broader
+ *  scopes. See {@link ColumnWidths} and {@link ResizeScope}. */
+export function useColumnWidths({ on, scope, columns, path, usePersistedState }: UseColumnWidthsArgs): ColumnWidths {
+  // Both stores are read unconditionally (hooks rule); `scope` picks which
+  // one is authoritative. `'path'` → the per-URL `?cw=`; everything else →
+  // a `localStorage` entry keyed by the scope, shared across paths.
   const use = usePersistedState ?? defaultUseState
-  const [raw, setRaw] = use<string>(key, '')
+  const [urlRaw, setUrlRaw] = use<string>('cw', '')
+  const lsKey = useMemo(() => `ft-colw:${scopeKey(scope, columns, path)}`, [scope, columns, path])
+  const [lsRaw, setLsRaw] = useLocalStorageString(lsKey, '')
+  const onPath = scope === 'path'
+  const raw = onPath ? urlRaw : lsRaw
+  const setRaw = onPath ? setUrlRaw : setLsRaw
   const persisted = useMemo(() => parseWidths(raw), [raw])
   // Latest persisted map, for the imperative commit whose closure would
   // otherwise capture a stale one.
@@ -90,6 +174,7 @@ export function useColumnWidths(usePersistedState?: PersistedState, key = 'cw'):
   }, [setRaw])
 
   const startResize = useCallback((col: string, e: PointerEvent) => {
+    if (!on) return
     const th = (e.target as HTMLElement).closest('th')
     if (!th) return
     const startW = th.getBoundingClientRect().width
@@ -123,9 +208,10 @@ export function useColumnWidths(usePersistedState?: PersistedState, key = 'cw'):
     }
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', up)
-  }, [commit])
+  }, [on, commit])
 
   const autoFit = useCallback((col: string, e: ReactMouseEvent) => {
+    if (!on) return
     e.preventDefault()
     e.stopPropagation()
     const th = (e.target as HTMLElement).closest('th') as HTMLTableCellElement | null
@@ -141,12 +227,13 @@ export function useColumnWidths(usePersistedState?: PersistedState, key = 'cw'):
       if (td && td.cellIndex === idx) max = Math.max(max, td.scrollWidth)
     }
     commit(col, Math.ceil(max) + FIT_SLACK)
-  }, [commit])
+  }, [on, commit])
 
   const styleFor = useCallback((col: string): CSSProperties => {
+    if (!on) return NO_STYLE
     const w = drag && drag.col === col ? drag.w : persisted.get(col)
     return w == null ? NO_STYLE : { width: w, minWidth: w, maxWidth: w }
-  }, [drag, persisted])
+  }, [on, drag, persisted])
 
   return useMemo(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit])
 }

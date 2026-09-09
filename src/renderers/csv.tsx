@@ -80,7 +80,11 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     [filteredKeyed, allColumns])
 
   const el = useMemo(() => resolveElide(elide), [elide])
-  const cw = useColumnWidths(usePersistedState)
+  const cw = useColumnWidths({
+    on: !!resizableColumns,
+    scope: typeof resizableColumns === 'object' ? (resizableColumns.scope ?? 'path') : 'path',
+    columns: allColumns, path, usePersistedState,
+  })
   const colStyles = useMemo(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false, el),
     [columns, path, cellProps, headerProps, el])

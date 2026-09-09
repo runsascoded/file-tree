@@ -184,7 +184,11 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   )
 
   const el = useMemo(() => resolveElide(elide), [elide])
-  const cw = useColumnWidths(usePersistedState)
+  const cw = useColumnWidths({
+    on: !!resizableColumns,
+    scope: typeof resizableColumns === 'object' ? (resizableColumns.scope ?? 'path') : 'path',
+    columns: meta?.schema ?? [], path, usePersistedState,
+  })
   // Resolved once per column rather than per cell — a 100-row page of a
   // 17-column file would otherwise call `cellProps` 1,700 times a render.
   const colStyles = useMemo(
