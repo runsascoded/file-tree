@@ -7,7 +7,7 @@
  *  line quoted fields (a quote opening on one line and closing on the
  *  next) — those would need a streaming parser since byte-paginated
  *  chunks can split mid-row. */
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
 import { PAGE_BYTES, useAllCsvRows, useCsvHeader, useCsvPage } from './csvData'
@@ -210,17 +210,16 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                       const j = colIndex.get(c.name)!
                       const value = r[j] ?? ''
                       const rendered = renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value
-                      const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: row(), path })
+                      const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: row(), path })
+                      const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : undefined
                       return (
                         <td
                           key={c.name}
                           style={{ ...(st?.cell ?? TD_STYLE), ...cw.styleFor(c.name) }}
                           className={st?.cellClass}
                           {...(title != null ? { title } : {})}
-                          {...(onCellHover ? {
-                            onMouseEnter: () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }),
-                            onMouseLeave: () => notifyHover(null),
-                          } : {})}
+                          {...(measure || hoverEnter ? { onMouseEnter: (e: ReactMouseEvent<HTMLElement>) => { measure?.(e); hoverEnter?.() } } : {})}
+                          {...(onCellHover ? { onMouseLeave: () => notifyHover(null) } : {})}
                         >
                           {node}
                         </td>

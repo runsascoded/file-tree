@@ -12,7 +12,7 @@
  *  name them without pulling a renderer into their bundle.
  *
  *  See `specs/viewer-registry.md` for where this is going. */
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import type { SortComparators } from './tableSort'
 // Type-only (erased at build) — no runtime dependency on the React module.
 import type { ResizeScope } from './columnResize'
@@ -165,6 +165,11 @@ export interface ElideCtx<C extends TableColumn = TableColumn> {
   /** The full value as text — what the tooltip should show — or `undefined`
    *  when the value has no readable scalar form (see {@link cellTitle}). */
   text: string | undefined
+  /** The underlying scalar as text, when the cell shows a lossy
+   *  *interpretation* of it (a temporal integer drawn as a date; later, a
+   *  formatted number). Absent when the cell shows the value verbatim. A
+   *  rich tooltip can surface this ("raw: …") alongside {@link text}. */
+  raw?: string
   /** The node the cell renders (the viewer default, or a consumer
    *  `renderCell`), for a tooltip render-prop to wrap. */
   node: ReactNode
@@ -179,16 +184,26 @@ export interface ElideCtx<C extends TableColumn = TableColumn> {
  *  binds them all, and each is independently overridable — so a consumer
  *  moves along one axis without restating the rest.
  *
- *  Not yet exposed, but the natural next axes on this same seam:
+ *  Not yet exposed, but a natural next axis on this same seam:
  *  `ellipsis: 'middle'` (keep a path's tail; needs JS measurement, as CSS
- *  `text-overflow` only clips the end) and `onlyWhenClipped` (surface the
- *  tooltip only when the value is *measured* to overflow, rather than on
- *  every scalar — costs a `ResizeObserver`). */
+ *  `text-overflow` only clips the end). */
 export interface ElideConfig<C extends TableColumn = TableColumn> {
   /** The column's width cap. A CSS length clips and ellipsizes overflow;
    *  `false` renders at natural width so an outer scroller can reveal the
    *  whole column (the "wide mode" escape hatch). Default `'30em'`. */
   maxWidth?: string | false
+  /** Surface the native `title` only when the cell is *measured* to clip
+   *  its value — a tooltip that just repeats a fully-visible value is
+   *  noise. Default `true`. `false` = a title on every scalar, as before.
+   *
+   *  Measured on hover (`scrollWidth > clientWidth`, see
+   *  {@link cellClipped}), so it costs nothing until a pointer arrives —
+   *  no per-cell `ResizeObserver`. Governs the `'native'` strategy; an
+   *  *interpreted* cell (see {@link ElideCtx.raw}) titles regardless, since
+   *  its tooltip shows something the cell doesn't. A `tooltip` render-prop
+   *  owns its own hover, so gate it there ({@link cellClipped} on the
+   *  `<td>`), as the reference demo does. */
+  onlyWhenClipped?: boolean
   /** The tooltip that recovers the clipped tail:
    *   - `'native'` (default): a browser `title` tooltip = the full value.
    *     Applied only to a default-rendered scalar cell — a consumer
@@ -210,12 +225,14 @@ export interface ResolvedElide<C extends TableColumn = TableColumn> {
   maxWidth: string | false
   tooltip: 'native' | false | ((ctx: ElideCtx<C>) => ReactNode)
   content: (value: unknown) => string | undefined
+  onlyWhenClipped: boolean
 }
 
 /** The batteries-included preset `elide: true` (and the absent default)
- *  resolve to: clip at 30em, recover the full value via a native `title`. */
+ *  resolve to: clip at 30em, recover the full value via a native `title`,
+ *  shown only where the value actually clips. */
 export const ELIDE_DEFAULTS: ResolvedElide = {
-  maxWidth: '30em', tooltip: 'native', content: cellTitle,
+  maxWidth: '30em', tooltip: 'native', content: cellTitle, onlyWhenClipped: true,
 }
 
 /** Fold an `elide` option down to a fully-resolved strategy. `true`/absent
@@ -234,10 +251,25 @@ export function elideCellStyle(el: ResolvedElide): CSSProperties {
   return { maxWidth: el.maxWidth === false ? 'none' : el.maxWidth }
 }
 
-/** The per-cell result of an elide strategy: a `title` to hang on the
- *  `<td>` (the native tooltip), and the node to render (possibly a tooltip
- *  render-prop's wrapper). */
-export interface ElideCell { title?: string; node: ReactNode }
+/** Whether a cell clips its content — its full text is wider than the box,
+ *  so the ellipsis is actually hiding something. The measurement behind
+ *  `onlyWhenClipped`, and the blessed check for a `tooltip` render-prop that
+ *  wants to open only on clipped cells: call it in the tooltip's own hover
+ *  handler with the `<td>` (a length heuristic mis-fires on narrow columns
+ *  and under `maxWidth: false`). The `+1` absorbs sub-pixel rounding. */
+export function cellClipped(el: HTMLElement): boolean {
+  return el.scrollWidth > el.clientWidth + 1
+}
+
+/** The per-cell result of an elide strategy: what to hang on the `<td>` for
+ *  the native tooltip — either a static `title`, or an `onMouseEnter` that
+ *  sets one only once the cell is measured to clip ({@link cellClipped}) —
+ *  and the node to render (possibly a tooltip render-prop's wrapper). */
+export interface ElideCell {
+  title?: string
+  onMouseEnter?: (e: ReactMouseEvent<HTMLElement>) => void
+  node: ReactNode
+}
 
 /** Apply an elide strategy's *tooltip* to one cell — the width cap is a
  *  style concern ({@link elideCellStyle}); this is the tooltip half.
@@ -245,17 +277,27 @@ export interface ElideCell { title?: string; node: ReactNode }
  *  own title), but a tooltip render-prop applies regardless. */
 export function applyElide<C extends TableColumn>(
   el: ResolvedElide<C>,
-  args: { value: unknown; node: ReactNode; hasCustomRender: boolean; column: C; row: Record<string, unknown>; path: string },
+  args: { value: unknown; node: ReactNode; hasCustomRender: boolean; column: C; row: Record<string, unknown>; path: string; raw?: string },
 ): ElideCell {
-  const { value, node, hasCustomRender, column, row, path } = args
+  const { value, node, hasCustomRender, column, row, path, raw } = args
   if (el.tooltip === false) return { node }
   const text = el.content(value)
   if (typeof el.tooltip === 'function') {
-    return { node: el.tooltip({ value, text, node, column, row, path }) }
+    return { node: el.tooltip({ value, text, raw, node, column, row, path }) }
   }
-  // 'native': the browser title, only on a default-rendered scalar with text.
-  if (hasCustomRender || !text) return { node }
-  return { title: text, node }
+  // 'native': the browser title. A consumer `renderCell` owns its own title.
+  if (hasCustomRender) return { node }
+  const shown = raw ?? text
+  if (!shown) return { node }
+  // An interpreted cell (`raw` set — e.g. a temporal integer drawn as a
+  // date) titles regardless: the tooltip shows the underlying value the cell
+  // reformatted away, which the cell never shows, clipped or not.
+  if (raw != null) return { title: shown, node }
+  // A verbatim scalar only earns a title when the column actually clips it,
+  // else the tooltip just repeats a fully-visible value. Measured lazily on
+  // hover rather than with a per-cell `ResizeObserver`.
+  if (!el.onlyWhenClipped) return { title: shown, node }
+  return { onMouseEnter: e => { e.currentTarget.title = cellClipped(e.currentTarget) ? shown : '' }, node }
 }
 
 /** Shared `<td>` / `<th>` styling, so the table viewers look like each

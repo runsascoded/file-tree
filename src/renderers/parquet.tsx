@@ -17,7 +17,7 @@
  *  Uses `hyparquet` (optional peer) for footer/metadata + row-range
  *  reads, fed via `asyncBufferFromStore` so it works against any
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode, useRef } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useRef } from 'react'
 import type { Store } from '../types'
 import {
   isSortedBy, NUMERIC_TYPES, parsePredicate, pruneRowGroups, useAllRows, useParquetMeta, useRowGroup,
@@ -416,20 +416,20 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                 <tr key={clampedRgPage * ROWS_PER_PAGE + i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
                   {schema.map(c => {
                     const value = r[c.name]
-                    const defaultNode = fmtCell(value, temporal.get(c.name))
+                    const tf = temporal.get(c.name)
+                    const defaultNode = fmtCell(value, tf)
                     const st = colStyles.get(c.name)
                     const rendered = renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode
-                    const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: r, path })
+                    const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: r, path, raw: cellRaw(value, tf) })
+                    const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : undefined
                     return (
                       <td
                         key={c.name}
                         style={{ ...(st?.cell ?? TD_STYLE), ...cw.styleFor(c.name) }}
                         className={st?.cellClass}
                         {...(title != null ? { title } : {})}
-                        {...(onCellHover ? {
-                          onMouseEnter: () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }),
-                          onMouseLeave: () => notifyHover(null),
-                        } : {})}
+                        {...(measure || hoverEnter ? { onMouseEnter: (e: ReactMouseEvent<HTMLElement>) => { measure?.(e); hoverEnter?.() } } : {})}
+                        {...(onCellHover ? { onMouseLeave: () => notifyHover(null) } : {})}
                       >
                         {node}
                       </td>
@@ -520,12 +520,22 @@ function fmtCell(v: unknown, temporal?: TemporalFormat): ReactNode {
   if (v === null || v === undefined) return <span style={{ opacity: 0.3 }}>·</span>
   if (temporal) {
     const s = formatTemporal(v, temporal)
-    // Keep the raw value one hover away — the interpretation can be a
-    // guess, and the underlying integer stays the thing you'd paste
-    // into a query.
-    if (s !== null) return <span title={rawText(v)} style={{ fontVariantNumeric: 'tabular-nums' }}>{s}</span>
+    // The interpretation can be a guess, so the raw value stays one hover
+    // away — but routed through `elide` (see `cellRaw`), not a hard-coded
+    // `title` here, so it obeys the tooltip config instead of firing a
+    // native tooltip alongside a consumer's rich one.
+    if (s !== null) return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{s}</span>
   }
   return rawText(v)
+}
+
+/** The underlying scalar as text when `fmtCell` drew a lossy interpretation
+ *  of it (a temporal integer as a date) — {@link ElideCtx.raw}, so the raw
+ *  value the cell reformatted away rides the one tooltip system. `undefined`
+ *  when the cell shows the value verbatim. */
+function cellRaw(v: unknown, temporal?: TemporalFormat): string | undefined {
+  if (temporal && v !== null && v !== undefined && formatTemporal(v, temporal) !== null) return rawText(v)
+  return undefined
 }
 
 /** One stat value as text, or `null` if it isn't safely printable.
