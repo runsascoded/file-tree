@@ -46,6 +46,7 @@ const CSV = ['name,size,sweeper', ...ROWS.map(([n, s, w]) => `${n},${s},${w}`)].
 type Width = 'compact' | 'wide'
 type Tip = 'rich' | 'native' | 'none'
 type Clip = 'clipped' | 'always'
+type Ell = 'end' | 'start' | 'middle'
 
 /** A floating-ui tooltip supplied by the *consumer* — this is what the
  *  `elide.tooltip` render-prop is for. It wraps the cell's own node and
@@ -157,12 +158,17 @@ export function ElideDemo() {
   // `onlyWhenClipped` (default) suppresses the native tooltip on cells that
   // aren't actually clipped — a title repeating a fully-visible value is noise.
   const [clip, setClip] = useState<Clip>('clipped')
+  // Which side of a clipped `name` the ellipsis eats. These paths share a
+  // long `checkpoints/…` / `runs/…` prefix, so end-clip (the default) hides
+  // the shard id that differs; `start` keeps the tail, `middle` keeps both.
+  const [ell, setEll] = useState<Ell>('end')
 
   const elide = useMemo<ElideConfig>(() => ({
     ...(width === 'wide' ? { maxWidth: false } : {}),
     tooltip: tip === 'none' ? false : tip === 'rich' ? richTooltip : 'native',
     onlyWhenClipped: clip === 'clipped',
-  }), [width, tip, clip])
+    ...(ell !== 'end' ? { ellipsis: { name: ell } } : {}),
+  }), [width, tip, clip, ell])
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5em' }}>
@@ -202,6 +208,16 @@ export function ElideDemo() {
           options={[
             { key: 'clipped', label: 'When clipped' },
             { key: 'always', label: 'Always' },
+          ]}
+        />
+        <Segmented<Ell>
+          label="Ellipsis (name)"
+          value={ell}
+          onChange={setEll}
+          options={[
+            { key: 'end', label: 'End' },
+            { key: 'start', label: 'Start' },
+            { key: 'middle', label: 'Middle' },
           ]}
         />
       </div>

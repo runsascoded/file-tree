@@ -17,13 +17,15 @@ Phasing (each phase updates this spec in-place + commits):
 - **B** — item 1 `ellipsis: 'start'` (CSS), then `'middle'` (JS).
 - **C** — item 2 `prevRow` seam + `ditto` + `foldConstantColumns`.
 
-## 1. `ellipsis: 'middle' | 'start'` on the elide seam
+## 1. `ellipsis: 'middle' | 'start'` on the elide seam — ✓ Phase B
 
-`ElideConfig`'s own doc already names this as "the natural next axis". The case: a `name` column of object keys that all share a long prefix (`sdg/self_instill/marin_qwen3_4b_openthoughts3_…`). With CSS `text-overflow: ellipsis` every row shows the *same* 40 characters and the ellipsis hides the only part that differs, so the column carries no information at all.
+`ElideConfig` gained `ellipsis?: EllipsisMode | Partial<Record<string, EllipsisMode>> | ((column) => EllipsisMode)`, per-column, default `'end'`. Both non-default modes turned out to be **pure CSS** — no `ResizeObserver`, no binary search (the handoff's guess that `'middle'` needs measurement was wrong):
 
-- `ellipsis: 'end'` (default, today's behavior) — CSS clip.
-- `ellipsis: 'start'` — keep the tail. Can be pure CSS: the cell's inner span gets `direction: rtl; text-align: left` with the text isolated in a `<bdi>` (so trailing punctuation doesn't reorder); the browser then clips and ellipsizes at the visual left. Worth trying first — no measurement, no resize observer. mgu is using exactly this trick in its `renderCell` for path-ish columns until the seam grows the option; if it holds up there it's the implementation.
-- `ellipsis: 'middle'` — keep both ends (`abc…xyz`). Needs JS: measure the cell (`ResizeObserver` on the `<td>`, or the existing on-hover measurement extended to a mount-time pass), binary-search the character budget, render `head + '…' + tail`. The children table in mgu's treemap does this with a fixed character budget and a `tail = 10` default (`elideMid` in `site/src/CopyName.tsx`) — keeping the last N characters is usually the informative choice for paths (hash, step number, shard id).
+- `ellipsis: 'end'` (default) — the existing CSS clip.
+- `ellipsis: 'start'` — keep the tail. `resolveColStyles` sets the cell `direction: rtl; text-align: left`; `ellipsisWrap` isolates the value in a `<bdi>` so the path's own characters keep their order. The `<td>` still overflows, so tooltip recovery is unchanged. The prefix-sharing fix, and exactly mgu's `renderCell` trick.
+- `ellipsis: 'middle'` — keep both ends (`abc…xyz`). A flex `head` (clip-at-end) + a fixed last-`MIDDLE_TAIL`(=12)-char `tail`; the `…` falls between them. Only splits a **string** cell rendered by default (a `renderCell` node or non-string value falls back to `'end'`). Because the flex fits the `<td>` (so it never overflows and the clip measurement can't fire), a middle-elided cell native-titles *unconditionally* — like an interpreted (`raw`) cell, it shows less than the value. A render-prop tooltip, gated on `cellClipped(td)`, won't open on a middle cell; that's documented as the one interaction (use `'start'` if you need render-prop recovery, or open unconditionally).
+
+Wiring: `ellipsisWrap` runs on the rendered node *before* `applyElide`, so a tooltip render-prop wraps the reshaped node. Landed as `EllipsisMode` + `MIDDLE_TAIL` + `ColStyle.ellipsis` + `applyElide`'s `ellipsis` arg; `splitMiddle` is the pure, unit-tested split.
 
 Per column, not just global: `elide: { ellipsis: { name: 'start' } }` or a `(column) => …` — a table mixes paths (tail matters) with prose (head matters).
 

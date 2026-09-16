@@ -4,6 +4,7 @@ import {
   applyElide, cellClipped, cellTitle, elideCellStyle, ELIDE_DEFAULTS, resolveElide,
   type ElideCtx,
 } from '../src/renderers/table'
+import { splitMiddle } from '../src/renderers/elideNode'
 
 /** A long GCS object path — the value that clips to a bare `…` and
  *  motivated elidable cells. */
@@ -61,17 +62,65 @@ describe('resolveElide', () => {
   it('resolves the batteries-included preset from true and from absent', () => {
     expect(resolveElide(true)).toBe(ELIDE_DEFAULTS)
     expect(resolveElide(undefined)).toBe(ELIDE_DEFAULTS)
-    expect(ELIDE_DEFAULTS).toEqual({ maxWidth: '30em', tooltip: 'native', content: cellTitle, onlyWhenClipped: true })
+    expect(ELIDE_DEFAULTS).toEqual({ maxWidth: '30em', tooltip: 'native', content: cellTitle, onlyWhenClipped: true, ellipsis: ELIDE_DEFAULTS.ellipsis })
   })
 
   it('turns clipping and the tooltip off for false', () => {
-    expect(resolveElide(false)).toEqual({ maxWidth: false, tooltip: false, content: cellTitle, onlyWhenClipped: true })
+    expect(resolveElide(false)).toEqual({ maxWidth: false, tooltip: false, content: cellTitle, onlyWhenClipped: true, ellipsis: ELIDE_DEFAULTS.ellipsis })
   })
 
   it('overrides only the named axes', () => {
-    expect(resolveElide({ maxWidth: false })).toEqual({ maxWidth: false, tooltip: 'native', content: cellTitle, onlyWhenClipped: true })
-    expect(resolveElide({ tooltip: false })).toEqual({ maxWidth: '30em', tooltip: false, content: cellTitle, onlyWhenClipped: true })
-    expect(resolveElide({ onlyWhenClipped: false })).toEqual({ maxWidth: '30em', tooltip: 'native', content: cellTitle, onlyWhenClipped: false })
+    expect(resolveElide({ maxWidth: false })).toEqual({ maxWidth: false, tooltip: 'native', content: cellTitle, onlyWhenClipped: true, ellipsis: ELIDE_DEFAULTS.ellipsis })
+    expect(resolveElide({ tooltip: false })).toEqual({ maxWidth: '30em', tooltip: false, content: cellTitle, onlyWhenClipped: true, ellipsis: ELIDE_DEFAULTS.ellipsis })
+    expect(resolveElide({ onlyWhenClipped: false })).toEqual({ maxWidth: '30em', tooltip: 'native', content: cellTitle, onlyWhenClipped: false, ellipsis: ELIDE_DEFAULTS.ellipsis })
+  })
+
+  it('defaults every column to end-clip', () => {
+    const e = resolveElide(true).ellipsis
+    expect(e({ name: 'name' })).toBe('end')
+    expect(e({ name: 'path' })).toBe('end')
+  })
+
+  it('resolves a bare ellipsis mode for every column', () => {
+    const e = resolveElide({ ellipsis: 'start' }).ellipsis
+    expect(e({ name: 'name' })).toBe('start')
+    expect(e({ name: 'size' })).toBe('start')
+  })
+
+  it('resolves a per-column ellipsis record, defaulting the rest to end', () => {
+    const e = resolveElide({ ellipsis: { name: 'start', created: 'middle' } }).ellipsis
+    expect(e({ name: 'name' })).toBe('start')
+    expect(e({ name: 'created' })).toBe('middle')
+    expect(e({ name: 'size' })).toBe('end')
+  })
+
+  it('resolves an ellipsis function, defaulting its undefined to end', () => {
+    const e = resolveElide<{ name: string }>({ ellipsis: c => (c.name === 'name' ? 'start' : undefined) }).ellipsis
+    expect(e({ name: 'name' })).toBe('start')
+    expect(e({ name: 'size' })).toBe('end')
+  })
+})
+
+/** `splitMiddle` is the pure half of `ellipsis: 'middle'`: the head that gets
+ *  clip-ellipsized and the verbatim tail, or `null` when there's nothing to
+ *  hide. */
+describe('splitMiddle', () => {
+  it('splits a long value into head and a fixed-length tail', () => {
+    // Last 12 chars ('.safetensors') are kept verbatim; the head is what the
+    // clip-ellipsis eats into.
+    expect(splitMiddle('checkpoints/adam/step-042000/shard-00000.safetensors', 12))
+      .toEqual(['checkpoints/adam/step-042000/shard-00000', '.safetensors'])
+  })
+
+  it('keeps exactly the last `tail` characters as the tail', () => {
+    expect(splitMiddle('abcdefghij', 4)).toEqual(['abcdef', 'ghij'])
+  })
+
+  it('returns null when the value is at most tail+1 long (nothing to hide)', () => {
+    expect(splitMiddle('abcde', 4)).toBeNull()
+    expect(splitMiddle('abcdef', 4)).toEqual(['ab', 'cdef'])
+    expect(splitMiddle(undefined, 4)).toBeNull()
+    expect(splitMiddle('', 4)).toBeNull()
   })
 })
 
@@ -110,6 +159,21 @@ describe('applyElide', () => {
     // cell reformatted away, so its tooltip always adds information.
     expect(applyElide(resolveElide(true), { value: 1704067200, node: '2024-01-01', hasCustomRender: false, raw: '1704067200', ...ARGS }))
       .toEqual({ title: '1704067200', node: '2024-01-01' })
+  })
+
+  it('titles a middle-elided cell unconditionally (its <td> never overflows)', () => {
+    // 'middle' fits head+tail inside the cell, so the hover measurement can't
+    // fire — but the hidden middle is exactly what the title recovers.
+    expect(applyElide(resolveElide({ ellipsis: 'middle' }), { value: PATH, node: 'N', hasCustomRender: false, ellipsis: 'middle', ...ARGS }))
+      .toEqual({ title: PATH, node: 'N' })
+  })
+
+  it('still measures a start-elided cell on hover (its <td> does overflow)', () => {
+    const out = applyElide(resolveElide({ ellipsis: 'start' }), { value: PATH, node: 'N', hasCustomRender: false, ellipsis: 'start', ...ARGS })
+    expect(out.title).toBeUndefined()
+    const clipped = fakeTd(500, 200)
+    out.onMouseEnter!(enter(clipped))
+    expect(clipped.title).toBe(PATH)
   })
 
   it('adds no title when a renderCell owns the cell', () => {

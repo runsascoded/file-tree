@@ -18,6 +18,7 @@ import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from '
 // plumbing now lives in `./csvData` and is importable on its own.
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
 import { applyElide, resolveColStyles, resolveElide, TD_STYLE, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
+import { ellipsisWrap } from './elideNode'
 import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import type { PersistedState } from '../react/persistedState'
 
@@ -210,7 +211,9 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                       const j = colIndex.get(c.name)!
                       const value = r[j] ?? ''
                       const rendered = renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value
-                      const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: row(), path })
+                      // Ellipsis-wrap before the tooltip (see parquet note).
+                      const wrapped = ellipsisWrap(st?.ellipsis ?? 'end', rendered, !renderCell && typeof value === 'string' ? value : undefined)
+                      const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row: row(), path, ellipsis: st?.ellipsis })
                       const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : undefined
                       return (
                         <td

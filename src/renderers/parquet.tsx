@@ -41,6 +41,7 @@ import {
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
   type TableHeaderCtx, type TablePageCtx, type TableViewerOptions,
 } from './table'
+import { ellipsisWrap } from './elideNode'
 
 // Re-exported so a consumer writing one `renderCell` for a mixed tree
 // (`.parquet` here, `.csv` next to it) can name the shared types from
@@ -420,7 +421,11 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                     const defaultNode = fmtCell(value, tf)
                     const st = colStyles.get(c.name)
                     const rendered = renderCell ? renderCell({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode
-                    const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: r, path, raw: cellRaw(value, tf) })
+                    // Ellipsis-wrap *before* the tooltip so a render-prop wraps the
+                    // reshaped node (`'middle'` rebuilds from the string, discarding
+                    // whatever it wraps otherwise).
+                    const wrapped = ellipsisWrap(st?.ellipsis ?? 'end', rendered, !renderCell && typeof value === 'string' ? value : undefined)
+                    const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row: r, path, raw: cellRaw(value, tf), ellipsis: st?.ellipsis })
                     const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : undefined
                     return (
                       <td

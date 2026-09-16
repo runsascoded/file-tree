@@ -183,20 +183,46 @@ export interface ElideCtx<C extends TableColumn = TableColumn> {
   path: string
 }
 
+/** Which side of a too-wide value the ellipsis consumes. See
+ *  {@link ElideConfig.ellipsis}. */
+export type EllipsisMode = 'end' | 'start' | 'middle'
+
+/** How many trailing characters `ellipsis: 'middle'` keeps verbatim — the
+ *  informative tail of a path (shard id, step, extension). Matches mgu's
+ *  `elideMid` default. */
+export const MIDDLE_TAIL = 12
+
 /** How a table viewer handles a value too wide for its column: the clip,
  *  and the tooltip that brings the clipped tail back. Every field has a
  *  default (see {@link ELIDE_DEFAULTS}); the top-level `elide: true` preset
  *  binds them all, and each is independently overridable — so a consumer
  *  moves along one axis without restating the rest.
  *
- *  Not yet exposed, but a natural next axis on this same seam:
- *  `ellipsis: 'middle'` (keep a path's tail; needs JS measurement, as CSS
- *  `text-overflow` only clips the end). */
+ *  `ellipsis` (below) is the newest axis: where the value is clipped, not
+ *  just how wide the column is. */
 export interface ElideConfig<C extends TableColumn = TableColumn> {
   /** The column's width cap. A CSS length clips and ellipsizes overflow;
    *  `false` renders at natural width so an outer scroller can reveal the
    *  whole column (the "wide mode" escape hatch). Default `'30em'`. */
   maxWidth?: string | false
+  /** Which side of a clipped value the ellipsis eats — the informative
+   *  characters differ by column, so this is per-column:
+   *   - `'end'` (default): CSS clip, `checkpoints/adam-lr1.00e-…`. Right for
+   *     prose; useless for keys that share a long prefix (every row shows
+   *     the same head, the ellipsis hides the only part that differs).
+   *   - `'start'`: keep the tail, `…step-042000/shard-00000.safetensors`.
+   *     Pure CSS (`direction: rtl` on the cell + a `<bdi>` around the value,
+   *     so a path's own characters keep their order). The prefix-sharing fix.
+   *   - `'middle'`: keep both ends, `checkpoints/adam-…00000.safetensors`.
+   *     Pure CSS too — a flex `head`(clip-end) + fixed last-{@link MIDDLE_TAIL}
+   *     chars `tail` — no measurement. Only splits a **string** cell rendered
+   *     by default (a custom `renderCell` or non-string value falls back to
+   *     `'end'`, since there's no text to split).
+   *
+   *  A bare mode applies to every column; a `{ name: 'start' }` record or a
+   *  `(column) => mode` picks per column — a table mixes paths (tail matters)
+   *  with prose (head matters). Default `'end'`. */
+  ellipsis?: EllipsisMode | Partial<Record<string, EllipsisMode>> | ((column: C) => EllipsisMode | undefined)
   /** Surface the native `title` only when the cell is *measured* to clip
    *  its value — a tooltip that just repeats a fully-visible value is
    *  noise. Default `true`. `false` = a title on every scalar, as before.
@@ -231,13 +257,31 @@ export interface ResolvedElide<C extends TableColumn = TableColumn> {
   tooltip: 'native' | false | ((ctx: ElideCtx<C>) => ReactNode)
   content: (value: unknown) => string | undefined
   onlyWhenClipped: boolean
+  /** Per-column ellipsis mode, normalized from {@link ElideConfig.ellipsis}'s
+   *  mode / record / function shapes. Defaults to `'end'`. */
+  ellipsis: (column: C) => EllipsisMode
+}
+
+const ELLIPSIS_END = (): EllipsisMode => 'end'
+
+/** Normalize {@link ElideConfig.ellipsis}'s three shapes to one resolver.
+ *  `undefined` reuses the shared `'end'` default (so an override that leaves
+ *  `ellipsis` alone keeps `ELIDE_DEFAULTS.ellipsis`'s identity). */
+function normalizeEllipsis<C extends TableColumn>(
+  e: ElideConfig<C>['ellipsis'],
+): (column: C) => EllipsisMode {
+  if (e === undefined) return ELLIPSIS_END
+  if (typeof e === 'string') return () => e
+  if (typeof e === 'function') return c => e(c) ?? 'end'
+  return c => e[c.name] ?? 'end'
 }
 
 /** The batteries-included preset `elide: true` (and the absent default)
  *  resolve to: clip at 30em, recover the full value via a native `title`,
- *  shown only where the value actually clips. */
+ *  shown only where the value actually clips, ellipsis at the end. */
 export const ELIDE_DEFAULTS: ResolvedElide = {
   maxWidth: '30em', tooltip: 'native', content: cellTitle, onlyWhenClipped: true,
+  ellipsis: ELLIPSIS_END,
 }
 
 /** Fold an `elide` option down to a fully-resolved strategy. `true`/absent
@@ -246,7 +290,8 @@ export const ELIDE_DEFAULTS: ResolvedElide = {
 export function resolveElide<C extends TableColumn>(elide: ElideConfig<C> | boolean | undefined): ResolvedElide<C> {
   if (elide === false) return { ...ELIDE_DEFAULTS, maxWidth: false, tooltip: false }
   if (elide === true || elide === undefined) return ELIDE_DEFAULTS
-  return { ...ELIDE_DEFAULTS, ...elide }
+  const { ellipsis, ...rest } = elide
+  return { ...ELIDE_DEFAULTS, ...rest, ellipsis: normalizeEllipsis(ellipsis) }
 }
 
 /** The style contribution of an elide strategy: only the width cap, since
@@ -282,9 +327,9 @@ export interface ElideCell {
  *  own title), but a tooltip render-prop applies regardless. */
 export function applyElide<C extends TableColumn>(
   el: ResolvedElide<C>,
-  args: { value: unknown; node: ReactNode; hasCustomRender: boolean; column: C; row: Record<string, unknown>; path: string; raw?: string },
+  args: { value: unknown; node: ReactNode; hasCustomRender: boolean; column: C; row: Record<string, unknown>; path: string; raw?: string; ellipsis?: EllipsisMode },
 ): ElideCell {
-  const { value, node, hasCustomRender, column, row, path, raw } = args
+  const { value, node, hasCustomRender, column, row, path, raw, ellipsis } = args
   if (el.tooltip === false) return { node }
   const text = el.content(value)
   if (typeof el.tooltip === 'function') {
@@ -294,10 +339,14 @@ export function applyElide<C extends TableColumn>(
   if (hasCustomRender) return { node }
   const shown = raw ?? text
   if (!shown) return { node }
-  // An interpreted cell (`raw` set — e.g. a temporal integer drawn as a
-  // date) titles regardless: the tooltip shows the underlying value the cell
-  // reformatted away, which the cell never shows, clipped or not.
-  if (raw != null) return { title: shown, node }
+  // Always-title cases — the cell shows something less than the value,
+  // clip-measurement or not, so a title always adds information:
+  //   - an interpreted cell (`raw` set, e.g. a temporal integer drawn as a
+  //     date): the tooltip shows the underlying value the cell reformatted away.
+  //   - a `'middle'`-elided cell: its flex head+tail fits the `<td>` (so the
+  //     `<td>` never overflows and the hover measurement below can't fire), yet
+  //     the hidden middle is exactly what the tooltip brings back.
+  if (raw != null || ellipsis === 'middle') return { title: shown, node }
   // A verbatim scalar only earns a title when the column actually clips it,
   // else the tooltip just repeats a fully-visible value. Measured lazily on
   // hover rather than with a per-cell `ResizeObserver`.
@@ -351,21 +400,37 @@ export function resolveColStyles<C extends TableColumn>(
   opts: Pick<TableViewerOptions<C>, 'cellProps' | 'headerProps'>,
   isNumeric: (col: C) => boolean,
   el: ResolvedElide = ELIDE_DEFAULTS,
-): Map<string, { cell: CSSProperties; header: CSSProperties; cellClass?: string; headerClass?: string }> {
-  const out = new Map<string, { cell: CSSProperties; header: CSSProperties; cellClass?: string; headerClass?: string }>()
+): Map<string, ColStyle> {
+  const out = new Map<string, ColStyle>()
   const es = elideCellStyle(el)
   for (const c of columns) {
     const align: CSSProperties = isNumeric(c) ? NUMERIC_ALIGN : {}
     const cp = opts.cellProps?.(c, path) || {}
     const hp = opts.headerProps?.(c, path) || {}
+    const ellipsis = el.ellipsis(c)
+    // `'start'` keeps the tail via a right-to-left cell (the `<bdi>` wrap
+    // at render time keeps the value's own characters in order); the visible
+    // node is still left-aligned. Other modes leave flow direction alone.
+    const startDir: CSSProperties = ellipsis === 'start' ? { direction: 'rtl', textAlign: 'left' } : {}
     out.set(c.name, {
       // `es` overrides `TD_STYLE`'s default cap; `cp.style` still wins last,
       // so a consumer's per-column width beats the elide default.
-      cell: { ...TD_STYLE, ...align, ...es, ...cp.style },
+      cell: { ...TD_STYLE, ...align, ...es, ...startDir, ...cp.style },
       header: { ...TH_STYLE, ...align, ...hp.style },
+      ellipsis,
       ...(cp.className ? { cellClass: cp.className } : {}),
       ...(hp.className ? { headerClass: hp.className } : {}),
     })
   }
   return out
+}
+
+/** Per-column resolved styling, plus the ellipsis mode a viewer applies to
+ *  the cell node at render time (see `ellipsisWrap`). */
+export interface ColStyle {
+  cell: CSSProperties
+  header: CSSProperties
+  ellipsis: EllipsisMode
+  cellClass?: string
+  headerClass?: string
 }

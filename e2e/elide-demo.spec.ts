@@ -107,6 +107,41 @@ test.describe('ElideDemo', () => {
     await expect(page.getByTestId('elide-rich-tip')).toBeHidden()
   })
 
+  test('ellipsis "end" (default): ltr cell, no <bdi> and no split wrapper', async ({ page }) => {
+    const cell = nameCell(page)
+    expect(await cell.evaluate(el => getComputedStyle(el).direction)).toBe('ltr')
+    await expect(cell.locator('bdi')).toHaveCount(0)
+  })
+
+  test('ellipsis "start" keeps the tail: an rtl cell wrapping the value in a <bdi>', async ({ page }) => {
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    const cell = nameCell(page)
+    // The cell flips to rtl so the ellipsis eats the head; a <bdi> keeps the
+    // path's own characters in order.
+    expect(await cell.evaluate(el => getComputedStyle(el).direction)).toBe('rtl')
+    await expect(cell.locator('bdi')).toHaveText(FULL_PATH)
+    // The <td> still overflows (the head is clipped), so recovery is unchanged:
+    // the rich tooltip still opens.
+    expect(await isClipped(cell)).toBe(true)
+    await cell.hover()
+    await expect(page.getByTestId('elide-rich-tip')).toHaveText(FULL_PATH)
+  })
+
+  test('ellipsis "middle": clip-head + fixed 12-char tail, native-titled unconditionally', async ({ page }) => {
+    await page.getByRole('button', { name: 'Native', exact: true }).click()
+    await page.getByRole('button', { name: 'Middle', exact: true }).click()
+    const cell = nameCell(page)
+    // Two leaf spans: the clip-ellipsized head, then the verbatim last-12 tail.
+    const leaves = await cell.evaluate(el =>
+      Array.from(el.querySelectorAll('span')).filter(s => !s.querySelector('span')).map(s => s.textContent))
+    expect(leaves).toEqual([FULL_PATH.slice(0, -12), FULL_PATH.slice(-12)])
+    // head+tail fit the cell, so the <td> itself never overflows…
+    expect(await isClipped(cell)).toBe(false)
+    // …yet the hidden middle is recovered: the native title is set regardless
+    // of the (non-firing) clip measurement, present before any hover.
+    expect(await cell.getAttribute('title')).toBe(FULL_PATH)
+  })
+
   // `resizableColumns` — a separate axis from `elide`: drag the header's
   // right-edge handle to pin a width, double-click it to auto-fit.
   const nameHandle = (page: Page): Locator =>
