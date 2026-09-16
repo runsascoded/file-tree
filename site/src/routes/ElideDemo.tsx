@@ -17,7 +17,7 @@
  *  state, a separate concern from elision. */
 import { useMemo, useState, type ReactNode } from 'react'
 import {
-  autoUpdate, flip, FloatingDelayGroup, FloatingPortal, offset, shift,
+  autoUpdate, FloatingDelayGroup, FloatingPortal, offset, shift,
   useDelayGroup, useDismiss, useFloating, useHover, useInteractions, useRole,
 } from '@floating-ui/react'
 import { CsvViewer } from '@rdub/file-tree/renderers/csv'
@@ -58,9 +58,10 @@ type Dit = 'off' | 'on'
  *   - it only opens when the cell is *actually clipped* — a tooltip that
  *     just repeats a fully-visible value is noise. Measured on hover
  *     (`scrollWidth > clientWidth`), so it costs nothing until you hover.
- *   - a distinct surface (accent edge, elevated shadow) and a crossAxis
- *     nudge so the path reads as an *expansion* of the cell, not a clone
- *     of it shifted sideways. */
+ *   - it overlays the cell *in place* (accent edge, elevated shadow),
+ *     expanding it rightward to full width rather than floating above the
+ *     row — so it never occludes the row above, and hovering upward across
+ *     rows stays predictable. */
 function PathTip({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const { refs, floatingStyles, context } = useFloating({
@@ -72,10 +73,19 @@ function PathTip({ label, children }: { label: string; children: ReactNode }) {
       }
       setOpen(next)
     },
-    placement: 'top-start',
-    // Pull left by roughly the panel's own left inset (border + padding) so
-    // its text lines up under the cell's text rather than sitting ~1em right.
-    middleware: [offset({ mainAxis: 6, crossAxis: -10 }), flip(), shift({ padding: 8 })],
+    // Overlay the panel directly on top of the cell it belongs to, expanding
+    // it in place to full width — rather than floating above the row (which
+    // occludes the row above and makes hovering upward awkward). `bottom-start`
+    // aligns the panel's top-left to the cell's; the negative `mainAxis` offset
+    // (the reference's own height, plus the panel's top padding) lifts it back
+    // up so its text lands right over the cell's. `crossAxis` pulls left by the
+    // panel's left inset (border + padding) so the two texts line up. No
+    // `flip` — we always want the in-place overlay, never a jump above.
+    placement: 'bottom-start',
+    middleware: [
+      offset(({ rects }) => ({ mainAxis: -(rects.reference.height + 6), crossAxis: -13 })),
+      shift({ padding: 8 }),
+    ],
     whileElementsMounted: autoUpdate,
   })
   // Share hover timing across every cell's tooltip: once one is open, moving
