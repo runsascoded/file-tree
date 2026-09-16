@@ -62,11 +62,26 @@ test.describe('ElideDemo', () => {
     await page.getByRole('button', { name: 'Native', exact: true }).click()
     const cell = nameCell(page)
     expect(await isClipped(cell)).toBe(true)
-    expect(await cell.getAttribute('title')).toBe(FULL_PATH)
-    // No floating panel in this mode, even on hover.
+    // `onlyWhenClipped` (default): the title is set on hover, and only
+    // because the cell actually clips — nothing until a pointer arrives.
+    expect(await cell.getAttribute('title')).toBeNull()
     await cell.hover()
-    await expect(page.getByTestId('elide-rich-tip')).toBeHidden()
+    await expect(page.getByTestId('elide-rich-tip')).toBeHidden()  // no floating panel in this mode
+    expect(await cell.getAttribute('title')).toBe(FULL_PATH)
     expect(await scrollerScrollable(page)).toBe(false)
+  })
+
+  test('native title fires only on clipped cells, unless "Always"', async ({ page }) => {
+    await page.getByRole('button', { name: 'Native', exact: true }).click()
+    // `README.md` fits its column — no clip, so hovering sets no title.
+    const readme = page.locator('[data-testid="elide-table"] tbody tr')
+      .filter({ hasText: 'README.md' }).locator('td').first()
+    expect(await isClipped(readme)).toBe(false)
+    await readme.hover()
+    expect(await readme.getAttribute('title')).toBe('')
+    // Flip `onlyWhenClipped` off: even a fully-visible value carries a title.
+    await page.getByRole('button', { name: 'Always', exact: true }).click()
+    expect(await readme.getAttribute('title')).toBe('README.md')
   })
 
   test('wide mode drops the cap and lets the table x-scroll', async ({ page }) => {
@@ -76,8 +91,10 @@ test.describe('ElideDemo', () => {
     expect(await maxWidth(cell)).toBe('none')
     expect(await isClipped(cell)).toBe(false)
     expect(await scrollerScrollable(page)).toBe(true)
-    // Width and tooltip are independent axes — the title survives the change.
-    expect(await cell.getAttribute('title')).toBe(FULL_PATH)
+    // Width and tooltip stay independent axes, but nothing clips now, so
+    // `onlyWhenClipped` suppresses the native title on hover.
+    await cell.hover()
+    expect(await cell.getAttribute('title')).toBe('')
   })
 
   test('tooltip "none" leaves the value clipped and unrecoverable', async ({ page }) => {

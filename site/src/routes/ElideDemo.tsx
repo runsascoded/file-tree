@@ -45,6 +45,7 @@ const CSV = ['name,size,sweeper', ...ROWS.map(([n, s, w]) => `${n},${s},${w}`)].
 
 type Width = 'compact' | 'wide'
 type Tip = 'rich' | 'native' | 'none'
+type Clip = 'clipped' | 'always'
 
 /** A floating-ui tooltip supplied by the *consumer* — this is what the
  *  `elide.tooltip` render-prop is for. It wraps the cell's own node and
@@ -153,11 +154,15 @@ export function ElideDemo() {
   // Default to the rich (floating-ui) tooltip — the one you'd actually ship.
   // Native `title` is the zero-dependency floor, offered as a toggle.
   const [tip, setTip] = useState<Tip>('rich')
+  // `onlyWhenClipped` (default) suppresses the native tooltip on cells that
+  // aren't actually clipped — a title repeating a fully-visible value is noise.
+  const [clip, setClip] = useState<Clip>('clipped')
 
   const elide = useMemo<ElideConfig>(() => ({
     ...(width === 'wide' ? { maxWidth: false } : {}),
     tooltip: tip === 'none' ? false : tip === 'rich' ? richTooltip : 'native',
-  }), [width, tip])
+    onlyWhenClipped: clip === 'clipped',
+  }), [width, tip, clip])
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5em' }}>
@@ -188,6 +193,15 @@ export function ElideDemo() {
             { key: 'rich', label: 'Rich' },
             { key: 'native', label: 'Native' },
             { key: 'none', label: 'None' },
+          ]}
+        />
+        <Segmented<Clip>
+          label="Native title"
+          value={clip}
+          onChange={setClip}
+          options={[
+            { key: 'clipped', label: 'When clipped' },
+            { key: 'always', label: 'Always' },
           ]}
         />
       </div>
