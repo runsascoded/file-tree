@@ -370,28 +370,51 @@ function sortGlyph(column, sort) {
 }
 
 // src/renderers/table.ts
+var MIDDLE_TAIL = 12;
+var ELLIPSIS_END = () => "end";
+function normalizeEllipsis(e) {
+  if (e === void 0) return ELLIPSIS_END;
+  if (typeof e === "string") return () => e;
+  if (typeof e === "function") return (c) => e(c) ?? "end";
+  return (c) => e[c.name] ?? "end";
+}
 var ELIDE_DEFAULTS = {
   maxWidth: "30em",
   tooltip: "native",
-  content: cellTitle
+  content: cellTitle,
+  onlyWhenClipped: true,
+  ellipsis: ELLIPSIS_END
 };
 function resolveElide(elide) {
   if (elide === false) return { ...ELIDE_DEFAULTS, maxWidth: false, tooltip: false };
   if (elide === true || elide === void 0) return ELIDE_DEFAULTS;
-  return { ...ELIDE_DEFAULTS, ...elide };
+  const { ellipsis, ...rest } = elide;
+  return { ...ELIDE_DEFAULTS, ...rest, ellipsis: normalizeEllipsis(ellipsis) };
 }
 function elideCellStyle(el) {
   return { maxWidth: el.maxWidth === false ? "none" : el.maxWidth };
 }
+function cellClipped(el) {
+  return el.scrollWidth > el.clientWidth + 1;
+}
+function isDitto(dittoCols, column, value, prevValue, rowInPage) {
+  return dittoCols !== void 0 && rowInPage > 0 && dittoCols.has(column) && Object.is(value, prevValue);
+}
 function applyElide(el, args) {
-  const { value, node, hasCustomRender, column, row, path } = args;
+  const { value, node, hasCustomRender, column, row, path, raw, ellipsis } = args;
   if (el.tooltip === false) return { node };
   const text = el.content(value);
   if (typeof el.tooltip === "function") {
-    return { node: el.tooltip({ value, text, node, column, row, path }) };
+    return { node: el.tooltip({ value, text, raw, node, column, row, path }) };
   }
-  if (hasCustomRender || !text) return { node };
-  return { title: text, node };
+  if (hasCustomRender) return { node };
+  const shown = raw ?? text;
+  if (!shown) return { node };
+  if (raw != null || ellipsis === "middle") return { title: shown, node };
+  if (!el.onlyWhenClipped) return { title: shown, node };
+  return { onMouseEnter: (e) => {
+    e.currentTarget.title = cellClipped(e.currentTarget) ? shown : "";
+  }, node };
 }
 var TD_STYLE = {
   padding: "0.2em 0.6em",
@@ -417,8 +440,9 @@ function cellTitle(value) {
 var TH_STYLE = {
   padding: "0.3em 0.6em",
   textAlign: "left",
-  fontWeight: 500,
-  borderBottom: "1px solid rgba(127,127,127,0.4)"
+  fontWeight: 650,
+  borderBottom: "2px solid rgba(127,127,127,0.55)",
+  backgroundColor: "rgba(127,127,127,0.06)"
 };
 var NUMERIC_ALIGN = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
 function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
@@ -428,11 +452,14 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
     const align = isNumeric(c) ? NUMERIC_ALIGN : {};
     const cp = opts.cellProps?.(c, path) || {};
     const hp = opts.headerProps?.(c, path) || {};
+    const ellipsis = el.ellipsis(c);
+    const startDir = ellipsis === "start" ? { direction: "rtl", textAlign: "left" } : {};
     out.set(c.name, {
       // `es` overrides `TD_STYLE`'s default cap; `cp.style` still wins last,
       // so a consumer's per-column width beats the elide default.
-      cell: { ...TD_STYLE, ...align, ...es, ...cp.style },
+      cell: { ...TD_STYLE, ...align, ...es, ...startDir, ...cp.style },
       header: { ...TH_STYLE, ...align, ...hp.style },
+      ellipsis,
       ...cp.className ? { cellClass: cp.className } : {},
       ...hp.className ? { headerClass: hp.className } : {}
     });
@@ -440,9 +467,36 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   return out;
 }
 
+// src/renderers/elideNode.tsx
+var import_jsx_runtime2 = require("react/jsx-runtime");
+function splitMiddle(text, tail = MIDDLE_TAIL) {
+  if (text === void 0 || text.length <= tail + 1) return null;
+  return [text.slice(0, text.length - tail), text.slice(text.length - tail)];
+}
+function ellipsisWrap(mode, node, text, tail = MIDDLE_TAIL) {
+  if (mode === "start") return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("bdi", { children: node });
+  if (mode === "middle") {
+    const split = splitMiddle(text, tail);
+    if (split) {
+      const [head, end] = split;
+      return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { style: { display: "flex", minWidth: 0, maxWidth: "100%" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }, children: head }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { whiteSpace: "nowrap", flexShrink: 0 }, children: end })
+      ] });
+    }
+  }
+  return node;
+}
+
+// src/renderers/ditto.tsx
+var import_jsx_runtime3 = require("react/jsx-runtime");
+function dittoMark() {
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { "aria-label": "ditto", style: { opacity: 0.3, display: "block", textAlign: "center" }, children: "\u3003" });
+}
+
 // src/renderers/columnResize.tsx
 var import_react5 = require("react");
-var import_jsx_runtime2 = require("react/jsx-runtime");
+var import_jsx_runtime4 = require("react/jsx-runtime");
 var MIN_WIDTH = 40;
 var FIT_SLACK = 2;
 var DRAG_THRESHOLD = 3;
@@ -579,7 +633,7 @@ function useColumnWidths({ on, scope, columns, path, usePersistedState }) {
 }
 function ColumnResizeHandle({ col, widths }) {
   const [hot, setHot] = (0, import_react5.useState)(false);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
     "span",
     {
       role: "separator",
@@ -607,13 +661,13 @@ function ColumnResizeHandle({ col, widths }) {
 }
 
 // src/renderers/csv.tsx
-var import_jsx_runtime3 = require("react/jsx-runtime");
+var import_jsx_runtime5 = require("react/jsx-runtime");
 function makeCsvViewer(opts = {}) {
   return function BoundCsvViewer(props) {
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CsvViewer, { ...props, ...opts });
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CsvViewer, { ...props, ...opts });
   };
 }
-function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide, resizableColumns = false }) {
+function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, ditto, onPage, onCellHover, elide, resizableColumns = false }) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter);
   const [page, setPage] = (0, import_react6.useState)(0);
   const smallTable = total !== null && total <= fullLoadMaxBytes;
@@ -643,6 +697,7 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
     [filteredKeyed, allColumns]
   );
   const el = (0, import_react6.useMemo)(() => resolveElide(elide), [elide]);
+  const dittoSet = (0, import_react6.useMemo)(() => ditto ? new Set(ditto) : void 0, [ditto]);
   const cw = useColumnWidths({
     on: !!resizableColumns,
     scope: typeof resizableColumns === "object" ? resizableColumns.scope ?? "path" : "path",
@@ -657,11 +712,11 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
   const pageCtxRef = (0, import_react6.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
   usePageNotify(onPage, pageCtxRef, [pageRows, allSorted, columns.length, path, smallTable]);
   const notifyHover = useStableCallback(onCellHover);
-  if (error) return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (total === null || header === null) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
+  if (total === null || header === null) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
   const rows = smallTable ? allSorted : pageRows;
   const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES));
   pageCtxRef.current = {
@@ -673,24 +728,24 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
   };
   const offsetStart = page * PAGE_BYTES;
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES);
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em", position: "relative", zIndex: 2 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: allColumns.length }),
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em", position: "relative", zIndex: 2 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { children: allColumns.length }),
       " columns",
-      smallTable && rows ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+      smallTable && rows ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
         " \xB7 ",
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: rows.length.toLocaleString() }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { children: rows.length.toLocaleString() }),
         " rows"
       ] }) : null,
       " ",
       "\xB7 ",
       fmtSize(total),
-      columnPicker && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+      columnPicker && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
         " \xB7 ",
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
       ] })
     ] }),
-    smallTable && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { opacity: 0.8, fontSize: "0.9em", margin: "0 0 0.5em" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+    smallTable && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { style: { opacity: 0.8, fontSize: "0.9em", margin: "0 0 0.5em" }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
       FilterInput,
       {
         value: filter,
@@ -699,16 +754,16 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
         ...sortedKeyed ? { count: { shown: rows?.length ?? 0, total: sortedKeyed.length } } : {}
       }
     ) }),
-    !smallTable && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { opacity: 0.6, fontSize: "0.85em", margin: "0 0 0.4em" }, children: [
+    !smallTable && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { style: { opacity: 0.6, fontSize: "0.85em", margin: "0 0 0.4em" }, children: [
       fmtSize(total),
       " \u2014 streaming byte ranges; sorting needs the whole file."
     ] }),
-    pages > 1 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em", flexWrap: "wrap" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: page === 0, onClick: () => setPage(0), children: "\xAB" }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039" }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { opacity: 0.8 }, children: [
+    pages > 1 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", margin: "0.4em 0", fontSize: "0.9em", flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { disabled: page === 0, onClick: () => setPage(0), children: "\xAB" }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039" }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { style: { opacity: 0.8 }, children: [
         "page ",
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("b", { children: page + 1 }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { children: page + 1 }),
         " / ",
         pages.toLocaleString(),
         " \xB7 bytes ",
@@ -718,13 +773,13 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
         " / ",
         total.toLocaleString()
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(page + 1), children: "\u203A" }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(pages - 1), children: "\xBB" })
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(page + 1), children: "\u203A" }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { disabled: page === pages - 1, onClick: () => setPage(pages - 1), children: "\xBB" })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "Canvas" }, children: columns.map((c) => {
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto", border: "1px solid rgba(127,127,127,0.3)", borderRadius: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("tr", { style: { position: "sticky", top: 0, zIndex: 1, background: "Canvas" }, children: columns.map((c) => {
         const st = colStyles.get(c.name);
-        const defaultNode = smallTable ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        const defaultNode = smallTable ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
           "span",
           {
             role: "button",
@@ -740,34 +795,47 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
             style: { cursor: "pointer", userSelect: "none" },
             children: [
               c.name,
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: "0.3em", fontSize: "0.85em" }, children: sortGlyph(c.name, sort) })
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { opacity: sort.column === c.name ? 0.8 : 0.3, marginLeft: "0.3em", fontSize: "0.85em" }, children: sortGlyph(c.name, sort) })
             ]
           }
         ) : c.name;
-        return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap", ...resizableColumns ? { position: "relative" } : {}, ...cw.styleFor(c.name) }, className: st?.headerClass, children: [
+        return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("th", { style: { ...st?.header ?? TH_STYLE, whiteSpace: "nowrap", ...resizableColumns ? { position: "relative" } : {}, ...cw.styleFor(c.name) }, className: st?.headerClass, children: [
           renderHeader ? renderHeader({ column: c, path, defaultNode }) : defaultNode,
-          resizableColumns && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ColumnResizeHandle, { col: c.name, widths: cw })
+          resizableColumns && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ColumnResizeHandle, { col: c.name, widths: cw })
         ] }, c.name);
       }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("td", { colSpan: columns.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("tbody", { children: rows === null ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("td", { colSpan: columns.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
         let asRow = null;
         const row = () => asRow ??= Object.fromEntries(allColumns.map((c, j) => [c.name, r[j] ?? ""]));
-        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: columns.map((c) => {
+        let asPrev = null;
+        const prevRow = () => i > 0 ? asPrev ??= Object.fromEntries(allColumns.map((c, j) => [c.name, rows[i - 1][j] ?? ""])) : void 0;
+        return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: columns.map((c) => {
           const st = colStyles.get(c.name);
           const j = colIndex.get(c.name);
           const value = r[j] ?? "";
-          const rendered = renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value;
-          const { title, node } = applyElide(el, { value, node: rendered, hasCustomRender: !!renderCell, column: c, row: row(), path });
-          return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          const prevVal = i > 0 ? rows[i - 1][j] ?? "" : void 0;
+          const rendered = renderCell ? renderCell({ value, column: c, row: row(), prevRow: prevRow(), rowIndex: i, path, defaultNode: value }) : value;
+          const dittoCell = !renderCell && isDitto(dittoSet, c.name, value, prevVal, i);
+          let title, measure, node;
+          if (dittoCell) {
+            node = dittoMark();
+            title = cellTitle(value);
+          } else {
+            const wrapped = ellipsisWrap(st?.ellipsis ?? "end", rendered, !renderCell && typeof value === "string" ? value : void 0);
+            ({ title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row: row(), path, ellipsis: st?.ellipsis }));
+          }
+          const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : void 0;
+          return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
             "td",
             {
               style: { ...st?.cell ?? TD_STYLE, ...cw.styleFor(c.name) },
               className: st?.cellClass,
               ...title != null ? { title } : {},
-              ...onCellHover ? {
-                onMouseEnter: () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }),
-                onMouseLeave: () => notifyHover(null)
-              } : {},
+              ...measure || hoverEnter ? { onMouseEnter: (e) => {
+                measure?.(e);
+                hoverEnter?.();
+              } } : {},
+              ...onCellHover ? { onMouseLeave: () => notifyHover(null) } : {},
               children: node
             },
             c.name

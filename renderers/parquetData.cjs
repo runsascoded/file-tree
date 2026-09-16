@@ -23,6 +23,7 @@ __export(parquetData_exports, {
   NUMERIC_TYPES: () => NUMERIC_TYPES,
   RG_CACHE_SIZE: () => RG_CACHE_SIZE,
   coarseKind: () => coarseKind,
+  constantColumns: () => constantColumns,
   isSortedBy: () => isSortedBy,
   parsePredicate: () => parsePredicate,
   pruneRowGroups: () => pruneRowGroups,
@@ -279,11 +280,39 @@ function isSortedBy(meta, column) {
   if (idx < 0 || meta.rowGroups.length === 0) return false;
   return meta.rowGroups.every((rg) => rg.sortingColumns.some((sc) => sc.columnIdx === idx));
 }
+function constantColumns(meta) {
+  const out = /* @__PURE__ */ new Map();
+  if (meta.rowGroups.length === 0) return out;
+  for (const col of meta.schema) {
+    let value;
+    let ok = true;
+    for (const rg of meta.rowGroups) {
+      const st = rg.stats.get(col.name);
+      if (!st || st.min === void 0 || st.max === void 0 || (st.nullCount ?? 0) > 0) {
+        ok = false;
+        break;
+      }
+      const lo = statValue(st.min);
+      if (lo === void 0 || !Object.is(lo, statValue(st.max))) {
+        ok = false;
+        break;
+      }
+      if (value === void 0) value = lo;
+      else if (!Object.is(value, lo)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && value !== void 0) out.set(col.name, value);
+  }
+  return out;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   NUMERIC_TYPES,
   RG_CACHE_SIZE,
   coarseKind,
+  constantColumns,
   isSortedBy,
   parsePredicate,
   pruneRowGroups,

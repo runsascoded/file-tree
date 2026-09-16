@@ -1,7 +1,7 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode, CSSProperties } from 'react';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
-import { T as TableViewerOptions } from '../columnResize-CTyHANeK.js';
+import { T as TableViewerOptions } from '../columnResize-BrXJQBZi.js';
 import { TableCatalog, TableObject } from './tableSource.js';
 
 /** Rows per page.
@@ -23,7 +23,7 @@ interface TableBrowserOptions extends Omit<TableViewerOptions, 'fullLoadMaxBytes
  *  between NULL and the empty string is meaningful, and a blank cell
  *  reads as neither. */
 declare function defaultTableCell(value: unknown): ReactNode;
-declare function TableBrowser({ catalog, objects, path, usePersistedState, pageSize, status, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, onPage, onCellHover, elide, resizableColumns, }: {
+declare function TableBrowser({ catalog, objects, path, usePersistedState, pageSize, status, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, ditto, onPage, onCellHover, elide, resizableColumns, }: {
     catalog: TableCatalog;
     /** Already fetched by the wiring, which had to open the file anyway. */
     objects: readonly TableObject[];

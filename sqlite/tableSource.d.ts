@@ -1,6 +1,6 @@
 import { TableCatalog, TableSource } from '../renderers/tableSource.js';
 import { SqliteDb } from './db.js';
-import '../columnResize-CTyHANeK.js';
+import '../columnResize-BrXJQBZi.js';
 import 'react/jsx-runtime';
 import 'react';
 import '../persistedState-CB_wfbcb.js';

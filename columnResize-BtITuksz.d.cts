@@ -1,5 +1,5 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
-import { ReactNode, CSSProperties, PointerEvent, MouseEvent } from 'react';
+import { ReactNode, CSSProperties, MouseEvent, PointerEvent } from 'react';
 import { P as PersistedState } from './persistedState-CB_wfbcb.cjs';
 
 /** Load the whole table at or below this many bytes.
@@ -76,6 +76,11 @@ interface TableCellCtx<C extends TableColumn = TableColumn> {
     column: C;
     /** The whole row, for cells whose rendering depends on a sibling. */
     row: Record<string, unknown>;
+    /** The previous row *on the current page*, or `undefined` for the first
+     *  row of the page (and viewers that don't track it). The cheap seam for
+     *  a consumer's own "ditto"/run collapsing — compare `value` to
+     *  `prevRow?.[column.name]` — without the viewer imposing one. */
+    prevRow?: Record<string, unknown>;
     /** Row index. Absolute within the file where the viewer can know it
      *  (parquet pages within a row group, so it can); page-relative where
      *  it can't — the CSV viewer paginates by *bytes*, so it has no way
@@ -170,6 +175,22 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
      *  both values parse as numbers, else locale string order) reads a
      *  column wrong — a version string, an ordered enum. */
     sortComparators?: SortComparators;
+    /** Rows per page, for viewers that paginate by *rows* — parquet, which
+     *  pages within a row group. Ignored where a viewer paginates by bytes
+     *  (CSV reads fixed byte ranges, so it has no rows-per-page). Default
+     *  100. */
+    pageSize?: number;
+    /** Columns whose repeated values collapse to a ditto mark: in a run of
+     *  equal values, every row after the first (on the page) renders `〃`
+     *  instead of the value, so the eye lands where the column changes. The
+     *  repeated value stays on the `<td>`'s `title` for recovery.
+     *
+     *  Per-column opt-in by name — a ditto on an unsorted or numeric column
+     *  is noise. Only the *default* rendering collapses; a `renderCell` owns
+     *  its column (read {@link TableCellCtx.prevRow} to do your own). Runs are
+     *  detected within the rendered page, so a run spanning a page boundary
+     *  restarts — the first row of a page always shows its value. */
+    ditto?: readonly string[];
     /** How long cell values that outgrow their column are rendered — the
      *  clip and the way the full value comes back. `true`/absent is the
      *  batteries-included default (clip at 30em, native `title` = the full
@@ -199,6 +220,11 @@ interface ElideCtx<C extends TableColumn = TableColumn> {
     /** The full value as text — what the tooltip should show — or `undefined`
      *  when the value has no readable scalar form (see {@link cellTitle}). */
     text: string | undefined;
+    /** The underlying scalar as text, when the cell shows a lossy
+     *  *interpretation* of it (a temporal integer drawn as a date; later, a
+     *  formatted number). Absent when the cell shows the value verbatim. A
+     *  rich tooltip can surface this ("raw: …") alongside {@link text}. */
+    raw?: string;
     /** The node the cell renders (the viewer default, or a consumer
      *  `renderCell`), for a tooltip render-prop to wrap. */
     node: ReactNode;
@@ -206,22 +232,56 @@ interface ElideCtx<C extends TableColumn = TableColumn> {
     row: Record<string, unknown>;
     path: string;
 }
+/** Which side of a too-wide value the ellipsis consumes. See
+ *  {@link ElideConfig.ellipsis}. */
+type EllipsisMode = 'end' | 'start' | 'middle';
+/** How many trailing characters `ellipsis: 'middle'` keeps verbatim — the
+ *  informative tail of a path (shard id, step, extension). Matches mgu's
+ *  `elideMid` default. */
+declare const MIDDLE_TAIL = 12;
 /** How a table viewer handles a value too wide for its column: the clip,
  *  and the tooltip that brings the clipped tail back. Every field has a
  *  default (see {@link ELIDE_DEFAULTS}); the top-level `elide: true` preset
  *  binds them all, and each is independently overridable — so a consumer
  *  moves along one axis without restating the rest.
  *
- *  Not yet exposed, but the natural next axes on this same seam:
- *  `ellipsis: 'middle'` (keep a path's tail; needs JS measurement, as CSS
- *  `text-overflow` only clips the end) and `onlyWhenClipped` (surface the
- *  tooltip only when the value is *measured* to overflow, rather than on
- *  every scalar — costs a `ResizeObserver`). */
+ *  `ellipsis` (below) is the newest axis: where the value is clipped, not
+ *  just how wide the column is. */
 interface ElideConfig<C extends TableColumn = TableColumn> {
     /** The column's width cap. A CSS length clips and ellipsizes overflow;
      *  `false` renders at natural width so an outer scroller can reveal the
      *  whole column (the "wide mode" escape hatch). Default `'30em'`. */
     maxWidth?: string | false;
+    /** Which side of a clipped value the ellipsis eats — the informative
+     *  characters differ by column, so this is per-column:
+     *   - `'end'` (default): CSS clip, `checkpoints/adam-lr1.00e-…`. Right for
+     *     prose; useless for keys that share a long prefix (every row shows
+     *     the same head, the ellipsis hides the only part that differs).
+     *   - `'start'`: keep the tail, `…step-042000/shard-00000.safetensors`.
+     *     Pure CSS (`direction: rtl` on the cell + a `<bdi>` around the value,
+     *     so a path's own characters keep their order). The prefix-sharing fix.
+     *   - `'middle'`: keep both ends, `checkpoints/adam-…00000.safetensors`.
+     *     Pure CSS too — a flex `head`(clip-end) + fixed last-{@link MIDDLE_TAIL}
+     *     chars `tail` — no measurement. Only splits a **string** cell rendered
+     *     by default (a custom `renderCell` or non-string value falls back to
+     *     `'end'`, since there's no text to split).
+     *
+     *  A bare mode applies to every column; a `{ name: 'start' }` record or a
+     *  `(column) => mode` picks per column — a table mixes paths (tail matters)
+     *  with prose (head matters). Default `'end'`. */
+    ellipsis?: EllipsisMode | Partial<Record<string, EllipsisMode>> | ((column: C) => EllipsisMode | undefined);
+    /** Surface the native `title` only when the cell is *measured* to clip
+     *  its value — a tooltip that just repeats a fully-visible value is
+     *  noise. Default `true`. `false` = a title on every scalar, as before.
+     *
+     *  Measured on hover (`scrollWidth > clientWidth`, see
+     *  {@link cellClipped}), so it costs nothing until a pointer arrives —
+     *  no per-cell `ResizeObserver`. Governs the `'native'` strategy; an
+     *  *interpreted* cell (see {@link ElideCtx.raw}) titles regardless, since
+     *  its tooltip shows something the cell doesn't. A `tooltip` render-prop
+     *  owns its own hover, so gate it there ({@link cellClipped} on the
+     *  `<td>`), as the reference demo does. */
+    onlyWhenClipped?: boolean;
     /** The tooltip that recovers the clipped tail:
      *   - `'native'` (default): a browser `title` tooltip = the full value.
      *     Applied only to a default-rendered scalar cell — a consumer
@@ -242,9 +302,14 @@ interface ResolvedElide<C extends TableColumn = TableColumn> {
     maxWidth: string | false;
     tooltip: 'native' | false | ((ctx: ElideCtx<C>) => ReactNode);
     content: (value: unknown) => string | undefined;
+    onlyWhenClipped: boolean;
+    /** Per-column ellipsis mode, normalized from {@link ElideConfig.ellipsis}'s
+     *  mode / record / function shapes. Defaults to `'end'`. */
+    ellipsis: (column: C) => EllipsisMode;
 }
 /** The batteries-included preset `elide: true` (and the absent default)
- *  resolve to: clip at 30em, recover the full value via a native `title`. */
+ *  resolve to: clip at 30em, recover the full value via a native `title`,
+ *  shown only where the value actually clips, ellipsis at the end. */
 declare const ELIDE_DEFAULTS: ResolvedElide;
 /** Fold an `elide` option down to a fully-resolved strategy. `true`/absent
  *  → the {@link ELIDE_DEFAULTS} preset; `false` → clip and tooltip both off;
@@ -254,11 +319,26 @@ declare function resolveElide<C extends TableColumn>(elide: ElideConfig<C> | boo
  *  the clip idiom (`nowrap`/`overflow`/`ellipsis`) already lives in
  *  {@link TD_STYLE}. `maxWidth: false` → `'none'` (natural width). */
 declare function elideCellStyle(el: ResolvedElide): CSSProperties;
-/** The per-cell result of an elide strategy: a `title` to hang on the
- *  `<td>` (the native tooltip), and the node to render (possibly a tooltip
- *  render-prop's wrapper). */
+/** Whether a cell clips its content — its full text is wider than the box,
+ *  so the ellipsis is actually hiding something. The measurement behind
+ *  `onlyWhenClipped`, and the blessed check for a `tooltip` render-prop that
+ *  wants to open only on clipped cells: call it in the tooltip's own hover
+ *  handler with the `<td>` (a length heuristic mis-fires on narrow columns
+ *  and under `maxWidth: false`). The `+1` absorbs sub-pixel rounding. */
+declare function cellClipped(el: HTMLElement): boolean;
+/** Whether a cell collapses to a ditto mark (see {@link TableViewerOptions.ditto}):
+ *  its column opted in, it isn't the first row of the page (`rowInPage > 0`),
+ *  and its value repeats the previous row's. `Object.is` so a run of equal
+ *  strings/numbers collapses but two distinct `Date`/blob objects (ref-unequal)
+ *  never do. */
+declare function isDitto(dittoCols: ReadonlySet<string> | undefined, column: string, value: unknown, prevValue: unknown, rowInPage: number): boolean;
+/** The per-cell result of an elide strategy: what to hang on the `<td>` for
+ *  the native tooltip — either a static `title`, or an `onMouseEnter` that
+ *  sets one only once the cell is measured to clip ({@link cellClipped}) —
+ *  and the node to render (possibly a tooltip render-prop's wrapper). */
 interface ElideCell {
     title?: string;
+    onMouseEnter?: (e: MouseEvent<HTMLElement>) => void;
     node: ReactNode;
 }
 /** Apply an elide strategy's *tooltip* to one cell — the width cap is a
@@ -272,6 +352,8 @@ declare function applyElide<C extends TableColumn>(el: ResolvedElide<C>, args: {
     column: C;
     row: Record<string, unknown>;
     path: string;
+    raw?: string;
+    ellipsis?: EllipsisMode;
 }): ElideCell;
 /** Shared `<td>` / `<th>` styling, so the table viewers look like each
  *  other rather than merely similar. */
@@ -285,17 +367,26 @@ declare const TD_STYLE: CSSProperties;
  *  entirely when a consumer `renderCell` owns the cell — a custom render
  *  carries its own title. */
 declare function cellTitle(value: unknown): string | undefined;
+/** Header cells earn a visible distinction from the body — on a dark
+ *  background `fontWeight: 500` with a hairline border read as just
+ *  another row. A heavier weight, a 2px rule, and a faint grey tint (a
+ *  neutral that works in either theme) set the header apart by default;
+ *  a consumer overrides any of it via `headerProps`. */
 declare const TH_STYLE: CSSProperties;
 declare const NUMERIC_ALIGN: CSSProperties;
 /** Resolve per-column `<td>`/`<th>` styling once per column rather than
  *  once per cell — the hooks are pure in `(column, path)`, and a table
  *  is mostly cells. */
-declare function resolveColStyles<C extends TableColumn>(columns: readonly C[], path: string, opts: Pick<TableViewerOptions<C>, 'cellProps' | 'headerProps'>, isNumeric: (col: C) => boolean, el?: ResolvedElide): Map<string, {
+declare function resolveColStyles<C extends TableColumn>(columns: readonly C[], path: string, opts: Pick<TableViewerOptions<C>, 'cellProps' | 'headerProps'>, isNumeric: (col: C) => boolean, el?: ResolvedElide): Map<string, ColStyle>;
+/** Per-column resolved styling, plus the ellipsis mode a viewer applies to
+ *  the cell node at render time (see `ellipsisWrap`). */
+interface ColStyle {
     cell: CSSProperties;
     header: CSSProperties;
+    ellipsis: EllipsisMode;
     cellClass?: string;
     headerClass?: string;
-}>;
+}
 
 /** `"name:220,dir:480"` → `{ name: 220, dir: 480 }`. Tolerant: skips
  *  empty / malformed pairs rather than throwing on a hand-edited URL. */
@@ -365,4 +456,4 @@ declare function ColumnResizeHandle({ col, widths }: {
     widths: ColumnWidths;
 }): react_jsx_runtime.JSX.Element;
 
-export { columnFingerprint as A, parseWidths as B, type ColumnResizeConfig as C, DEFAULT_FULL_LOAD_MAX_BYTES as D, ELIDE_DEFAULTS as E, scopeKey as F, serializeWidths as G, useColumnWidths as H, NUMERIC_ALIGN as N, type ResolvedElide as R, type SortComparators as S, type TableViewerOptions as T, type UseColumnWidthsArgs as U, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, type ElideCell as k, type ElideConfig as l, type ElideCtx as m, TD_STYLE as n, TH_STYLE as o, type TablePageCtx as p, applyElide as q, cellTitle as r, sortGlyph as s, elideCellStyle as t, useSort as u, resolveColStyles as v, resolveElide as w, ColumnResizeHandle as x, type ColumnWidths as y, type ResizeScope as z };
+export { resolveElide as A, ColumnResizeHandle as B, type ColStyle as C, DEFAULT_FULL_LOAD_MAX_BYTES as D, ELIDE_DEFAULTS as E, type ColumnWidths as F, type ResizeScope as G, columnFingerprint as H, parseWidths as I, scopeKey as J, serializeWidths as K, useColumnWidths as L, MIDDLE_TAIL as M, NUMERIC_ALIGN as N, type ResolvedElide as R, type SortComparators as S, type TableViewerOptions as T, type UseColumnWidthsArgs as U, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, type ColumnResizeConfig as k, type ElideCell as l, type ElideConfig as m, type ElideCtx as n, type EllipsisMode as o, TD_STYLE as p, TH_STYLE as q, type TablePageCtx as r, sortGlyph as s, applyElide as t, useSort as u, cellClipped as v, cellTitle as w, elideCellStyle as x, isDitto as y, resolveColStyles as z };

@@ -1,11 +1,11 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode } from 'react';
 import { Store } from '../index.cjs';
-import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-weawXVlI.cjs';
-export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as formatTemporal, j as inferColumnFormats, k as inferTemporalFormat, t as toMillis, u as useParquetMeta, l as useRowGroup } from '../parquetData-weawXVlI.cjs';
+import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-CWJRkk3V.cjs';
+export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as formatTemporal, j as inferColumnFormats, k as inferTemporalFormat, t as toMillis, u as useParquetMeta, l as useRowGroup } from '../parquetData-CWJRkk3V.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
-import { b as TableCellCtx, c as TableCellRenderer, d as TableColumnProps, e as TableHeaderCtx, T as TableViewerOptions } from '../columnResize-CqWdQsXY.cjs';
-export { a as TableColumn, f as TableHeaderRenderer } from '../columnResize-CqWdQsXY.cjs';
+import { b as TableCellCtx, c as TableCellRenderer, d as TableColumnProps, e as TableHeaderCtx, T as TableViewerOptions } from '../columnResize-BtITuksz.cjs';
+export { a as TableColumn, f as TableHeaderRenderer } from '../columnResize-BtITuksz.cjs';
 
 type ParquetCellCtx = TableCellCtx<ParquetColumn>;
 type ParquetCellRenderer = TableCellRenderer<ParquetColumn>;
@@ -32,6 +32,17 @@ interface ParquetViewerOptions extends TableViewerOptions<ParquetColumn> {
      *  Default `true`. Columns read as temporal are excluded — they
      *  render as text, not quantities. */
     alignNumeric?: boolean;
+    /** Drop columns whose value is constant across the whole file from the
+     *  grid, stating each once above the table (`bucket = marin-us-east5`) —
+     *  zero information lost, a column of width recovered. Read from the
+     *  footer ({@link constantColumns}): a column folds only when every row
+     *  group's stats agree on one non-null value, so a file without stats
+     *  folds nothing.
+     *
+     *  Default `false` — folding a column out of the grid is surprising, and
+     *  a reader may want the constant column visible regardless. Parquet-only
+     *  (CSV never has whole-file stats). */
+    foldConstantColumns?: boolean;
 }
 /** LRU cache size for decoded RG rows. Keyed by RG index within the
  *  current `(store, path)`; on revisit of a recently-viewed RG (e.g.
@@ -51,7 +62,7 @@ declare function makeParquetViewer(opts?: ParquetViewerOptions): (props: {
     path: string;
     usePersistedState?: PersistedState;
 } & ParquetViewerOptions) => react_jsx_runtime.JSX.Element;
-declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, onPage, onCellHover, elide, resizableColumns }: {
+declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, pageSize, ditto, foldConstantColumns, onPage, onCellHover, elide, resizableColumns }: {
     store: Store;
     path: string;
     usePersistedState?: PersistedState;

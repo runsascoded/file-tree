@@ -12,28 +12,51 @@ import { useState } from "react";
 var defaultUseState = (_key, defaultValue) => useState(defaultValue);
 
 // src/renderers/table.ts
+var MIDDLE_TAIL = 12;
+var ELLIPSIS_END = () => "end";
+function normalizeEllipsis(e) {
+  if (e === void 0) return ELLIPSIS_END;
+  if (typeof e === "string") return () => e;
+  if (typeof e === "function") return (c) => e(c) ?? "end";
+  return (c) => e[c.name] ?? "end";
+}
 var ELIDE_DEFAULTS = {
   maxWidth: "30em",
   tooltip: "native",
-  content: cellTitle
+  content: cellTitle,
+  onlyWhenClipped: true,
+  ellipsis: ELLIPSIS_END
 };
 function resolveElide(elide) {
   if (elide === false) return { ...ELIDE_DEFAULTS, maxWidth: false, tooltip: false };
   if (elide === true || elide === void 0) return ELIDE_DEFAULTS;
-  return { ...ELIDE_DEFAULTS, ...elide };
+  const { ellipsis, ...rest } = elide;
+  return { ...ELIDE_DEFAULTS, ...rest, ellipsis: normalizeEllipsis(ellipsis) };
 }
 function elideCellStyle(el) {
   return { maxWidth: el.maxWidth === false ? "none" : el.maxWidth };
 }
+function cellClipped(el) {
+  return el.scrollWidth > el.clientWidth + 1;
+}
+function isDitto(dittoCols, column, value, prevValue, rowInPage) {
+  return dittoCols !== void 0 && rowInPage > 0 && dittoCols.has(column) && Object.is(value, prevValue);
+}
 function applyElide(el, args) {
-  const { value, node, hasCustomRender, column, row, path } = args;
+  const { value, node, hasCustomRender, column, row, path, raw, ellipsis } = args;
   if (el.tooltip === false) return { node };
   const text = el.content(value);
   if (typeof el.tooltip === "function") {
-    return { node: el.tooltip({ value, text, node, column, row, path }) };
+    return { node: el.tooltip({ value, text, raw, node, column, row, path }) };
   }
-  if (hasCustomRender || !text) return { node };
-  return { title: text, node };
+  if (hasCustomRender) return { node };
+  const shown = raw ?? text;
+  if (!shown) return { node };
+  if (raw != null || ellipsis === "middle") return { title: shown, node };
+  if (!el.onlyWhenClipped) return { title: shown, node };
+  return { onMouseEnter: (e) => {
+    e.currentTarget.title = cellClipped(e.currentTarget) ? shown : "";
+  }, node };
 }
 var TD_STYLE = {
   padding: "0.2em 0.6em",
@@ -59,8 +82,9 @@ function cellTitle(value) {
 var TH_STYLE = {
   padding: "0.3em 0.6em",
   textAlign: "left",
-  fontWeight: 500,
-  borderBottom: "1px solid rgba(127,127,127,0.4)"
+  fontWeight: 650,
+  borderBottom: "2px solid rgba(127,127,127,0.55)",
+  backgroundColor: "rgba(127,127,127,0.06)"
 };
 var NUMERIC_ALIGN = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
 function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
@@ -70,11 +94,14 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
     const align = isNumeric(c) ? NUMERIC_ALIGN : {};
     const cp = opts.cellProps?.(c, path) || {};
     const hp = opts.headerProps?.(c, path) || {};
+    const ellipsis = el.ellipsis(c);
+    const startDir = ellipsis === "start" ? { direction: "rtl", textAlign: "left" } : {};
     out.set(c.name, {
       // `es` overrides `TD_STYLE`'s default cap; `cp.style` still wins last,
       // so a consumer's per-column width beats the elide default.
-      cell: { ...TD_STYLE, ...align, ...es, ...cp.style },
+      cell: { ...TD_STYLE, ...align, ...es, ...startDir, ...cp.style },
       header: { ...TH_STYLE, ...align, ...hp.style },
+      ellipsis,
       ...cp.className ? { cellClass: cp.className } : {},
       ...hp.className ? { headerClass: hp.className } : {}
     });
@@ -82,9 +109,36 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   return out;
 }
 
+// src/renderers/elideNode.tsx
+import { jsx, jsxs } from "react/jsx-runtime";
+function splitMiddle(text, tail = MIDDLE_TAIL) {
+  if (text === void 0 || text.length <= tail + 1) return null;
+  return [text.slice(0, text.length - tail), text.slice(text.length - tail)];
+}
+function ellipsisWrap(mode, node, text, tail = MIDDLE_TAIL) {
+  if (mode === "start") return /* @__PURE__ */ jsx("bdi", { children: node });
+  if (mode === "middle") {
+    const split = splitMiddle(text, tail);
+    if (split) {
+      const [head, end] = split;
+      return /* @__PURE__ */ jsxs("span", { style: { display: "flex", minWidth: 0, maxWidth: "100%" }, children: [
+        /* @__PURE__ */ jsx("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }, children: head }),
+        /* @__PURE__ */ jsx("span", { style: { whiteSpace: "nowrap", flexShrink: 0 }, children: end })
+      ] });
+    }
+  }
+  return node;
+}
+
+// src/renderers/ditto.tsx
+import { jsx as jsx2 } from "react/jsx-runtime";
+function dittoMark() {
+  return /* @__PURE__ */ jsx2("span", { "aria-label": "ditto", style: { opacity: 0.3, display: "block", textAlign: "center" }, children: "\u3003" });
+}
+
 // src/renderers/columnResize.tsx
 import { useCallback, useEffect, useMemo, useRef, useState as useState2 } from "react";
-import { jsx } from "react/jsx-runtime";
+import { jsx as jsx3 } from "react/jsx-runtime";
 var MIN_WIDTH = 40;
 var FIT_SLACK = 2;
 var DRAG_THRESHOLD = 3;
@@ -221,7 +275,7 @@ function useColumnWidths({ on, scope, columns, path, usePersistedState }) {
 }
 function ColumnResizeHandle({ col, widths }) {
   const [hot, setHot] = useState2(false);
-  return /* @__PURE__ */ jsx(
+  return /* @__PURE__ */ jsx3(
     "span",
     {
       role: "separator",
@@ -250,7 +304,7 @@ function ColumnResizeHandle({ col, widths }) {
 
 // src/renderers/tableControls.tsx
 import { useCallback as useCallback2, useEffect as useEffect2, useMemo as useMemo2, useRef as useRef2, useState as useState3 } from "react";
-import { jsx as jsx2, jsxs } from "react/jsx-runtime";
+import { jsx as jsx4, jsxs as jsxs2 } from "react/jsx-runtime";
 var BTN = {
   font: "inherit",
   fontSize: "0.85em",
@@ -290,8 +344,8 @@ function ColumnPicker({ columns, vis }) {
     // `csv.tsx`. A z-index here can't do it alone: this span is a flex
     // item of that line, so it paints in the line's place in the root
     // stacking order, which is before the table.
-    /* @__PURE__ */ jsxs("span", { style: { position: "relative", display: "inline-block" }, children: [
-      /* @__PURE__ */ jsxs(
+    /* @__PURE__ */ jsxs2("span", { style: { position: "relative", display: "inline-block" }, children: [
+      /* @__PURE__ */ jsxs2(
         "button",
         {
           type: "button",
@@ -307,7 +361,7 @@ function ColumnPicker({ columns, vis }) {
           ]
         }
       ),
-      open && /* @__PURE__ */ jsxs(
+      open && /* @__PURE__ */ jsxs2(
         "span",
         {
           role: "group",
@@ -327,8 +381,8 @@ function ColumnPicker({ columns, vis }) {
             display: "block"
           },
           children: [
-            columns.map((c) => /* @__PURE__ */ jsxs("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
-              /* @__PURE__ */ jsx2(
+            columns.map((c) => /* @__PURE__ */ jsxs2("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
+              /* @__PURE__ */ jsx4(
                 "input",
                 {
                   type: "checkbox",
@@ -339,7 +393,7 @@ function ColumnPicker({ columns, vis }) {
               " ",
               c.name
             ] }, c.name)),
-            hidden.size > 0 && /* @__PURE__ */ jsx2("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
+            hidden.size > 0 && /* @__PURE__ */ jsx4("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
           ]
         }
       )
@@ -351,8 +405,8 @@ function useFilter(usePersistedState) {
   return use("q", "");
 }
 function FilterInput({ value, onChange, count, placeholder = "filter" }) {
-  return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
-    /* @__PURE__ */ jsx2(
+  return /* @__PURE__ */ jsxs2("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
+    /* @__PURE__ */ jsx4(
       "input",
       {
         type: "search",
@@ -372,7 +426,7 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
         }
       }
     ),
-    value.trim() !== "" && count && /* @__PURE__ */ jsxs("span", { style: { opacity: 0.7 }, children: [
+    value.trim() !== "" && count && /* @__PURE__ */ jsxs2("span", { style: { opacity: 0.7 }, children: [
       count.shown.toLocaleString(),
       " / ",
       count.total.toLocaleString()
@@ -410,7 +464,7 @@ function sortGlyph(column, sort) {
 }
 
 // src/renderers/tableBrowser.tsx
-import { jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
+import { jsx as jsx5, jsxs as jsxs3 } from "react/jsx-runtime";
 var DEFAULT_PAGE_SIZE = 100;
 var BTN2 = {
   font: "inherit",
@@ -427,10 +481,10 @@ var NUMERIC_KINDS = /* @__PURE__ */ new Set(["number"]);
 var plural = (n, noun) => `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 function defaultTableCell(value) {
   if (value === null || value === void 0) {
-    return /* @__PURE__ */ jsx3("span", { style: { opacity: 0.4 }, children: "null" });
+    return /* @__PURE__ */ jsx5("span", { style: { opacity: 0.4 }, children: "null" });
   }
   if (value instanceof Uint8Array) {
-    return /* @__PURE__ */ jsx3("span", { style: { opacity: 0.6 }, children: `<${value.byteLength} bytes>` });
+    return /* @__PURE__ */ jsx5("span", { style: { opacity: 0.6 }, children: `<${value.byteLength} bytes>` });
   }
   return String(value);
 }
@@ -447,6 +501,7 @@ function TableBrowser({
   headerProps,
   columnPicker = false,
   hiddenColumns,
+  ditto,
   onPage,
   onCellHover,
   elide,
@@ -507,6 +562,7 @@ function TableBrowser({
   if (active && !filter.trim() && total !== null) unfilteredTotals.current.set(active.name, total);
   const unfilteredTotal = active ? unfilteredTotals.current.get(active.name) : void 0;
   const el = useMemo4(() => resolveElide(elide), [elide]);
+  const dittoSet = useMemo4(() => ditto ? new Set(ditto) : void 0, [ditto]);
   const cw = useColumnWidths({
     on: !!resizableColumns,
     scope: typeof resizableColumns === "object" ? resizableColumns.scope ?? "path" : "path",
@@ -529,11 +585,11 @@ function TableBrowser({
   usePageNotify(onPage, pageCtxRef, [rows, visible, path, pageStart, total]);
   const notifyHover = useStableCallback(onCellHover);
   const hoverHandlers = useCallback4((ctx) => onCellHover ? { onMouseEnter: () => notifyHover(ctx), onMouseLeave: () => notifyHover(null) } : {}, [onCellHover, notifyHover]);
-  if (!objects.length) return /* @__PURE__ */ jsx3("div", { style: { opacity: 0.6 }, children: "no tables or views in this file" });
+  if (!objects.length) return /* @__PURE__ */ jsx5("div", { style: { opacity: 0.6 }, children: "no tables or views in this file" });
   const lastPage = total === null ? null : Math.max(0, Math.ceil(total / pageSize) - 1);
   const shown = columns.filter((c) => visible.includes(c.name));
-  return /* @__PURE__ */ jsxs2("div", { children: [
-    /* @__PURE__ */ jsxs2("p", { style: {
+  return /* @__PURE__ */ jsxs3("div", { children: [
+    /* @__PURE__ */ jsxs3("p", { style: {
       opacity: 0.85,
       fontSize: "0.95em",
       display: "flex",
@@ -543,24 +599,24 @@ function TableBrowser({
       position: "relative",
       zIndex: 2
     }, children: [
-      objects.length > 1 && /* @__PURE__ */ jsx3(
+      objects.length > 1 && /* @__PURE__ */ jsx5(
         "select",
         {
           value: active?.name ?? "",
           onChange: (e) => setTable(e.target.value),
           "aria-label": "Table",
           style: { ...BTN2, cursor: "pointer" },
-          children: objects.map((o) => /* @__PURE__ */ jsxs2("option", { value: o.name, children: [
+          children: objects.map((o) => /* @__PURE__ */ jsxs3("option", { value: o.name, children: [
             o.name,
             o.type === "view" ? " (view)" : ""
           ] }, o.name))
         }
       ),
-      result && /* @__PURE__ */ jsxs2("span", { style: { opacity: 0.7 }, children: [
+      result && /* @__PURE__ */ jsxs3("span", { style: { opacity: 0.7 }, children: [
         plural(total ?? rows.length, "row"),
         total !== null && total > 0 && ` \xB7 ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}`
       ] }),
-      can?.filter && /* @__PURE__ */ jsx3(
+      can?.filter && /* @__PURE__ */ jsx5(
         FilterInput,
         {
           value: filter,
@@ -569,20 +625,20 @@ function TableBrowser({
           ...total !== null && unfilteredTotal !== void 0 ? { count: { shown: total, total: unfilteredTotal } } : {}
         }
       ),
-      columnPicker && columns.length > 0 && /* @__PURE__ */ jsx3(ColumnPicker, { columns, vis: { visible, ...vis } }),
-      loading && /* @__PURE__ */ jsx3("span", { style: { opacity: 0.5 }, children: "\u2026" }),
+      columnPicker && columns.length > 0 && /* @__PURE__ */ jsx5(ColumnPicker, { columns, vis: { visible, ...vis } }),
+      loading && /* @__PURE__ */ jsx5("span", { style: { opacity: 0.5 }, children: "\u2026" }),
       status
     ] }),
-    error && /* @__PURE__ */ jsx3("p", { style: { color: "crimson", fontSize: "0.9em" }, children: error.message }),
-    /* @__PURE__ */ jsx3("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxs2("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ jsx3("thead", { children: /* @__PURE__ */ jsx3("tr", { style: {
+    error && /* @__PURE__ */ jsx5("p", { style: { color: "crimson", fontSize: "0.9em" }, children: error.message }),
+    /* @__PURE__ */ jsx5("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxs3("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ jsx5("thead", { children: /* @__PURE__ */ jsx5("tr", { style: {
         position: "sticky",
         top: 0,
         zIndex: 1,
         background: "linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas"
       }, children: shown.map((c) => {
         const styles = colStyles.get(c.name);
-        const label = can?.sort ? /* @__PURE__ */ jsxs2(
+        const label = can?.sort ? /* @__PURE__ */ jsxs3(
           "span",
           {
             onClick: () => sort.toggle(c.name),
@@ -591,55 +647,70 @@ function TableBrowser({
             children: [
               c.name,
               " ",
-              /* @__PURE__ */ jsx3("span", { style: { opacity: sort.column === c.name ? 0.9 : 0.3 }, children: sortGlyph(c.name, sort) })
+              /* @__PURE__ */ jsx5("span", { style: { opacity: sort.column === c.name ? 0.9 : 0.3 }, children: sortGlyph(c.name, sort) })
             ]
           }
-        ) : /* @__PURE__ */ jsx3("span", { children: c.name });
-        return /* @__PURE__ */ jsxs2(
+        ) : /* @__PURE__ */ jsx5("span", { children: c.name });
+        return /* @__PURE__ */ jsxs3(
           "th",
           {
             style: { ...styles?.header ?? TH_STYLE, ...resizableColumns ? { position: "relative" } : {}, ...cw.styleFor(c.name) },
             ...styles?.headerClass ? { className: styles.headerClass } : {},
             children: [
               renderHeader ? renderHeader({ column: c, path, defaultNode: label }) : label,
-              resizableColumns && /* @__PURE__ */ jsx3(ColumnResizeHandle, { col: c.name, widths: cw })
+              resizableColumns && /* @__PURE__ */ jsx5(ColumnResizeHandle, { col: c.name, widths: cw })
             ]
           },
           c.name
         );
       }) }) }),
-      /* @__PURE__ */ jsxs2("tbody", { children: [
-        rows.map((row, i) => /* @__PURE__ */ jsx3("tr", { children: shown.map((c) => {
+      /* @__PURE__ */ jsxs3("tbody", { children: [
+        rows.map((row, i) => /* @__PURE__ */ jsx5("tr", { children: shown.map((c) => {
           const styles = colStyles.get(c.name);
+          const prev = i > 0 ? rows[i - 1] : void 0;
+          const value = row[c.name];
           const ctx = {
-            value: row[c.name],
+            value,
             column: c,
             row,
+            ...prev ? { prevRow: prev } : {},
             rowIndex: pageStart + i,
             path,
-            defaultNode: defaultTableCell(row[c.name])
+            defaultNode: defaultTableCell(value)
           };
           const rendered = renderCell ? renderCell(ctx) : ctx.defaultNode;
-          const { title, node } = applyElide(el, { value: ctx.value, node: rendered, hasCustomRender: !!renderCell, column: c, row, path });
-          return /* @__PURE__ */ jsx3(
+          const dittoCell = !renderCell && isDitto(dittoSet, c.name, value, prev?.[c.name], i);
+          let title, measure, node;
+          if (dittoCell) {
+            node = dittoMark();
+            title = cellTitle(value);
+          } else {
+            const wrapped = ellipsisWrap(styles?.ellipsis ?? "end", rendered, !renderCell && typeof value === "string" ? value : void 0);
+            ({ title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row, path, ellipsis: styles?.ellipsis }));
+          }
+          const hh = hoverHandlers(ctx);
+          return /* @__PURE__ */ jsx5(
             "td",
             {
               style: { ...styles?.cell ?? TD_STYLE, ...cw.styleFor(c.name) },
               ...styles?.cellClass ? { className: styles.cellClass } : {},
               ...title != null ? { title } : {},
-              ...hoverHandlers(ctx),
+              ...measure ? { ...hh, onMouseEnter: (e) => {
+                measure(e);
+                hh.onMouseEnter?.();
+              } } : hh,
               children: node
             },
             c.name
           );
         }) }, pageStart + i)),
-        rows.length === 0 && !loading && !error && /* @__PURE__ */ jsx3("tr", { children: /* @__PURE__ */ jsx3("td", { colSpan: Math.max(1, shown.length), style: { ...TD_STYLE, opacity: 0.6 }, children: filter.trim() ? "no rows match" : "no rows" }) })
+        rows.length === 0 && !loading && !error && /* @__PURE__ */ jsx5("tr", { children: /* @__PURE__ */ jsx5("td", { colSpan: Math.max(1, shown.length), style: { ...TD_STYLE, opacity: 0.6 }, children: filter.trim() ? "no rows match" : "no rows" }) })
       ] })
     ] }) }),
-    /* @__PURE__ */ jsxs2("p", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginTop: "0.6em" }, children: [
-      /* @__PURE__ */ jsx3("button", { type: "button", style: BTN2, disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039 prev" }),
-      /* @__PURE__ */ jsx3("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: can?.randomAccess === false ? `rows ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}` : `page ${(page + 1).toLocaleString()}${lastPage !== null ? ` / ${(lastPage + 1).toLocaleString()}` : ""}` }),
-      /* @__PURE__ */ jsx3(
+    /* @__PURE__ */ jsxs3("p", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginTop: "0.6em" }, children: [
+      /* @__PURE__ */ jsx5("button", { type: "button", style: BTN2, disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039 prev" }),
+      /* @__PURE__ */ jsx5("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: can?.randomAccess === false ? `rows ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}` : `page ${(page + 1).toLocaleString()}${lastPage !== null ? ` / ${(lastPage + 1).toLocaleString()}` : ""}` }),
+      /* @__PURE__ */ jsx5(
         "button",
         {
           type: "button",

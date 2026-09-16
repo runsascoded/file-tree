@@ -1,8 +1,8 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { Store } from '../index.js';
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.js';
-import { T as TableViewerOptions, a as TableColumn } from '../columnResize-CTyHANeK.js';
-export { b as TableCellCtx, c as TableCellRenderer } from '../columnResize-CTyHANeK.js';
+import { T as TableViewerOptions, a as TableColumn } from '../columnResize-BrXJQBZi.js';
+export { b as TableCellCtx, c as TableCellRenderer } from '../columnResize-BrXJQBZi.js';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
 import 'react';
 
@@ -25,7 +25,7 @@ declare function makeCsvViewer(opts?: CsvViewerOptions): (props: {
     delimiter: string;
     usePersistedState?: PersistedState;
 }) => react_jsx_runtime.JSX.Element;
-declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, onPage, onCellHover, elide, resizableColumns }: {
+declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, ditto, onPage, onCellHover, elide, resizableColumns }: {
     store: Store;
     path: string;
     delimiter: string;

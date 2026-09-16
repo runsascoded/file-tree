@@ -1,5 +1,5 @@
-import { Store } from './index.js';
-import { a as TableColumn } from './columnResize-CTyHANeK.js';
+import { Store } from './index.cjs';
+import { a as TableColumn } from './columnResize-BtITuksz.cjs';
 
 /** Temporal inference + formatting for tabular cells.
  *
@@ -189,5 +189,15 @@ declare function pruneRowGroups(rowGroups: readonly RowGroupInfo[], p: Predicate
 /** Is the file sorted by this column, per the writer's own metadata?
  *  Used to tell the reader *why* a filter was cheap. */
 declare function isSortedBy(meta: ParquetMeta, column: string): boolean;
+/** Columns whose value is constant across the *whole file*, mapped to that
+ *  value — for `foldConstantColumns`. Read purely from the footer: a column
+ *  qualifies only when every row group carries stats with `min === max`,
+ *  the same value in each, and no nulls anywhere. Any row group missing
+ *  stats (or carrying a null, or disagreeing) disqualifies it — a fold has
+ *  to be certain, since the dropped column is stated once as fact.
+ *
+ *  `min`/`max` come back decoded via the same `statValue` the pruner uses
+ *  (`BYTE_ARRAY` → string), so a text column folds by its readable value. */
+declare function constantColumns(meta: ParquetMeta): Map<string, unknown>;
 
-export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type SortingColumn as S, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, formatTemporal as i, inferColumnFormats as j, inferTemporalFormat as k, useRowGroup as l, type Predicate as m, isSortedBy as n, pruneRowGroups as o, parsePredicate as p, useAllRows as q, rowGroupMatches as r, toMillis as t, useParquetMeta as u };
+export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type SortingColumn as S, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, formatTemporal as i, inferColumnFormats as j, inferTemporalFormat as k, useRowGroup as l, type Predicate as m, constantColumns as n, isSortedBy as o, parsePredicate as p, pruneRowGroups as q, rowGroupMatches as r, useAllRows as s, toMillis as t, useParquetMeta as u };
