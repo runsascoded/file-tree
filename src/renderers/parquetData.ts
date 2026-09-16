@@ -345,3 +345,31 @@ export function isSortedBy(meta: ParquetMeta, column: string): boolean {
   if (idx < 0 || meta.rowGroups.length === 0) return false
   return meta.rowGroups.every(rg => rg.sortingColumns.some(sc => sc.columnIdx === idx))
 }
+
+/** Columns whose value is constant across the *whole file*, mapped to that
+ *  value — for `foldConstantColumns`. Read purely from the footer: a column
+ *  qualifies only when every row group carries stats with `min === max`,
+ *  the same value in each, and no nulls anywhere. Any row group missing
+ *  stats (or carrying a null, or disagreeing) disqualifies it — a fold has
+ *  to be certain, since the dropped column is stated once as fact.
+ *
+ *  `min`/`max` come back decoded via the same `statValue` the pruner uses
+ *  (`BYTE_ARRAY` → string), so a text column folds by its readable value. */
+export function constantColumns(meta: ParquetMeta): Map<string, unknown> {
+  const out = new Map<string, unknown>()
+  if (meta.rowGroups.length === 0) return out
+  for (const col of meta.schema) {
+    let value: unknown
+    let ok = true
+    for (const rg of meta.rowGroups) {
+      const st = rg.stats.get(col.name)
+      if (!st || st.min === undefined || st.max === undefined || (st.nullCount ?? 0) > 0) { ok = false; break }
+      const lo = statValue(st.min)
+      if (lo === undefined || !Object.is(lo, statValue(st.max))) { ok = false; break }
+      if (value === undefined) value = lo
+      else if (!Object.is(value, lo)) { ok = false; break }
+    }
+    if (ok && value !== undefined) out.set(col.name, value)
+  }
+  return out
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  isSortedBy, parsePredicate, pruneRowGroups, rowGroupMatches,
+  constantColumns, isSortedBy, parsePredicate, pruneRowGroups, rowGroupMatches,
   type ParquetMeta, type Predicate, type RowGroupInfo,
 } from '../src/renderers/parquetData'
 
@@ -126,5 +126,58 @@ describe('isSortedBy', () => {
     // Sorted by column 0 (`a`) says nothing about `b`.
     expect(isSortedBy(meta([rg(0, {}, 0)]), 'b')).toBe(false)
     expect(isSortedBy(meta([]), 'a')).toBe(false)
+  })
+})
+
+describe('constantColumns', () => {
+  const meta = (schema: string[], rgs: RowGroupInfo[]): ParquetMeta =>
+    ({ schema: schema.map(name => ({ name })), totalRows: 0, byteSize: 0, rowGroups: rgs })
+
+  test('folds a column whose min===max agrees across every row group', () => {
+    const m = meta(['bucket', 'size'], [
+      rg(0, { bucket: { min: 'us', max: 'us' }, size: { min: 1, max: 9 } }),
+      rg(1, { bucket: { min: 'us', max: 'us' }, size: { min: 2, max: 8 } }),
+    ])
+    expect([...constantColumns(m)]).toEqual([['bucket', 'us']])
+  })
+
+  test('does not fold when row groups disagree on the value', () => {
+    const m = meta(['bucket'], [
+      rg(0, { bucket: { min: 'us', max: 'us' } }),
+      rg(1, { bucket: { min: 'eu', max: 'eu' } }),
+    ])
+    expect([...constantColumns(m)]).toEqual([])
+  })
+
+  test('does not fold when a row group varies internally (min !== max)', () => {
+    const m = meta(['bucket'], [
+      rg(0, { bucket: { min: 'us', max: 'us' } }),
+      rg(1, { bucket: { min: 'us', max: 'eu' } }),
+    ])
+    expect([...constantColumns(m)]).toEqual([])
+  })
+
+  test('does not fold a column missing stats in any row group', () => {
+    const m = meta(['bucket'], [
+      rg(0, { bucket: { min: 'us', max: 'us' } }),
+      rg(1, {}),
+    ])
+    expect([...constantColumns(m)]).toEqual([])
+  })
+
+  test('does not fold a constant column that carries nulls', () => {
+    const g = rg(0, { bucket: { min: 'us', max: 'us' } })
+    g.stats.get('bucket')!.nullCount = 3
+    expect([...constantColumns(meta(['bucket'], [g]))]).toEqual([])
+  })
+
+  test('decodes byte-array stats to text before comparing', () => {
+    const b = new TextEncoder().encode('us')
+    const m = meta(['bucket'], [rg(0, { bucket: { min: b, max: b } })])
+    expect([...constantColumns(m)]).toEqual([['bucket', 'us']])
+  })
+
+  test('a file with no row groups folds nothing', () => {
+    expect([...constantColumns(meta(['bucket'], []))]).toEqual([])
   })
 })

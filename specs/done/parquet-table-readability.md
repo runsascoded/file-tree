@@ -12,10 +12,23 @@ Ground-truth against the current code:
 - `ellipsis` (item 1) lands as a per-column axis on the `elide` seam. `'end'` (default) + `'start'` are pure CSS; `'middle'` needs JS measurement.
 - Repeated values (item 2): `prevRow` on `TableCellCtx` is the cheap seam (enables consumer ditto); a built-in `ditto` option (per-column opt-in) and `foldConstantColumns` (**default off**, parquet-only — needs whole-file RG stats) sit on top.
 
-Phasing (each phase updates this spec in-place + commits):
-- **A** — cheap wins: item 4 default `TH_STYLE` bump; item 3 `pageSize`.
-- **B** — item 1 `ellipsis: 'start'` (CSS), then `'middle'` (JS).
-- **C** — item 2 `prevRow` seam + `ditto` + `foldConstantColumns`.
+Phasing (each phase updated this spec in-place + committed):
+- **A** ✓ — item 4 default `TH_STYLE` bump; item 3 `pageSize`.
+- **B** ✓ — item 1 `ellipsis: 'start' | 'middle'` (both pure CSS, not the JS the handoff expected).
+- **C** ✓ — item 2 `prevRow` seam + `ditto` (C.1); `foldConstantColumns` (C.2).
+
+## Update (2026-09-16): implemented
+
+All four items landed. New public API on `TableViewerOptions` (and `ParquetViewerOptions`):
+- `pageSize?: number` (parquet row pagination; default 100).
+- `elide.ellipsis?: EllipsisMode | Record<string, EllipsisMode> | (column) => …` — `'end'` (default) / `'start'` / `'middle'`, per column, all pure CSS. Plus `EllipsisMode`, `MIDDLE_TAIL`, `ellipsisWrap`/`splitMiddle`.
+- `ditto?: readonly string[]` + `TableCellCtx.prevRow` (page-local run collapse to `〃`, value on the `title`). Plus pure `isDitto`.
+- `foldConstantColumns?: boolean` (parquet-only, default off) + pure `constantColumns(meta)`.
+- Default `TH_STYLE` heavier (weight 650, 2px rule, faint tint); the custom-`<th>` closure `renderHeader` already existed.
+
+Wired through parquet/csv/tableBrowser; the `applyElide` seam gained an `ellipsis` arg so a `'middle'` cell (whose `<td>` never overflows) native-titles unconditionally. Demo: `/elide` gained Ellipsis + Ditto controls; new `/fold` route. Tests: unit 270 → 292; hermetic e2e now also runs `elide-demo` + `fold-demo` in CI (a pre-existing gap — CI ran only `mock-demo`; `playwright.config` now `testIgnore`s the worker-only `http-demo` under `E2E_MOCK_ONLY` and CI runs the whole hermetic set).
+
+One deliberate divergence: a `'middle'` cell paired with a *tooltip render-prop* gated on `cellClipped(td)` won't open (the flex head+tail fits the `<td>`); the native title covers it, and `'start'` is the answer when render-prop recovery matters.
 
 ## 1. `ellipsis: 'middle' | 'start'` on the elide seam — ✓ Phase B
 
@@ -34,7 +47,7 @@ Per column, not just global: `elide: { ellipsis: { name: 'start' } }` or a `(col
 Two shapes of the same problem, best solved separately:
 
 - **Runs — ✓ Phase C.** `ditto?: readonly string[]` (per-column opt-in) renders a run's second-and-later cells (within the rendered page) as a dimmed, centered `〃`, keeping the repeated value on the `<td>`'s `title`. `TableCellCtx.prevRow` is the underlying seam — a `renderCell` reads it to do its own ditto styling. Both landed across parquet/csv/tableBrowser; pure `isDitto` is unit-tested, and the demo gained a "Ditto (sweeper)" toggle. Runs are page-local (a run across a page boundary restarts — the first row of a page always shows its value), matching the viewers' existing paging.
-- **Constant column — pending (Phase C.2).** `bucket` is `marin-us-east5` on every row of the file. The row-group stats already know it (`min === max` for every RG). A viewer option (`foldConstantColumns`, **default off** per Ryan) drops such a column from the grid and states it once in the caption / stats line: `bucket = marin-us-east5`. Zero information lost, one column of width recovered. Parquet-only — only sound when stats cover the whole file (all RGs' min/max agree); CSV never has whole-file stats.
+- **Constant column — ✓ Phase C.2.** `ParquetViewerOptions.foldConstantColumns` (**default off** per Ryan) drops columns whose value is constant across the whole file from the grid and states each once above the table (`bucket = marin-us-east5`). Reads the footer via the pure, unit-tested `constantColumns(meta)`: a column folds only when every row group's stats carry `min === max`, the same value in each, and no nulls — so a file without stats folds nothing. Parquet-only (CSV never has whole-file stats). A dedicated `/fold` demo route (self-contained `MockStore`, so no coupling to the byte-total-asserting mock fixture) exercises it; +7 unit, +2 e2e.
 
 Ryan's specific ask was a `"` marker for the `bucket` column; the fold is the better answer for that column, and ditto marks are the answer for the run-shaped ones.
 

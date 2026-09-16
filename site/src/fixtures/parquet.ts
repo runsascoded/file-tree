@@ -108,3 +108,36 @@ function build(): Uint8Array {
 }
 
 export const EVENTS_PARQUET = build()
+
+/** A GCS-listing-shaped parquet for the `foldConstantColumns` demo,
+ *  mirroring the mgu shard that motivated it: `bucket` and `region` are
+ *  the same on every row (folded out and stated once), while `name` and
+ *  `size` vary. Two row groups so the fold has to agree across groups.
+ *  hyparquet-writer emits per-group min/max stats, which is what the fold
+ *  reads. */
+const LISTING_NAMES = [
+  'checkpoints/adam-lr1.00e-2/step-042000/shard-00000.safetensors',
+  'checkpoints/adam-lr1.00e-2/step-042000/shard-00001.safetensors',
+  'checkpoints/sgd-nesterov/step-128000/optimizer/momentum.pt',
+  'runs/eval/mmlu/2026-01-05/predictions/rank-00000.jsonl',
+  'runs/eval/gsm8k/2026-01-05/predictions/rank-00000.jsonl',
+  'datasets/dolma-v1.7/tokenized/part-00042-of-00512.npy',
+  'logs/2026-01-03T00-00-00Z.sweep.log',
+  'config.yaml',
+]
+
+function buildListing(): Uint8Array {
+  const n = LISTING_NAMES.length
+  const buf = parquetWriteBuffer({
+    rowGroupSize: 4,  // two row groups over the eight rows
+    columnData: [
+      { name: 'bucket', data: new Array<string>(n).fill('marin-us-east5'), type: 'STRING' },
+      { name: 'region', data: new Array<string>(n).fill('us-east5'), type: 'STRING' },
+      { name: 'name', data: LISTING_NAMES, type: 'STRING' },
+      { name: 'size', data: LISTING_NAMES.map((_, i) => BigInt((i + 1) * 4096)), type: 'INT64' },
+    ],
+  })
+  return new Uint8Array(buf)
+}
+
+export const LISTING_PARQUET = buildListing()

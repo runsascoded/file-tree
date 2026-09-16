@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useRef } from 'react'
 import type { Store } from '../types'
 import {
-  isSortedBy, NUMERIC_TYPES, parsePredicate, pruneRowGroups, useAllRows, useParquetMeta, useRowGroup,
+  constantColumns, isSortedBy, NUMERIC_TYPES, parsePredicate, pruneRowGroups, useAllRows, useParquetMeta, useRowGroup,
   type ParquetColumn, type ParquetColumnStats, type ParquetMeta, type RowGroupInfo,
 } from './parquetData'
 
@@ -88,6 +88,17 @@ export interface ParquetViewerOptions extends TableViewerOptions<ParquetColumn> 
    *  Default `true`. Columns read as temporal are excluded — they
    *  render as text, not quantities. */
   alignNumeric?: boolean
+  /** Drop columns whose value is constant across the whole file from the
+   *  grid, stating each once above the table (`bucket = marin-us-east5`) —
+   *  zero information lost, a column of width recovered. Read from the
+   *  footer ({@link constantColumns}): a column folds only when every row
+   *  group's stats agree on one non-null value, so a file without stats
+   *  folds nothing.
+   *
+   *  Default `false` — folding a column out of the grid is surprising, and
+   *  a reader may want the constant column visible regardless. Parquet-only
+   *  (CSV never has whole-file stats). */
+  foldConstantColumns?: boolean
 }
 
 
@@ -125,7 +136,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, ditto, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, ditto, foldConstantColumns = false, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -187,6 +198,11 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
 
   const el = useMemo(() => resolveElide(elide), [elide])
   const dittoSet = useMemo(() => (ditto ? new Set(ditto) : undefined), [ditto])
+  // Whole-file-constant columns, folded out of the grid and stated once.
+  // Empty unless opted in — and empty for a file whose footer lacks stats.
+  const folded = useMemo(
+    () => (foldConstantColumns && meta ? constantColumns(meta) : new Map<string, unknown>()),
+    [foldConstantColumns, meta])
   const cw = useColumnWidths({
     on: !!resizableColumns,
     scope: typeof resizableColumns === 'object' ? (resizableColumns.scope ?? 'path') : 'path',
@@ -219,7 +235,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // is physically an `INT64`, so whether a column reads as temporal
   // isn't known until inference has run over the sampled values.
   const allColumns = rawSchema.map(c => (temporal.has(c.name) ? { ...c, kind: 'temporal' as const } : c))
-  const schema = allColumns.filter(c => visible.includes(c.name))
+  const schema = allColumns.filter(c => visible.includes(c.name) && !folded.has(c.name))
 
   // Two different filters behind one box, and the placeholder says
   // which you're getting: everything is in memory below the threshold,
@@ -310,6 +326,17 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
         </span>
         {columnPicker && <ColumnPicker columns={allColumns} vis={{ visible, ...vis }} />}
       </p>
+
+      {folded.size > 0 && (
+        // Constant columns, stated once instead of repeated down the grid.
+        <p style={{ opacity: 0.7, fontSize: '0.9em', margin: '0 0 0.5em', display: 'flex', gap: '1em', flexWrap: 'wrap' }}>
+          {[...folded].map(([name, value]) => (
+            <span key={name}>
+              <b>{name}</b> = <code>{String(value)}</code>
+            </span>
+          ))}
+        </p>
+      )}
 
       <details style={{ marginBottom: '0.5em' }}>
         <summary style={{ cursor: 'pointer', fontSize: '0.9em', opacity: 0.8 }}>schema</summary>

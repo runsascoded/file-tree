@@ -63,7 +63,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       # The webServer command builds the lib before serving the site.
       - name: Playwright
-        run: pnpm exec playwright test e2e/mock-demo.spec.ts
+        run: pnpm exec playwright test
         env:
           E2E_MOCK_ONLY: '1'
       - uses: actions/upload-artifact@v4

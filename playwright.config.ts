@@ -18,6 +18,10 @@ const channel = process.env.E2E_CHANNEL
 
 export default defineConfig({
   testDir: './e2e',
+  // Under `mockOnly` the worker server is dropped, so the one worker-driven
+  // spec (`http-demo`) can't run — ignore it and the rest of `e2e/` (all
+  // `MockStore`-backed) is the hermetic set CI runs.
+  ...(mockOnly ? { testIgnore: '**/http-demo.spec.ts' } : {}),
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
