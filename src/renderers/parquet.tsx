@@ -7,7 +7,7 @@
  *  decode cost for partial output). Each RG's decoded rows live in
  *  memory until the RG changes.
  *
- *  **Render unit = `ROWS_PER_PAGE` rows.** Even a small RG (25k rows)
+ *  **Render unit = `pageSize` rows (default 100).** Even a small RG (25k rows)
  *  is far too many `<tr>` for the DOM (freeze on layout + scroll). An
  *  in-RG pager slices the already-decoded rows to a viewport-sized
  *  page. Advancing/rewinding across the RG boundary auto-jumps to
@@ -123,7 +123,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -265,11 +265,11 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // makes this necessary as well as simpler: a sort is over every row,
   // so paging within one group would be meaningless.
   const rowBase = smallTable ? 0 : rg.rowStart
-  const rgPageCount = rows ? Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE)) : 0
+  const rgPageCount = rows ? Math.max(1, Math.ceil(rows.length / pageSize)) : 0
   const clampedRgPage = Math.min(Math.max(rgPage, 0), Math.max(0, rgPageCount - 1))
-  const pageRowStart = rowBase + clampedRgPage * ROWS_PER_PAGE
-  const pageRowEnd = rows ? rowBase + Math.min((clampedRgPage + 1) * ROWS_PER_PAGE, rows.length) : pageRowStart
-  const visibleRows = rows ? rows.slice(clampedRgPage * ROWS_PER_PAGE, (clampedRgPage + 1) * ROWS_PER_PAGE) : null
+  const pageRowStart = rowBase + clampedRgPage * pageSize
+  const pageRowEnd = rows ? rowBase + Math.min((clampedRgPage + 1) * pageSize, rows.length) : pageRowStart
+  const visibleRows = rows ? rows.slice(clampedRgPage * pageSize, (clampedRgPage + 1) * pageSize) : null
   pageCtxRef.current = { rows: visibleRows ?? [], columns: schema, path, pageStart: pageRowStart, totalRows }
 
 
@@ -413,7 +413,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
               <tr><td colSpan={schema.length} style={{ padding: '0.5em', opacity: 0.6 }}>loading row group {rgIndex}…</td></tr>
             ) : (
               visibleRows.map((r, i) => (
-                <tr key={clampedRgPage * ROWS_PER_PAGE + i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
+                <tr key={clampedRgPage * pageSize + i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
                   {schema.map(c => {
                     const value = r[c.name]
                     const tf = temporal.get(c.name)

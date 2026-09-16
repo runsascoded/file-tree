@@ -134,6 +134,11 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
    *  both values parse as numbers, else locale string order) reads a
    *  column wrong — a version string, an ordered enum. */
   sortComparators?: SortComparators
+  /** Rows per page, for viewers that paginate by *rows* — parquet, which
+   *  pages within a row group. Ignored where a viewer paginates by bytes
+   *  (CSV reads fixed byte ranges, so it has no rows-per-page). Default
+   *  100. */
+  pageSize?: number
   /** How long cell values that outgrow their column are rendered — the
    *  clip and the way the full value comes back. `true`/absent is the
    *  batteries-included default (clip at 30em, native `title` = the full
@@ -325,9 +330,15 @@ export function cellTitle(value: unknown): string | undefined {
     default: return undefined
   }
 }
+/** Header cells earn a visible distinction from the body — on a dark
+ *  background `fontWeight: 500` with a hairline border read as just
+ *  another row. A heavier weight, a 2px rule, and a faint grey tint (a
+ *  neutral that works in either theme) set the header apart by default;
+ *  a consumer overrides any of it via `headerProps`. */
 export const TH_STYLE: CSSProperties = {
-  padding: '0.3em 0.6em', textAlign: 'left', fontWeight: 500,
-  borderBottom: '1px solid rgba(127,127,127,0.4)',
+  padding: '0.3em 0.6em', textAlign: 'left', fontWeight: 650,
+  borderBottom: '2px solid rgba(127,127,127,0.55)',
+  backgroundColor: 'rgba(127,127,127,0.06)',
 }
 export const NUMERIC_ALIGN: CSSProperties = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
 

@@ -36,11 +36,17 @@ Two shapes of the same problem, best solved separately:
 
 Ryan's specific ask was a `"` marker for the `bucket` column; the fold is the better answer for that column, and ditto marks are the answer for the run-shaped ones.
 
-## 3. `pageSize` option
+## 3. `pageSize` option — ✓ Phase A
+
+`pageSize?: number` on `TableViewerOptions` (default 100, kept from the old `ROWS_PER_PAGE` constant to avoid a silent behavior change). Honored by parquet's intra-RG row pagination; ignored by CSV (byte pagination). A rows-per-page *control* is deferred — the prop is the config; the control is extra chrome.
 
 `ROWS_PER_PAGE = 100` is a module constant. Make it an option (`pageSize`, default maybe 50 — Ryan: "should page size be configurable? default < 100?"), and consider a control next to the in-RG pager (`rows per page: 25 / 50 / 100 / 250`) bound through `usePersistedState` like the other viewer state, so a reader can widen a page for scanning or narrow it for a slow renderer.
 
-## 4. Header row distinction
+## 4. Header row distinction — ✓ Phase A
+
+Two parts: the *custom-`<th>` closure* and the *default styling*.
+- **Closure — already present.** `renderHeader` (`TableHeaderRenderer` / `TableHeaderCtx`) is a separate closure from `renderCell`, wired through parquet, csv, and tableBrowser. Ryan's ask ("custom-render `<th>`s with an arbitrary fn, distinct from cells") is met by the existing API; nothing to add.
+- **Default `TH_STYLE`** bumped: `fontWeight: 500 → 650`, `borderBottom: 1px → 2px` at higher alpha, plus a faint `rgba(127,127,127,0.06)` tint (a neutral that reads in either theme). Overridable via `headerProps`.
 
 `TH_STYLE` is `fontWeight: 500` with a 1px bottom border, which on a dark background reads as just another row (screenshot: the header line was not visibly different from data rows). Suggest `fontWeight: 600–650`, a slightly stronger bottom border, and/or a faint background tint on `<thead>` — as the default, since the inline style can't be overridden from consumer CSS without `!important` (mgu's workaround is `headerProps.style`). If the default stays light, at least document the `headerProps` route in the README next to `elide`.
 
