@@ -47,6 +47,7 @@ type Width = 'compact' | 'wide'
 type Tip = 'rich' | 'native' | 'none'
 type Clip = 'clipped' | 'always'
 type Ell = 'end' | 'start' | 'middle'
+type Dit = 'off' | 'on'
 
 /** A floating-ui tooltip supplied by the *consumer* — this is what the
  *  `elide.tooltip` render-prop is for. It wraps the cell's own node and
@@ -162,6 +163,10 @@ export function ElideDemo() {
   // long `checkpoints/…` / `runs/…` prefix, so end-clip (the default) hides
   // the shard id that differs; `start` keeps the tail, `middle` keeps both.
   const [ell, setEll] = useState<Ell>('end')
+  // Collapse runs of equal `sweeper` values to a ditto mark — a separate
+  // `ditto` viewer option, not part of `elide`. The fixture has adjacent
+  // repeats (david/david, ahmed/ahmed) so the mark is visible unsorted.
+  const [ditto, setDitto] = useState<Dit>('off')
 
   const elide = useMemo<ElideConfig>(() => ({
     ...(width === 'wide' ? { maxWidth: false } : {}),
@@ -220,6 +225,15 @@ export function ElideDemo() {
             { key: 'middle', label: 'Middle' },
           ]}
         />
+        <Segmented<Dit>
+          label="Ditto (sweeper)"
+          value={ditto}
+          onChange={setDitto}
+          options={[
+            { key: 'off', label: 'Off' },
+            { key: 'on', label: 'On' },
+          ]}
+        />
       </div>
 
       {/* Deliberately narrower than the longest path so the axes read: in
@@ -234,7 +248,7 @@ export function ElideDemo() {
           group's instant-phase alive as the cursor moves. */}
       <FloatingDelayGroup delay={{ open: 100, close: 200 }}>
         <div data-testid="elide-table" style={{ border: '1px solid #8883', borderRadius: 8, overflow: 'hidden', maxWidth: 640 }}>
-          <CsvViewer store={store} path="sweep-log.csv" delimiter="," elide={elide} resizableColumns fullLoadMaxBytes={Infinity} />
+          <CsvViewer store={store} path="sweep-log.csv" delimiter="," elide={elide} ditto={ditto === 'on' ? ['sweeper'] : undefined} resizableColumns fullLoadMaxBytes={Infinity} />
         </div>
       </FloatingDelayGroup>
 

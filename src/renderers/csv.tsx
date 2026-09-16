@@ -7,7 +7,7 @@
  *  line quoted fields (a quote opening on one line and closing on the
  *  next) — those would need a streaming parser since byte-paginated
  *  chunks can split mid-row. */
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
 import { PAGE_BYTES, useAllCsvRows, useCsvHeader, useCsvPage } from './csvData'
@@ -17,8 +17,9 @@ import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from '
 // Re-exported so the public subpath keeps every name it had; the
 // plumbing now lives in `./csvData` and is importable on its own.
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
-import { applyElide, resolveColStyles, resolveElide, TD_STYLE, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
+import { applyElide, cellTitle, isDitto, resolveColStyles, resolveElide, TD_STYLE, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
 import { ellipsisWrap } from './elideNode'
+import { dittoMark } from './ditto'
 import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import type { PersistedState } from '../react/persistedState'
 
@@ -43,7 +44,7 @@ export function makeCsvViewer(opts: CsvViewerOptions = {}) {
   }
 }
 
-export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, onPage, onCellHover, elide, resizableColumns = false }: {
+export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, ditto, onPage, onCellHover, elide, resizableColumns = false }: {
   store: Store; path: string; delimiter: string; usePersistedState?: PersistedState
 } & CsvViewerOptions) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter)
@@ -81,6 +82,7 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     [filteredKeyed, allColumns])
 
   const el = useMemo(() => resolveElide(elide), [elide])
+  const dittoSet = useMemo(() => (ditto ? new Set(ditto) : undefined), [ditto])
   const cw = useColumnWidths({
     on: !!resizableColumns,
     scope: typeof resizableColumns === 'object' ? (resizableColumns.scope ?? 'path') : 'path',
@@ -204,16 +206,26 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                 // Built from *all* columns: a `renderCell` reading a sibling
                 // shouldn't stop working because that sibling was hidden.
                 const row = () => (asRow ??= Object.fromEntries(allColumns.map((c, j) => [c.name, r[j] ?? ''])))
+                let asPrev: Record<string, unknown> | null = null
+                const prevRow = () => (i > 0 ? (asPrev ??= Object.fromEntries(allColumns.map((c, j) => [c.name, rows![i - 1][j] ?? '']))) : undefined)
                 return (
                   <tr key={i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
                     {columns.map(c => {
                       const st = colStyles.get(c.name)
                       const j = colIndex.get(c.name)!
                       const value = r[j] ?? ''
-                      const rendered = renderCell ? renderCell({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : value
-                      // Ellipsis-wrap before the tooltip (see parquet note).
-                      const wrapped = ellipsisWrap(st?.ellipsis ?? 'end', rendered, !renderCell && typeof value === 'string' ? value : undefined)
-                      const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row: row(), path, ellipsis: st?.ellipsis })
+                      const prevVal = i > 0 ? (rows![i - 1][j] ?? '') : undefined
+                      const rendered = renderCell ? renderCell({ value, column: c, row: row(), prevRow: prevRow(), rowIndex: i, path, defaultNode: value }) : value
+                      const dittoCell = !renderCell && isDitto(dittoSet, c.name, value, prevVal, i)
+                      // Ellipsis-wrap before the tooltip (see parquet note); a
+                      // ditto cell shows the mark and keeps its value on `title`.
+                      let title: string | undefined, measure: ((e: ReactMouseEvent<HTMLElement>) => void) | undefined, node: ReactNode
+                      if (dittoCell) {
+                        node = dittoMark(); title = cellTitle(value)
+                      } else {
+                        const wrapped = ellipsisWrap(st?.ellipsis ?? 'end', rendered, !renderCell && typeof value === 'string' ? value : undefined)
+                        ;({ title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row: row(), path, ellipsis: st?.ellipsis }))
+                      }
                       const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : undefined
                       return (
                         <td

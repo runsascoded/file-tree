@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import {
-  applyElide, cellClipped, cellTitle, elideCellStyle, ELIDE_DEFAULTS, resolveElide,
+  applyElide, cellClipped, cellTitle, elideCellStyle, ELIDE_DEFAULTS, isDitto, resolveElide,
   type ElideCtx,
 } from '../src/renderers/table'
 import { splitMiddle } from '../src/renderers/elideNode'
@@ -53,6 +53,38 @@ describe('cellClipped', () => {
     expect(cellClipped(fakeTd(200, 200))).toBe(false)
     expect(cellClipped(fakeTd(201, 200))).toBe(false)
     expect(cellClipped(fakeTd(202, 200))).toBe(true)
+  })
+})
+
+/** `isDitto` decides whether a cell collapses to a ditto mark: opted-in
+ *  column, not the page's first row, value repeats the row above. */
+describe('isDitto', () => {
+  const cols = new Set(['bucket', 'created'])
+
+  it('collapses a repeat in an opted-in column, past the first row', () => {
+    expect(isDitto(cols, 'bucket', 'marin-us-east5', 'marin-us-east5', 1)).toBe(true)
+  })
+
+  it('never collapses the first row of the page', () => {
+    expect(isDitto(cols, 'bucket', 'x', 'x', 0)).toBe(false)
+    expect(isDitto(cols, 'bucket', 'x', undefined, 0)).toBe(false)
+  })
+
+  it('never collapses a column that did not opt in', () => {
+    expect(isDitto(cols, 'name', 'x', 'x', 1)).toBe(false)
+  })
+
+  it('does not collapse when the value differs from the row above', () => {
+    expect(isDitto(cols, 'bucket', 'x', 'y', 1)).toBe(false)
+  })
+
+  it('is off entirely when no column opted in', () => {
+    expect(isDitto(undefined, 'bucket', 'x', 'x', 1)).toBe(false)
+  })
+
+  it('collapses equal primitives but never two distinct objects (Object.is)', () => {
+    expect(isDitto(cols, 'bucket', 5, 5, 1)).toBe(true)
+    expect(isDitto(cols, 'bucket', {}, {}, 1)).toBe(false)
   })
 })
 

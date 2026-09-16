@@ -142,6 +142,17 @@ test.describe('ElideDemo', () => {
     expect(await cell.getAttribute('title')).toBe(FULL_PATH)
   })
 
+  test('ditto collapses a repeated value to a mark, keeping it on the title', async ({ page }) => {
+    await page.getByRole('button', { name: 'On', exact: true }).click()
+    const sweeper = page.locator('[data-testid="elide-table"] tbody tr td:nth-child(3)')
+    // The fixture's sweeper column: david, david, kaiyue, ahmed, ahmed, …
+    await expect(sweeper.nth(0)).toHaveText('david')       // run head keeps its value
+    await expect(sweeper.nth(1)).toHaveText('〃')           // repeat → mark
+    expect(await sweeper.nth(1).getAttribute('title')).toBe('david')  // value recoverable
+    await expect(sweeper.nth(2)).toHaveText('kaiyue')      // a change shows through
+    await expect(sweeper.nth(4)).toHaveText('〃')           // ahmed after ahmed
+  })
+
   // `resizableColumns` — a separate axis from `elide`: drag the header's
   // right-edge handle to pin a width, double-click it to auto-fit.
   const nameHandle = (page: Page): Locator =>

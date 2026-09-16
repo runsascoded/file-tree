@@ -36,6 +36,11 @@ export interface TableCellCtx<C extends TableColumn = TableColumn> {
   column: C
   /** The whole row, for cells whose rendering depends on a sibling. */
   row: Record<string, unknown>
+  /** The previous row *on the current page*, or `undefined` for the first
+   *  row of the page (and viewers that don't track it). The cheap seam for
+   *  a consumer's own "ditto"/run collapsing — compare `value` to
+   *  `prevRow?.[column.name]` — without the viewer imposing one. */
+  prevRow?: Record<string, unknown>
   /** Row index. Absolute within the file where the viewer can know it
    *  (parquet pages within a row group, so it can); page-relative where
    *  it can't — the CSV viewer paginates by *bytes*, so it has no way
@@ -139,6 +144,17 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
    *  (CSV reads fixed byte ranges, so it has no rows-per-page). Default
    *  100. */
   pageSize?: number
+  /** Columns whose repeated values collapse to a ditto mark: in a run of
+   *  equal values, every row after the first (on the page) renders `〃`
+   *  instead of the value, so the eye lands where the column changes. The
+   *  repeated value stays on the `<td>`'s `title` for recovery.
+   *
+   *  Per-column opt-in by name — a ditto on an unsorted or numeric column
+   *  is noise. Only the *default* rendering collapses; a `renderCell` owns
+   *  its column (read {@link TableCellCtx.prevRow} to do your own). Runs are
+   *  detected within the rendered page, so a run spanning a page boundary
+   *  restarts — the first row of a page always shows its value. */
+  ditto?: readonly string[]
   /** How long cell values that outgrow their column are rendered — the
    *  clip and the way the full value comes back. `true`/absent is the
    *  batteries-included default (clip at 30em, native `title` = the full
@@ -309,6 +325,21 @@ export function elideCellStyle(el: ResolvedElide): CSSProperties {
  *  and under `maxWidth: false`). The `+1` absorbs sub-pixel rounding. */
 export function cellClipped(el: HTMLElement): boolean {
   return el.scrollWidth > el.clientWidth + 1
+}
+
+/** Whether a cell collapses to a ditto mark (see {@link TableViewerOptions.ditto}):
+ *  its column opted in, it isn't the first row of the page (`rowInPage > 0`),
+ *  and its value repeats the previous row's. `Object.is` so a run of equal
+ *  strings/numbers collapses but two distinct `Date`/blob objects (ref-unequal)
+ *  never do. */
+export function isDitto(
+  dittoCols: ReadonlySet<string> | undefined,
+  column: string,
+  value: unknown,
+  prevValue: unknown,
+  rowInPage: number,
+): boolean {
+  return dittoCols !== undefined && rowInPage > 0 && dittoCols.has(column) && Object.is(value, prevValue)
 }
 
 /** The per-cell result of an elide strategy: what to hang on the `<td>` for
