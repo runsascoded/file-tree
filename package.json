@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.23db9ca",
+  "version": "0.0.1-dist.847c382",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -39,6 +39,16 @@
       "import": "./stores/multi.js",
       "require": "./stores/multi.cjs"
     },
+    "./stores/s3": {
+      "types": "./stores/s3.d.ts",
+      "import": "./stores/s3.js",
+      "require": "./stores/s3.cjs"
+    },
+    "./stores/gcs": {
+      "types": "./stores/gcs.d.ts",
+      "import": "./stores/gcs.js",
+      "require": "./stores/gcs.cjs"
+    },
     "./test/conformance": {
       "types": "./test/conformance.d.ts",
       "import": "./test/conformance.js",
@@ -49,85 +59,15 @@
       "import": "./server/index.js",
       "require": "./server/index.cjs"
     },
-    "./stores/s3": {
-      "types": "./stores/s3.d.ts",
-      "import": "./stores/s3.js",
-      "require": "./stores/s3.cjs"
-    },
-    "./renderers/parquet": {
-      "types": "./renderers/parquet.d.ts",
-      "import": "./renderers/parquet.js",
-      "require": "./renderers/parquet.cjs"
-    },
-    "./renderers/markdown": {
-      "types": "./renderers/markdown.d.ts",
-      "import": "./renderers/markdown.js",
-      "require": "./renderers/markdown.cjs"
-    },
-    "./renderers/csv": {
-      "types": "./renderers/csv.d.ts",
-      "import": "./renderers/csv.js",
-      "require": "./renderers/csv.cjs"
-    },
-    "./renderers/notebook": {
-      "types": "./renderers/notebook.d.ts",
-      "import": "./renderers/notebook.js",
-      "require": "./renderers/notebook.cjs"
-    },
-    "./renderers/code": {
-      "types": "./renderers/code.d.ts",
-      "import": "./renderers/code.js",
-      "require": "./renderers/code.cjs"
-    },
-    "./renderers/json": {
-      "types": "./renderers/json.d.ts",
-      "import": "./renderers/json.js",
-      "require": "./renderers/json.cjs"
-    },
-    "./url-state": {
-      "types": "./url-state/index.d.ts",
-      "import": "./url-state/index.js",
-      "require": "./url-state/index.cjs"
-    },
-    "./stores/gcs": {
-      "types": "./stores/gcs.d.ts",
-      "import": "./stores/gcs.js",
-      "require": "./stores/gcs.cjs"
+    "./server/sqlite": {
+      "types": "./server/sqlite.d.ts",
+      "import": "./server/sqlite.js",
+      "require": "./server/sqlite.cjs"
     },
     "./renderers/table": {
       "types": "./renderers/table.d.ts",
       "import": "./renderers/table.js",
       "require": "./renderers/table.cjs"
-    },
-    "./renderers/yaml": {
-      "types": "./renderers/yaml.d.ts",
-      "import": "./renderers/yaml.js",
-      "require": "./renderers/yaml.cjs"
-    },
-    "./renderers/parquetData": {
-      "types": "./renderers/parquetData.d.ts",
-      "import": "./renderers/parquetData.js",
-      "require": "./renderers/parquetData.cjs"
-    },
-    "./renderers/csvData": {
-      "types": "./renderers/csvData.d.ts",
-      "import": "./renderers/csvData.js",
-      "require": "./renderers/csvData.cjs"
-    },
-    "./renderers/tableControls": {
-      "types": "./renderers/tableControls.d.ts",
-      "import": "./renderers/tableControls.js",
-      "require": "./renderers/tableControls.cjs"
-    },
-    "./renderers/tableSort": {
-      "types": "./renderers/tableSort.d.ts",
-      "import": "./renderers/tableSort.js",
-      "require": "./renderers/tableSort.cjs"
-    },
-    "./server/sqlite": {
-      "types": "./server/sqlite.d.ts",
-      "import": "./server/sqlite.js",
-      "require": "./server/sqlite.cjs"
     },
     "./renderers/tableSource": {
       "types": "./renderers/tableSource.d.ts",
@@ -153,6 +93,71 @@
       "types": "./renderers/remoteTable.d.ts",
       "import": "./renderers/remoteTable.js",
       "require": "./renderers/remoteTable.cjs"
+    },
+    "./renderers/tableControls": {
+      "types": "./renderers/tableControls.d.ts",
+      "import": "./renderers/tableControls.js",
+      "require": "./renderers/tableControls.cjs"
+    },
+    "./renderers/columnResize": {
+      "types": "./renderers/columnResize.d.ts",
+      "import": "./renderers/columnResize.js",
+      "require": "./renderers/columnResize.cjs"
+    },
+    "./renderers/tableSort": {
+      "types": "./renderers/tableSort.d.ts",
+      "import": "./renderers/tableSort.js",
+      "require": "./renderers/tableSort.cjs"
+    },
+    "./renderers/yaml": {
+      "types": "./renderers/yaml.d.ts",
+      "import": "./renderers/yaml.js",
+      "require": "./renderers/yaml.cjs"
+    },
+    "./renderers/parquet": {
+      "types": "./renderers/parquet.d.ts",
+      "import": "./renderers/parquet.js",
+      "require": "./renderers/parquet.cjs"
+    },
+    "./renderers/parquetData": {
+      "types": "./renderers/parquetData.d.ts",
+      "import": "./renderers/parquetData.js",
+      "require": "./renderers/parquetData.cjs"
+    },
+    "./renderers/markdown": {
+      "types": "./renderers/markdown.d.ts",
+      "import": "./renderers/markdown.js",
+      "require": "./renderers/markdown.cjs"
+    },
+    "./renderers/csv": {
+      "types": "./renderers/csv.d.ts",
+      "import": "./renderers/csv.js",
+      "require": "./renderers/csv.cjs"
+    },
+    "./renderers/csvData": {
+      "types": "./renderers/csvData.d.ts",
+      "import": "./renderers/csvData.js",
+      "require": "./renderers/csvData.cjs"
+    },
+    "./renderers/notebook": {
+      "types": "./renderers/notebook.d.ts",
+      "import": "./renderers/notebook.js",
+      "require": "./renderers/notebook.cjs"
+    },
+    "./renderers/code": {
+      "types": "./renderers/code.d.ts",
+      "import": "./renderers/code.js",
+      "require": "./renderers/code.cjs"
+    },
+    "./renderers/json": {
+      "types": "./renderers/json.d.ts",
+      "import": "./renderers/json.js",
+      "require": "./renderers/json.cjs"
+    },
+    "./url-state": {
+      "types": "./url-state/index.d.ts",
+      "import": "./url-state/index.js",
+      "require": "./url-state/index.cjs"
     },
     "./sqlite/vfs": {
       "types": "./sqlite/vfs.d.ts",
@@ -198,11 +203,6 @@
       "types": "./og/index.d.ts",
       "import": "./og/index.js",
       "require": "./og/index.cjs"
-    },
-    "./renderers/columnResize": {
-      "types": "./renderers/columnResize.d.ts",
-      "import": "./renderers/columnResize.js",
-      "require": "./renderers/columnResize.cjs"
     }
   },
   "keywords": [
@@ -222,18 +222,17 @@
     "url": "https://github.com/runsascoded/file-tree"
   },
   "peerDependencies": {
-    "react": "^18 || ^19",
-    "react-dom": "^18 || ^19",
-    "react-router-dom": "^6 || ^7",
     "highlight.js": "^11",
     "hyparquet": "^1",
-    "react-markdown": "^7 || ^8 || ^9 || ^10",
-    "remark-gfm": "^3 || ^4",
     "jq-web": "^0.6",
+    "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
+    "react-markdown": "^7 || ^8 || ^9 || ^10",
+    "react-router-dom": "^6 || ^7",
+    "remark-gfm": "^3 || ^4",
     "use-prms": "^0.4",
     "yaml": "^2",
     "wa-sqlite": "^1",
-    "@disk-tree/react": "*",
     "@rdub/treemap": "*"
   },
   "peerDependenciesMeta": {

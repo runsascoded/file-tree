@@ -202,6 +202,11 @@ interface TreemapRendererProps {
     highlightedPath?: string | null;
     selectedPath?: string | null;
     onSelectPath?: (path: string | null) => void;
+    /** Navigate the browser to a directory tile's tree-relative path — the
+     *  reference map calls this when a *dir* tile is clicked, so drilling the
+     *  map moves the URL (and with it the listing, breadcrumb, and the map's
+     *  own root) in lockstep rather than drilling the map alone. */
+    onNavigate?: (path: string) => void;
     /** The reverse brush edge (map → listing): the tree-relative path of the
      *  tile under the cursor, `null` when the cursor leaves the map. The split
      *  view wires it to the same hover state the listing drives, so hovering a

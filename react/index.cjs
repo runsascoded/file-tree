@@ -210,6 +210,9 @@ function dirSize(sizes, key) {
   const s = sizes?.get(key);
   return s == null ? "\u2014" : fmtSize(s);
 }
+function scrubMatchesRow(scrub, rowPath) {
+  return scrub != null && (scrub === rowPath || scrub.startsWith(rowPath + "/"));
+}
 function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, setQ: setQExternal, filterPlaceholder = "filter", usePersistedState, markdownRenderer, renderCell, treeSource, onHoverPath, highlightedPath, selectedPath }) {
   const [entries, setEntries] = (0, import_react2.useState)(null);
   const [error, setError] = (0, import_react2.useState)(null);
@@ -338,7 +341,7 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
             onMouseLeave: onHoverPath ? () => onHoverPath(null) : void 0,
             style: {
               borderTop: "1px solid rgba(127,127,127,0.2)",
-              background: highlightedPath === rowPath ? "rgba(127,127,127,0.16)" : selectedPath === rowPath ? "rgba(74,158,255,0.18)" : void 0
+              background: scrubMatchesRow(highlightedPath, rowPath) ? "rgba(127,127,127,0.16)" : scrubMatchesRow(selectedPath, rowPath) ? "rgba(74,158,255,0.18)" : void 0
             },
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: cell("name", /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_react_router_dom2.Link, { to: href, children: [
@@ -966,6 +969,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
           treeSource,
           treemapRenderer,
           prefix: parsed.prefix,
+          routeBase,
           rootPrefix,
           rootLabel: store.describe?.() ?? "root",
           usePersistedState,
@@ -1027,8 +1031,9 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { opacity: 0.7 }, children: "Preview not supported for this file type." });
   }
 }
-function DirView({ treeSource, treemapRenderer: Map2, prefix, rootPrefix, rootLabel, usePersistedState, listing }) {
+function DirView({ treeSource, treemapRenderer: Map2, prefix, routeBase, rootPrefix, rootLabel, usePersistedState, listing }) {
   const use = usePersistedState ?? defaultUseState;
+  const navigate = (0, import_react_router_dom4.useNavigate)();
   const [stored, setView] = use("view", "split");
   const view = stored === "tree" || stored === "split" ? stored : "list";
   const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, "");
@@ -1038,6 +1043,8 @@ function DirView({ treeSource, treemapRenderer: Map2, prefix, rootPrefix, rootLa
     setSelected(null);
     setHovered(null);
   }, [treePath]);
+  const baseTrimmed = routeBase.replace(/\/+$/, "");
+  const navigateTo = (p) => navigate(`${baseTrimmed}/${p}/`);
   const map = (height, onHover) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
     Map2,
     {
@@ -1048,6 +1055,7 @@ function DirView({ treeSource, treemapRenderer: Map2, prefix, rootPrefix, rootLa
       highlightedPath: hovered,
       selectedPath: selected,
       onSelectPath: setSelected,
+      onNavigate: navigateTo,
       onHoverPath: onHover
     }
   );

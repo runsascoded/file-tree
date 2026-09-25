@@ -24,8 +24,14 @@ interface TreeMapViewProps {
     selectedPath?: string | null;
     /** Called to toggle selection when a file (leaf) tile is clicked — the
      *  clicked node's path, or `null` to clear (clicking the selected tile
-     *  again). Directory tiles are left to drill as usual. */
+     *  again, or clicking the map's empty background). */
     onSelectPath?: (path: string | null) => void;
+    /** Called with a *directory* tile's tree-relative path when it's clicked,
+     *  so the consumer can navigate the browser there (the lockstep model:
+     *  the URL moves, and this map re-roots with it via its `path` prop).
+     *  When set, a dir click navigates instead of drilling the map internally;
+     *  when absent, the map falls back to its own built-in internal drill. */
+    onNavigate?: (path: string) => void;
     /** The reverse brush edge (map → listing): the tree-relative path of the
      *  tile under the cursor, or `null` when the cursor leaves every cell. Wire
      *  it to the listing's row highlight for bidirectional linked highlighting. */
@@ -74,6 +80,6 @@ declare const brushBold: BrushStyle;
  *  on mount (and whenever `source`/`path` change), then lets the map
  *  drive its own drill via `loadChildren`, caching each fetched level so
  *  `getChildren` can answer synchronously. */
-declare function TreeMapView({ source, path, rootLabel, height, highlightedPath, selectedPath, onSelectPath, onHoverPath, brushStyle, className, style }: TreeMapViewProps): react_jsx_runtime.JSX.Element;
+declare function TreeMapView({ source, path, rootLabel, height, highlightedPath, selectedPath, onSelectPath, onNavigate, onHoverPath, brushStyle, className, style }: TreeMapViewProps): react_jsx_runtime.JSX.Element;
 
 export { type BrushContext, type BrushRole, type BrushStyle, TreeMapView, type TreeMapViewProps, brushBold, brushRing, brushSpotlight };
