@@ -244,7 +244,7 @@
     "react-markdown": "^7 || ^8 || ^9 || ^10",
     "react-router-dom": "^6 || ^7",
     "remark-gfm": "^3 || ^4",
-    "use-prms": "^0.4",
+    "use-prms": "^0.5.0",
     "yaml": "^2",
     "wa-sqlite": "^1",
     "@rdub/treemap": "*"
@@ -300,7 +300,7 @@
     "remark-gfm": "^4.0.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
-    "use-prms": "^0.4.1",
+    "use-prms": "^0.5.0",
     "vitest": "^2.1.8",
     "wa-sqlite": "^1.0.0",
     "yaml": "^2.9.0",
