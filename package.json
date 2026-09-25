@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.847c382",
+  "version": "0.0.1-dist.a0c7128",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -230,7 +230,7 @@
     "react-markdown": "^7 || ^8 || ^9 || ^10",
     "react-router-dom": "^6 || ^7",
     "remark-gfm": "^3 || ^4",
-    "use-prms": "^0.4",
+    "use-prms": "^0.5.0",
     "yaml": "^2",
     "wa-sqlite": "^1",
     "@rdub/treemap": "*"
