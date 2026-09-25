@@ -124,6 +124,15 @@ function dirSize(sizes: Map<string, number> | null, key: string): ReactNode {
   return s == null ? '—' : fmtSize(s)
 }
 
+/** Does a scrub path (a hovered/selected tile, tree-relative, no trailing
+ *  slash) fall on a listing row? True when it *is* that row or lies under it,
+ *  so hovering/selecting a nested tile lights the top-level row that contains
+ *  it — a descendant has no row of its own in a one-level listing. The `+ '/'`
+ *  guard keeps `samples` from matching a sibling row `samples-old`. */
+export function scrubMatchesRow(scrub: string | null | undefined, rowPath: string): boolean {
+  return scrub != null && (scrub === rowPath || scrub.startsWith(rowPath + '/'))
+}
+
 export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExternal, setQ: setQExternal, filterPlaceholder = 'filter', usePersistedState, markdownRenderer, renderCell, treeSource, onHoverPath, highlightedPath, selectedPath }: DirListingProps) {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -264,8 +273,8 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
                 onMouseLeave={onHoverPath ? () => onHoverPath(null) : undefined}
                 style={{
                   borderTop: '1px solid rgba(127,127,127,0.2)',
-                  background: highlightedPath === rowPath ? 'rgba(127,127,127,0.16)'
-                    : selectedPath === rowPath ? 'rgba(74,158,255,0.18)'
+                  background: scrubMatchesRow(highlightedPath, rowPath) ? 'rgba(127,127,127,0.16)'
+                    : scrubMatchesRow(selectedPath, rowPath) ? 'rgba(74,158,255,0.18)'
                       : undefined,
                 }}
               >

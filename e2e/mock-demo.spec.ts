@@ -69,7 +69,7 @@ test.describe('MockDemo', () => {
     await expect(regionsRow.getByRole('cell').nth(1)).toHaveText('207 B')
   })
 
-  test('the treemap toggle renders the tree as area, and drills', async ({ page }) => {
+  test('the treemap toggle renders the tree as area, and a dir tile navigates', async ({ page }) => {
     await page.goto('/mock')
     // The list↔map toggle only appears when both a treeSource and a
     // treemapRenderer are wired. Switching to the map persists to
@@ -87,20 +87,60 @@ test.describe('MockDemo', () => {
     const samples = page.locator('.dt-treemap-cell.branch', { hasText: 'samples' }).first()
     await expect(samples).toBeVisible()
 
-    // Clicking a directory tile drills in via loadChildren — no
-    // navigation, the crumb becomes root / samples and the biggest
-    // child (catalog.sqlite, 72 KB) is now the dominant cell. Click the
-    // label strip (top-left) so a nested child tile can't intercept.
+    // Clicking a directory tile *navigates the browser* (the lockstep
+    // model): the same navigation a listing-row click performs, so the URL
+    // moves to the dir, the map re-roots there (biggest child catalog.sqlite,
+    // 72 KB, now dominant), and — like a row click — the transient ?view is
+    // dropped (back to the default split view). Click the label strip
+    // (top-left) so a nested child tile can't intercept.
     await samples.click({ position: { x: 30, y: 10 } })
+    await expect(page).toHaveURL(/\/mock\/samples\/?$/)
     await expect(page.getByText('84.7 KB')).toBeVisible()
     const catalog = page.locator('.dt-treemap-cell', { hasText: 'catalog.sqlite' }).first()
     await expect(catalog).toBeVisible()
     await expect(catalog).toContainText('72.0 KB')
+  })
 
-    // Toggling back to the list restores the table and drops ?view=tree.
-    await page.getByRole('button', { name: 'List view' }).click()
-    await expect(page).not.toHaveURL(/view=tree/)
-    await expect(page.getByRole('row').filter({ hasText: /📁\s*samples\// })).toBeVisible()
+  test('a dir tile moves the listing with it (lockstep drill = navigate)', async ({ page }) => {
+    await page.goto('/mock')
+    // Split view (default) shows the listing and the map over one source.
+    // Drilling the map must move the *listing* too, not just the map — the
+    // regression that motivated routing dir clicks through navigation.
+    await expect(page.getByText('7 entries')).toBeVisible()
+    const samples = page.locator('.dt-treemap-cell.branch', { hasText: 'samples' }).first()
+    await expect(samples).toBeVisible()
+    await samples.click({ position: { x: 30, y: 10 } })
+
+    await expect(page).toHaveURL(/\/mock\/samples\/?$/)
+    // The listing followed: samples/ has three files, and a samples/ row is
+    // gone (we're inside it now).
+    await expect(page.getByText('3 entries')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'catalog.sqlite', exact: true })).toBeVisible()
+    await expect(page.getByRole('row').filter({ hasText: /📁\s*samples\// })).toHaveCount(0)
+    // …and the breadcrumb.
+    await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('samples')
+  })
+
+  test('pinning a file tile lights its listing row; a background click clears it', async ({ page }) => {
+    await page.goto('/mock')
+    // A *file* tile toggles a persistent selection that lights the matching
+    // listing row (the split-view cross-highlight). The row carries no
+    // background until pinned.
+    const cfgRow = page.getByRole('row').filter({ hasText: 'config.json' })
+    await expect(cfgRow).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+
+    await page.locator('.dt-treemap-cell', { hasText: 'config.json' }).first().click()
+    // Move the cursor off the map: a live hover highlight (grey) intentionally
+    // takes visual priority over the selection, and a real click leaves the
+    // cursor on the tile — so read the selection colour with hover cleared.
+    await page.getByRole('heading', { name: 'MockStore demo' }).hover()
+    await expect(cfgRow).toHaveCSS('background-color', 'rgba(74, 158, 255, 0.18)')
+
+    // Clicking the map's empty background (dispatched on the map container,
+    // which no cell handler stops) clears the pin — you don't have to find
+    // and re-click the exact tile.
+    await page.locator('.dt-treemap-map').dispatchEvent('click')
+    await expect(cfgRow).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   })
 
   test('filters entries', async ({ page }) => {

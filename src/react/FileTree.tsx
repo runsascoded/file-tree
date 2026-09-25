@@ -10,7 +10,7 @@
  *   } />
  */
 import { cloneElement, isValidElement, useEffect, useMemo, useState, type ComponentProps, type ComponentType, type ReactElement, type ReactNode } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { Store } from '../types'
 import type { TreeSource } from '../renderers/treeSource'
 import { Breadcrumb, type Crumb, type CrumbRenderer } from './Breadcrumb'
@@ -74,6 +74,11 @@ export interface TreemapRendererProps {
   highlightedPath?: string | null
   selectedPath?: string | null
   onSelectPath?: (path: string | null) => void
+  /** Navigate the browser to a directory tile's tree-relative path — the
+   *  reference map calls this when a *dir* tile is clicked, so drilling the
+   *  map moves the URL (and with it the listing, breadcrumb, and the map's
+   *  own root) in lockstep rather than drilling the map alone. */
+  onNavigate?: (path: string) => void
   /** The reverse brush edge (map → listing): the tree-relative path of the
    *  tile under the cursor, `null` when the cursor leaves the map. The split
    *  view wires it to the same hover state the listing drives, so hovering a
@@ -274,6 +279,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
           treeSource={treeSource}
           treemapRenderer={treemapRenderer}
           prefix={parsed.prefix}
+          routeBase={routeBase}
           rootPrefix={rootPrefix}
           rootLabel={store.describe?.() ?? 'root'}
           usePersistedState={usePersistedState}
@@ -351,16 +357,18 @@ type DirViewMode = 'list' | 'tree' | 'split'
  *  `?view=split`. The listing is passed in already-built; the map's own
  *  drill state is cheap to rebuild on toggle, so `list`/`tree` mount
  *  only the selected view, while `split` mounts both. */
-function DirView({ treeSource, treemapRenderer: Map, prefix, rootPrefix, rootLabel, usePersistedState, listing }: {
+function DirView({ treeSource, treemapRenderer: Map, prefix, routeBase, rootPrefix, rootLabel, usePersistedState, listing }: {
   treeSource: TreeSource
   treemapRenderer: TreemapRenderer
   prefix: string
+  routeBase: string
   rootPrefix: string
   rootLabel: string
   usePersistedState?: PersistedState
   listing: ReactNode
 }) {
   const use = usePersistedState ?? defaultUseState
+  const navigate = useNavigate()
   const [stored, setView] = use('view', 'split' as DirViewMode)
   const view: DirViewMode = stored === 'tree' || stored === 'split' ? stored : 'list'
   const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, '')
@@ -376,9 +384,17 @@ function DirView({ treeSource, treemapRenderer: Map, prefix, rootPrefix, rootLab
   // where a listing row is there to light up. In tree-only view the map keeps
   // its own built-in hover affordance; feeding hover back as `highlightedPath`
   // would just have a tile ring itself, doubling up.
+  // A dir tile navigates the browser like a listing row would: `<baseTrimmed>/
+  // <treePath>/` (trailing slash so `parsePath` reads it as a dir even when the
+  // name looks like it has an extension). The URL change re-roots the map (its
+  // `path` prop) and re-lists the table — one source of truth — and the
+  // `[treePath]` effect above clears any stale pin.
+  const baseTrimmed = routeBase.replace(/\/+$/, '')
+  const navigateTo = (p: string) => navigate(`${baseTrimmed}/${p}/`)
   const map = (height?: string, onHover?: (p: string | null) => void) =>
     <Map source={treeSource} path={treePath} rootLabel={rootLabel} height={height}
-      highlightedPath={hovered} selectedPath={selected} onSelectPath={setSelected} onHoverPath={onHover} />
+      highlightedPath={hovered} selectedPath={selected} onSelectPath={setSelected}
+      onNavigate={navigateTo} onHoverPath={onHover} />
   // Inject scrub props into the already-built listing element (Body owns
   // its construction; only split view needs the wiring, so clone rather
   // than thread the props through every mode).

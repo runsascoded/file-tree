@@ -19,8 +19,11 @@
  *  accessor, and it drives its own lazy drill through `loadChildren`.
  *  So the whole adapter is a handful of `TreeNode` accessors plus a
  *  `path → children` cache that `getChildren` reads synchronously as
- *  `loadChildren` fills it. Drill is internal to the map (click a
- *  directory tile to descend); it needs no router.
+ *  `loadChildren` fills it. When an `onNavigate` is wired, a directory
+ *  tile *navigates the browser* instead of drilling internally — the URL
+ *  (and with it the listing, breadcrumb, and this map's own root) all
+ *  move together, one source of truth. Without it, the map keeps its
+ *  built-in internal drill.
  *
  *  See `specs/tree-sources-and-treemap.md`.
  */
@@ -50,8 +53,14 @@ export interface TreeMapViewProps {
   selectedPath?: string | null
   /** Called to toggle selection when a file (leaf) tile is clicked — the
    *  clicked node's path, or `null` to clear (clicking the selected tile
-   *  again). Directory tiles are left to drill as usual. */
+   *  again, or clicking the map's empty background). */
   onSelectPath?: (path: string | null) => void
+  /** Called with a *directory* tile's tree-relative path when it's clicked,
+   *  so the consumer can navigate the browser there (the lockstep model:
+   *  the URL moves, and this map re-roots with it via its `path` prop).
+   *  When set, a dir click navigates instead of drilling the map internally;
+   *  when absent, the map falls back to its own built-in internal drill. */
+  onNavigate?: (path: string) => void
   /** The reverse brush edge (map → listing): the tree-relative path of the
    *  tile under the cursor, or `null` when the cursor leaves every cell. Wire
    *  it to the listing's row highlight for bidirectional linked highlighting. */
@@ -134,7 +143,7 @@ export const brushBold: BrushStyle = (s, { role }) =>
  *  on mount (and whenever `source`/`path` change), then lets the map
  *  drive its own drill via `loadChildren`, caching each fetched level so
  *  `getChildren` can answer synchronously. */
-export function TreeMapView({ source, path = '', rootLabel = 'root', height = '70vh', highlightedPath, selectedPath, onSelectPath, onHoverPath, brushStyle = brushRing, className, style }: TreeMapViewProps) {
+export function TreeMapView({ source, path = '', rootLabel = 'root', height = '70vh', highlightedPath, selectedPath, onSelectPath, onNavigate, onHoverPath, brushStyle = brushRing, className, style }: TreeMapViewProps) {
   const norm = path.replace(/^\/+|\/+$/g, '')
   const [root, setRoot] = useState<TreeNode | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -177,7 +186,15 @@ export function TreeMapView({ source, path = '', rootLabel = 'root', height = '7
   if (!root) return <div style={{ opacity: 0.7 }}>Loading treemap…</div>
 
   return (
-    <div className={className} style={{ height, ...style }}>
+    // A click that reaches this outer div (rather than a cell — cells
+    // `stopPropagation`) landed on the map's empty background/gutter, so
+    // clear any pinned selection. Lets you de-pin without having to find
+    // and re-click the exact tile.
+    <div
+      className={className}
+      style={{ height, ...style }}
+      onClick={onSelectPath ? () => onSelectPath(null) : undefined}
+    >
       <Treemap<TreeNode>
         root={root}
         formatSize={fmtSize}
@@ -193,10 +210,20 @@ export function TreeMapView({ source, path = '', rootLabel = 'root', height = '7
               : 'other'
           return brushStyle(s, { role, node: n })
         }}
-        // Click a *file* tile to toggle its selection (a dir tile is left to
-        // drill). `true` marks the click handled so the map skips its default.
-        onCellClick={onSelectPath == null ? undefined : n => {
-          if (n.kind === 'dir') return
+        // A *dir* tile navigates the browser (`onNavigate`) so the URL,
+        // listing, and this map re-root together — returning `true` suppresses
+        // the map's built-in internal drill. With no `onNavigate` wired, the
+        // dir click falls through to that internal drill. A *file* tile toggles
+        // its selection. `true` marks the click handled so the map skips its
+        // default; `stopPropagation` (the map's own) keeps it off the
+        // background-click de-pin handler above.
+        onCellClick={onSelectPath == null && onNavigate == null ? undefined : n => {
+          if (n.kind === 'dir') {
+            if (onNavigate == null) return
+            onNavigate(n.path)
+            return true
+          }
+          if (onSelectPath == null) return
           onSelectPath(n.path === selectedPath ? null : n.path)
           return true
         }}
