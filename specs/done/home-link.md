@@ -24,3 +24,14 @@ Default (none set): unchanged.
 
 - jc-taxes `www/src/Files.tsx` (mounted at `/files`): `home={{ href: '/', label: 'JC tax map' }}`, `titleHref="/"`. It has an interim hand-rolled link above `FileTree`, to remove once this lands.
 - jc-taxes `files/src/Browser.tsx` (standalone `jct-files.rbw.sh`): `home={{ href: 'https://jct.rbw.sh', label: 'jct.rbw.sh' }}`.
+
+## Resolution (2026-09-27)
+
+Implemented as proposed:
+
+- `home?: { href; label: ReactNode }` prepends a crumb before the store root. It's a plain `<a href>` styled like the other crumb links, and it's never the "current" (plain-text) crumb.
+- `titleHref?: string` wraps the `<h1>` title in `<a>` (`color: inherit`, underline on hover via mouse-enter/leave, since inline styles can't express `:hover`).
+- `title` widened to `ReactNode`.
+- `Crumb.label` widened to `ReactNode` (no consumer's `renderCrumb` read it as a string), plus `Crumb.kind?: 'home'`. `renderCrumb` sees the home crumb at `index` 0. Breadcrumb React keys are now `kind:to`, so a home `href` equal to the root route can't collide.
+
+Tests (`test/home-link.test.ts`, static markup under `MemoryRouter`, exact equality): neither set (no `<h1>`, nav starts at the store root), `home` (link first, tree crumbs unchanged), `titleHref` on/off, and `renderCrumb` indices/kinds. The MockStore demo now uses both (`home={{ href: '/', label: 'demos' }}`, `titleHref="/"`).

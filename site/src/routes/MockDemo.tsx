@@ -396,6 +396,10 @@ export function MockDemo() {
         store={store}
         routeBase="/mock"
         title="MockStore demo"
+        // A mounted tree links back to its host site: the title, and a first
+        // breadcrumb segment before the store root.
+        titleHref="/"
+        home={{ href: '/', label: 'demos' }}
         treeSource={treeSource}
         treemapRenderer={BrushableTreeMap}
         markdownRenderer={renderMarkdown}

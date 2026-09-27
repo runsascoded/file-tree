@@ -106,8 +106,16 @@ export interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
   rootPrefix?: string
   /** Additional file extensions to render as text. */
   extraTexty?: string[]
-  /** Optional title to show above the breadcrumb. */
-  title?: string
+  /** Optional title to show above the breadcrumb (text, or e.g. a logo). */
+  title?: ReactNode
+  /** Make `title` a link (inherits color, underlines on hover) — typically
+   *  the host site's root, or the same `href` as `home`. */
+  titleHref?: string
+  /** Link back to the site this tree is mounted in, rendered as the first
+   *  breadcrumb segment before the root: `Site / root / dir / file`. A plain
+   *  `<a href>` (it usually leaves `routeBase`), styled like the other
+   *  crumbs. `renderCrumb` sees it with `crumb.kind === 'home'`. */
+  home?: { href: string; label: ReactNode }
   /** Optional className for the outer wrapper. */
   className?: string
   /** Optional inline style for the outer wrapper. */
@@ -221,12 +229,15 @@ export interface ViewerActionCtx {
   entry?: string
 }
 
-export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>) {
+export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
   const parsed = useMemo(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty])
-  const crumbs = useMemo(() => buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? 'root'), [parsed, routeBase, rootPrefix])
+  const crumbs = useMemo(() => {
+    const tree = buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? 'root')
+    return home ? [{ label: home.label, to: home.href, kind: 'home' as const }, ...tree] : tree
+  }, [parsed, routeBase, rootPrefix, home])
   // `zipEntry` would point `getUrl` at the wrapping zip — misleading.
   // Suppress there; entry extraction is the consumer's concern.
   const downloadable = parsed.kind !== 'dir' && parsed.kind !== 'zipEntry'
@@ -252,7 +263,22 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
 
   return (
     <div className={className} style={style}>
-      {title && <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>{title}</h1>}
+      {title && (
+        <h1 style={{ fontSize: '1.4em', margin: '0 0 0.3em' }}>
+          {titleHref
+            ? (
+                <a
+                  href={titleHref}
+                  style={{ color: 'inherit', textDecoration: 'none' }}
+                  onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline' }}
+                  onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none' }}
+                >
+                  {title}
+                </a>
+              )
+            : title}
+        </h1>
+      )}
       <Breadcrumb crumbs={crumbs} rightSlot={right} renderCrumb={renderCrumb} />
       <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} pdfRenderer={pdfRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} treemapRenderer={treemapRenderer} />
     </div>

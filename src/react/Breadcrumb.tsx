@@ -2,8 +2,13 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 export interface Crumb {
-  label: string
+  label: ReactNode
+  /** Route (router-relative) for tree crumbs; a plain `href` for the
+   *  `home` crumb, which usually leaves the router's `routeBase`. */
   to: string
+  /** `'home'` marks the host-site link `<FileTree home>` prepends before
+   *  the root crumb; absent for tree crumbs. */
+  kind?: 'home'
   /** Store key this crumb addresses (directories include a trailing
    *  slash). Populated by `<FileTree>`; optional so hand-built
    *  `Crumb[]`s stay valid. */
@@ -29,11 +34,13 @@ export function Breadcrumb({ crumbs, separator = ' / ', rightSlot, renderCrumb }
     <nav aria-label="Breadcrumb" style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.95em', marginBottom: '0.5em' }}>
       {crumbs.map((c, i) => {
         const isLast = i === crumbs.length - 1
-        const defaultNode = isLast
-          ? <span style={{ opacity: 0.7 }}>{c.label}</span>
-          : <Link to={c.to}>{c.label}</Link>
+        const defaultNode = c.kind === 'home'
+          ? <a href={c.to}>{c.label}</a>
+          : isLast
+            ? <span style={{ opacity: 0.7 }}>{c.label}</span>
+            : <Link to={c.to}>{c.label}</Link>
         return (
-          <span key={c.to}>
+          <span key={`${c.kind ?? 'tree'}:${c.to}`}>
             {i > 0 && <span style={{ opacity: 0.5 }}>{separator}</span>}
             {renderCrumb ? renderCrumb({ crumb: c, index: i, isLast, defaultNode }) : defaultNode}
           </span>
