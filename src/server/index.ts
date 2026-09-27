@@ -119,7 +119,11 @@ export function createHandlers(store: Store, opts: CreateHandlersOptions = {}): 
           // `download` attribute on cross-origin anchors, so without this
           // header the saved file is named after the URL path (e.g. `get`).
           const basename = p.split('/').pop() || p
-          headers.set('Content-Disposition', `attachment; filename="${basename.replace(/"/g, '\\"')}"`)
+          // `?inline=1` (from `getUrl(path, { inline: true })`, used by the
+          // PDF/media viewers' `<iframe>`/`<video>`) renders in place;
+          // otherwise `attachment` so a download keeps its name.
+          const disposition = url.searchParams.get('inline') === '1' ? 'inline' : 'attachment'
+          headers.set('Content-Disposition', `${disposition}; filename="${basename.replace(/"/g, '\\"')}"`)
           if (range && result.totalSize != null) {
             headers.set('Content-Range', `bytes ${range.offset}-${range.offset + result.bytes.byteLength - 1}/${result.totalSize}`)
             return new Response(result.bytes as BodyInit, { status: 206, headers })
@@ -147,6 +151,11 @@ function errorResponse(e: unknown, extra: Record<string, string>): Response {
   // each carry their own copy of `../types`, so the `NotFoundError` thrown
   // from a store impl isn't `instanceof` this module's `NotFoundError`.
   if (e instanceof Error && e.name === 'NotFoundError') {
+    return jsonResponse({ error: e.message }, 404, extra)
+  }
+  // Outside the store's `prefixes` allow-list: 404 like a missing key, so
+  // the response doesn't confirm that a hidden key exists.
+  if (e instanceof Error && e.name === 'ForbiddenPathError') {
     return jsonResponse({ error: e.message }, 404, extra)
   }
   const msg = e instanceof Error ? e.message : String(e)

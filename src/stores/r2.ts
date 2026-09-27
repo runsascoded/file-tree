@@ -14,7 +14,7 @@
  */
 import { AwsV4Signer } from 'aws4fetch'
 import type { Entry, GetResult, ListOptions, ListResult, Range, Store } from '../types'
-import { NotFoundError } from '../types'
+import { ForbiddenPathError, NotFoundError } from '../types'
 
 /** Cloudflare's `R2Bucket` shape — minimal subset we use. Avoid pulling in
  *  `@cloudflare/workers-types` as a dep so non-CFW consumers can install
@@ -89,7 +89,7 @@ export function R2Store(bucket: R2Bucket, opts: R2StoreOptions = {}): Store {
   const checkPrefix = (path: string, label: string) => {
     if (!allowedPrefixes || allowedPrefixes.length === 0) return
     if (allowedPrefixes.some(p => path === p || path.startsWith(p))) return
-    throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(', ')}`)
+    throw new ForbiddenPathError(label, path)
   }
 
   return {

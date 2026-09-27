@@ -21,7 +21,7 @@ export interface MediaViewerProps {
 }
 
 export function MediaViewer({ store, path, kind }: MediaViewerProps) {
-  const direct = typeof store.getUrl === 'function' ? store.getUrl(path) : null
+  const direct = typeof store.getUrl === 'function' ? store.getUrl(path, { inline: true }) : null
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 

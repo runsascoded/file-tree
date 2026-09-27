@@ -75,12 +75,12 @@ describe('R2Store scoped-prefix virtual root', () => {
 
   it('rejects listing outside allowed prefixes', async () => {
     const store = R2Store(bucket, { prefixes: ['gbfs/', 'avail/'] })
-    await expect(store.list('private/')).rejects.toThrow(/not under any allowed prefix/)
+    await expect(store.list('private/')).rejects.toMatchObject({ name: 'ForbiddenPathError', message: 'list prefix "private/" not under an allowed prefix' })
   })
 
   it('rejects get outside allowed prefixes', async () => {
     const store = R2Store(bucket, { prefixes: ['gbfs/', 'avail/'] })
-    await expect(store.get('private/secrets.txt')).rejects.toThrow(/not under any allowed prefix/)
+    await expect(store.get('private/secrets.txt')).rejects.toMatchObject({ name: 'ForbiddenPathError', message: 'get path "private/secrets.txt" not under an allowed prefix' })
   })
 
   it('escape-hatch: prefixes:[""] allows whole-bucket listing', async () => {
@@ -170,7 +170,7 @@ describe('R2Store getDownloadUrl (presign)', () => {
 
   it('enforces prefix allow-list before signing', async () => {
     const store = R2Store(bucket, { prefixes: ['raw/'], presign })
-    await expect(store.getDownloadUrl!('private/secret')).rejects.toThrow(/not under any allowed prefix/)
+    await expect(store.getDownloadUrl!('private/secret')).rejects.toMatchObject({ name: 'ForbiddenPathError', message: 'getDownloadUrl path "private/secret" not under an allowed prefix' })
   })
 
   it('quotes filename with embedded double-quote', async () => {

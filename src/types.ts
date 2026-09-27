@@ -79,7 +79,7 @@ export interface Store {
    *  streams the bytes — no client buffering). Stores that can't expose a
    *  GET-able URL (in-memory, CFW R2 binding, presigning-required) omit
    *  this and the UI hides the download affordance. */
-  getUrl?(path: string): string
+  getUrl?(path: string, opts?: GetUrlOptions): string
 
   /** Like `getUrl(path)` but async — for stores that mint URLs on demand
    *  (SigV4 presigning, redirect lookups). The returned URL should point
@@ -140,4 +140,24 @@ export class NotFoundError extends Error {
     super(`not found: ${path}`)
     this.name = 'NotFoundError'
   }
+}
+
+/** Thrown by a store whose `prefixes` allow-list excludes `path`. Servers
+ *  map it to 404 (not 403) so a hidden key's existence isn't confirmed; the
+ *  message names the path but not the allow-list. Match on
+ *  `e.name === 'ForbiddenPathError'` (see `NotFoundError`). */
+export class ForbiddenPathError extends Error {
+  constructor(label: string, path: string) {
+    super(`${label} ${JSON.stringify(path)} not under an allowed prefix`)
+    this.name = 'ForbiddenPathError'
+  }
+}
+
+/** Options for `Store.getUrl`. */
+export interface GetUrlOptions {
+  /** The URL is for in-page rendering (`<iframe>`/`<img>`/`<video>`), not a
+   *  download: stores that proxy through a server which sets
+   *  `Content-Disposition` (e.g. `HttpStore` → `/get`) ask for `inline`
+   *  instead of `attachment`. Direct object URLs ignore it. */
+  inline?: boolean
 }

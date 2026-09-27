@@ -6,7 +6,7 @@
  *   import { HttpStore } from '@rdub/file-tree/stores/http'
  *   const store = HttpStore('https://api.example.com/v1/files')
  */
-import type { GetResult, ListOptions, ListResult, Range, Store } from '../types'
+import type { GetResult, GetUrlOptions, ListOptions, ListResult, Range, Store } from '../types'
 import { NotFoundError } from '../types'
 
 export interface HttpStoreOptions {
@@ -69,8 +69,8 @@ export function HttpStore(apiBase: string, opts: HttpStoreOptions = {}): Store {
 
     capabilities: { range: true },
 
-    getUrl(path: string): string {
-      return `${base}/get?path=${encodeURIComponent(path)}`
+    getUrl(path: string, urlOpts?: GetUrlOptions): string {
+      return `${base}/get?path=${encodeURIComponent(path)}${urlOpts?.inline ? '&inline=1' : ''}`
     },
 
     // Opt-in via `presign: true`. The server only mounts `/presign` when

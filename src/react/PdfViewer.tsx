@@ -19,7 +19,7 @@ export interface PdfViewerProps {
 }
 
 export function PdfViewer({ store, path }: PdfViewerProps) {
-  const direct = typeof store.getUrl === 'function' ? store.getUrl(path) : null
+  const direct = typeof store.getUrl === 'function' ? store.getUrl(path, { inline: true }) : null
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 

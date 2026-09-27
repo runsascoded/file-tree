@@ -29,3 +29,10 @@ It should be a 4xx: throw a typed error (e.g. `class ForbiddenPathError`) from t
 
 - `/get` on a `.pdf` with the inline variant → `Content-Disposition: inline; …`; default stays `attachment`.
 - list/get outside `prefixes` → 404 (or 403), for `R2Store` and `S3Store` alike (conformance suite).
+
+## Resolution (2026-09-27)
+
+1. **Inline PDFs**: took the explicit option, since it also covers cross-origin `HttpStore`s. `Store.getUrl(path, opts?: GetUrlOptions)` gains `{ inline?: boolean }`; `HttpStore` appends `&inline=1`; `createHandlers`' `/get` answers `Content-Disposition: inline; filename=…` for `inline=1` and keeps `attachment` otherwise. `PdfViewer` and `MediaViewer` request `inline`; the download link doesn't. Direct-object stores (public S3/R2/GCS URLs) ignore the flag. `MultiStore` forwards it. hbt can drop its Worker's `attachment`→`inline` rewrite once it picks this up.
+2. **Prefix denials**: new exported `ForbiddenPathError` (`name === 'ForbiddenPathError'`) thrown by `R2Store` and the XML stores (`S3Store`, `GcsStore`) prefix check. `createHandlers` maps it to **404**. The message names the path but no longer echoes the allow-list (`list prefix ".dvc/" not under an allowed prefix`).
+
+Tests: `/get` disposition (default vs `inline=1`), `HttpStore.getUrl` with/without `inline`, `/list` + `/get` denials → 404 with exact bodies; store-level rejects now assert `{ name, message }` exactly (R2, S3, GCS, incl. presign paths).

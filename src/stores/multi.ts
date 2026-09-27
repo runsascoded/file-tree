@@ -18,7 +18,7 @@
  * `range` capability is the AND of all children — if any child can't
  * range-read, neither can the composite.
  */
-import type { Entry, GetResult, ListOptions, ListResult, Range, Store } from '../types'
+import type { Entry, GetResult, GetUrlOptions, ListOptions, ListResult, Range, Store } from '../types'
 import { NotFoundError } from '../types'
 
 export type MultiStoreInput = Record<string, Store>
@@ -78,11 +78,11 @@ export function MultiStore(children: MultiStoreInput): Store {
     // `typeof store.getUrl === 'function'` instead of a per-path probe.
     ...(names.length > 0 && names.every(n => typeof children[n].getUrl === 'function')
       ? {
-          getUrl(path: string): string {
+          getUrl(path: string, opts?: GetUrlOptions): string {
             const s = split(path)
             if (!s) throw new Error(`MultiStore.getUrl: no child for ${JSON.stringify(path)}`)
             // Type-narrowing: the every() check above guarantees getUrl is defined.
-            return s.child.getUrl!(s.rest)
+            return s.child.getUrl!(s.rest, opts)
           },
         }
       : {}),

@@ -190,7 +190,7 @@ describe('S3Store (scoped-prefix virtual root)', () => {
       prefixes: ['allowed/'],
       fetch: async () => new Response('', { status: 200 }),
     })
-    await expect(store.list('forbidden/')).rejects.toThrow(/not under any allowed prefix/)
+    await expect(store.list('forbidden/')).rejects.toMatchObject({ name: 'ForbiddenPathError', message: 'list prefix "forbidden/" not under an allowed prefix' })
   })
 
   it('rejects get outside allowed prefixes', async () => {
@@ -199,7 +199,7 @@ describe('S3Store (scoped-prefix virtual root)', () => {
       prefixes: ['allowed/'],
       fetch: async () => new Response('', { status: 200 }),
     })
-    await expect(store.get('forbidden/file')).rejects.toThrow(/not under any allowed prefix/)
+    await expect(store.get('forbidden/file')).rejects.toMatchObject({ name: 'ForbiddenPathError', message: 'get path "forbidden/file" not under an allowed prefix' })
   })
 })
 
@@ -269,6 +269,6 @@ describe('S3Store (getDownloadUrl — SigV4 presign)', () => {
 
   it('enforces prefix allow-list before signing', async () => {
     const store = S3Store({ bucket: 'b', prefixes: ['data/'], accessKeyId: 'AKIA', secretAccessKey: 'SEC' })
-    await expect(store.getDownloadUrl!('secret/key')).rejects.toThrow(/not under any allowed prefix/)
+    await expect(store.getDownloadUrl!('secret/key')).rejects.toMatchObject({ name: 'ForbiddenPathError', message: 'getDownloadUrl path "secret/key" not under an allowed prefix' })
   })
 })

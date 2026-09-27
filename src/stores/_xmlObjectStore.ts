@@ -9,7 +9,7 @@
  *  This module handles URL shape (virtual-hosted-style vs path-style),
  *  ListObjectsV2 XML parsing, and ranged GET → `GetResult`. */
 import type { Entry, GetResult, ListOptions, ListResult, Range } from '../types'
-import { NotFoundError } from '../types'
+import { ForbiddenPathError, NotFoundError } from '../types'
 
 export interface XmlObjectStoreOptions {
   /** Bucket name. */
@@ -113,7 +113,7 @@ export function xmlObjectStore(opts: XmlObjectStoreOptions): XmlObjectStoreMetho
   const checkPrefix = (path: string, label: string) => {
     if (!allowedPrefixes || allowedPrefixes.length === 0) return
     if (allowedPrefixes.some(p => path === p || path.startsWith(p))) return
-    throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(', ')}`)
+    throw new ForbiddenPathError(label, path)
   }
 
   return {

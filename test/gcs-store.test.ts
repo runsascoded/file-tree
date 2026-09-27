@@ -349,7 +349,7 @@ describe('GcsStore (getUrl / getDownloadUrl)', () => {
       accessKeyId: 'GOOG1EFAKEKEY',
       secretAccessKey: 'FAKE_SECRET',
     })
-    await expect(store.getDownloadUrl!('secret/key')).rejects.toThrow(/not under any allowed prefix/)
+    await expect(store.getDownloadUrl!('secret/key')).rejects.toMatchObject({ name: 'ForbiddenPathError', message: 'getDownloadUrl path "secret/key" not under an allowed prefix' })
   })
 })
 
@@ -373,6 +373,6 @@ describe('GcsStore (scoped-prefix virtual root)', () => {
       prefixes: ['allowed/'],
       fetch: async () => new Response('', { status: 200 }),
     })
-    await expect(store.list('forbidden/')).rejects.toThrow(/not under any allowed prefix/)
+    await expect(store.list('forbidden/')).rejects.toMatchObject({ name: 'ForbiddenPathError', message: 'list prefix "forbidden/" not under an allowed prefix' })
   })
 })

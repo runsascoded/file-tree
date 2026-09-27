@@ -92,3 +92,48 @@ describe('/presign endpoint', () => {
     expect(captured).toHaveBeenLastCalledWith('a.txt', undefined)
   })
 })
+
+describe('/get Content-Disposition', () => {
+  const handlers = createHandlers(MockStore({ 'doc.pdf': '%PDF-1.4' }), { basePath: '/v1/files' })
+  const disposition = async (qs: string) => {
+    const resp = await handlers.handle(new Request(`https://h.example/v1/files/get?${qs}`))
+    return resp!.headers.get('Content-Disposition')
+  }
+
+  it('defaults to attachment, so a download keeps its name', async () => {
+    expect(await disposition('path=doc.pdf')).toBe('attachment; filename="doc.pdf"')
+  })
+
+  it('is inline with ?inline=1, so an <iframe> renders the PDF', async () => {
+    expect(await disposition('path=doc.pdf&inline=1')).toBe('inline; filename="doc.pdf"')
+  })
+
+  it('HttpStore.getUrl asks for inline only when told to', () => {
+    const client = HttpStore('https://h.example/v1/files')
+    expect(client.getUrl!('a b.pdf')).toBe('https://h.example/v1/files/get?path=a%20b.pdf')
+    expect(client.getUrl!('a b.pdf', { inline: true })).toBe('https://h.example/v1/files/get?path=a%20b.pdf&inline=1')
+  })
+})
+
+describe('prefix allow-list denials', () => {
+  // A store whose allow-list excludes the path: `/list` and `/get` answer
+  // 404 (not 500), and the body names the path but not the allow-list.
+  const denying: Store = {
+    ...MockStore(FIXTURE),
+    async list(prefix) { throw Object.assign(new Error(`list prefix "${prefix}" not under an allowed prefix`), { name: 'ForbiddenPathError' }) },
+    async get(path) { throw Object.assign(new Error(`get path "${path}" not under an allowed prefix`), { name: 'ForbiddenPathError' }) },
+  }
+  const handlers = createHandlers(denying, { basePath: '/v1/files' })
+  const call = async (qs: string) => {
+    const resp = await handlers.handle(new Request(`https://h.example/v1/files/${qs}`))
+    return { status: resp!.status, body: await resp!.json() }
+  }
+
+  it('maps a denied list to 404', async () => {
+    expect(await call('list?prefix=.dvc/')).toEqual({ status: 404, body: { error: 'list prefix ".dvc/" not under an allowed prefix' } })
+  })
+
+  it('maps a denied get to 404', async () => {
+    expect(await call('get?path=.dvc/x')).toEqual({ status: 404, body: { error: 'get path ".dvc/x" not under an allowed prefix' } })
+  })
+})
