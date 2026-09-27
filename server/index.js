@@ -68,7 +68,8 @@ function createHandlers(store, opts = {}) {
           if (result.contentType) headers.set("Content-Type", result.contentType);
           headers.set("Content-Length", String(result.bytes.byteLength));
           const basename = p.split("/").pop() || p;
-          headers.set("Content-Disposition", `attachment; filename="${basename.replace(/"/g, '\\"')}"`);
+          const disposition = url.searchParams.get("inline") === "1" ? "inline" : "attachment";
+          headers.set("Content-Disposition", `${disposition}; filename="${basename.replace(/"/g, '\\"')}"`);
           if (range && result.totalSize != null) {
             headers.set("Content-Range", `bytes ${range.offset}-${range.offset + result.bytes.byteLength - 1}/${result.totalSize}`);
             return new Response(result.bytes, { status: 206, headers });
@@ -90,6 +91,9 @@ function jsonResponse(body, status, extra) {
 }
 function errorResponse(e, extra) {
   if (e instanceof Error && e.name === "NotFoundError") {
+    return jsonResponse({ error: e.message }, 404, extra);
+  }
+  if (e instanceof Error && e.name === "ForbiddenPathError") {
     return jsonResponse({ error: e.message }, 404, extra);
   }
   const msg = e instanceof Error ? e.message : String(e);

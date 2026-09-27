@@ -32,6 +32,12 @@ var NotFoundError = class extends Error {
     this.name = "NotFoundError";
   }
 };
+var ForbiddenPathError = class extends Error {
+  constructor(label, path) {
+    super(`${label} ${JSON.stringify(path)} not under an allowed prefix`);
+    this.name = "ForbiddenPathError";
+  }
+};
 
 // src/stores/r2.ts
 function R2Store(bucket, opts = {}) {
@@ -39,7 +45,7 @@ function R2Store(bucket, opts = {}) {
   const checkPrefix = (path, label) => {
     if (!allowedPrefixes || allowedPrefixes.length === 0) return;
     if (allowedPrefixes.some((p) => path === p || path.startsWith(p))) return;
-    throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(", ")}`);
+    throw new ForbiddenPathError(label, path);
   };
   return {
     describe: () => opts.bucketName ? `r2://${opts.bucketName}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : "/") : void 0,

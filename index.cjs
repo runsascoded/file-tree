@@ -20,6 +20,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/index.ts
 var index_exports = {};
 __export(index_exports, {
+  ForbiddenPathError: () => ForbiddenPathError,
   NotFoundError: () => NotFoundError
 });
 module.exports = __toCommonJS(index_exports);
@@ -31,8 +32,15 @@ var NotFoundError = class extends Error {
     this.name = "NotFoundError";
   }
 };
+var ForbiddenPathError = class extends Error {
+  constructor(label, path) {
+    super(`${label} ${JSON.stringify(path)} not under an allowed prefix`);
+    this.name = "ForbiddenPathError";
+  }
+};
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  ForbiddenPathError,
   NotFoundError
 });
 //# sourceMappingURL=index.cjs.map

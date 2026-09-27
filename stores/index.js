@@ -8,6 +8,12 @@ var NotFoundError = class extends Error {
     this.name = "NotFoundError";
   }
 };
+var ForbiddenPathError = class extends Error {
+  constructor(label, path) {
+    super(`${label} ${JSON.stringify(path)} not under an allowed prefix`);
+    this.name = "ForbiddenPathError";
+  }
+};
 
 // src/stores/r2.ts
 function R2Store(bucket, opts = {}) {
@@ -15,7 +21,7 @@ function R2Store(bucket, opts = {}) {
   const checkPrefix = (path, label) => {
     if (!allowedPrefixes || allowedPrefixes.length === 0) return;
     if (allowedPrefixes.some((p) => path === p || path.startsWith(p))) return;
-    throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(", ")}`);
+    throw new ForbiddenPathError(label, path);
   };
   return {
     describe: () => opts.bucketName ? `r2://${opts.bucketName}` + (opts.prefixes?.length === 1 ? `/${opts.prefixes[0]}` : "/") : void 0,
@@ -139,8 +145,8 @@ function HttpStore(apiBase, opts = {}) {
       return out;
     },
     capabilities: { range: true },
-    getUrl(path) {
-      return `${base}/get?path=${encodeURIComponent(path)}`;
+    getUrl(path, urlOpts) {
+      return `${base}/get?path=${encodeURIComponent(path)}${urlOpts?.inline ? "&inline=1" : ""}`;
     },
     // Opt-in via `presign: true`. The server only mounts `/presign` when
     // its store implements `getDownloadUrl`, so without the flag we'd be
@@ -274,10 +280,10 @@ function MultiStore(children) {
     // the UI's "is download supported here?" check is a simple
     // `typeof store.getUrl === 'function'` instead of a per-path probe.
     ...names.length > 0 && names.every((n) => typeof children[n].getUrl === "function") ? {
-      getUrl(path) {
+      getUrl(path, opts) {
         const s = split(path);
         if (!s) throw new Error(`MultiStore.getUrl: no child for ${JSON.stringify(path)}`);
-        return s.child.getUrl(s.rest);
+        return s.child.getUrl(s.rest, opts);
       }
     } : {},
     // Same all-or-nothing rule as `getUrl`: only expose if every child
@@ -344,7 +350,7 @@ function xmlObjectStore(opts) {
   const checkPrefix = (path, label) => {
     if (!allowedPrefixes || allowedPrefixes.length === 0) return;
     if (allowedPrefixes.some((p) => path === p || path.startsWith(p))) return;
-    throw new Error(`${label} ${JSON.stringify(path)} not under any allowed prefix: ${allowedPrefixes.join(", ")}`);
+    throw new ForbiddenPathError(label, path);
   };
   return {
     buildUrl: (key, search) => buildUrl(urlOpts, key, search),

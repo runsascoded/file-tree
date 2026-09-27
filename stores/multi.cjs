@@ -80,10 +80,10 @@ function MultiStore(children) {
     // the UI's "is download supported here?" check is a simple
     // `typeof store.getUrl === 'function'` instead of a per-path probe.
     ...names.length > 0 && names.every((n) => typeof children[n].getUrl === "function") ? {
-      getUrl(path) {
+      getUrl(path, opts) {
         const s = split(path);
         if (!s) throw new Error(`MultiStore.getUrl: no child for ${JSON.stringify(path)}`);
-        return s.child.getUrl(s.rest);
+        return s.child.getUrl(s.rest, opts);
       }
     } : {},
     // Same all-or-nothing rule as `getUrl`: only expose if every child

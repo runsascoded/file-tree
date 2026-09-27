@@ -9,8 +9,13 @@ export { A as AUDIO, C as CODE_LANG, I as IMAGE, P as ParsePathOptions, T as TEX
 export { WalkTreeSourceOptions, walkTreeSource } from '../renderers/walkTreeSource.cjs';
 
 interface Crumb {
-    label: string;
+    label: ReactNode;
+    /** Route (router-relative) for tree crumbs; a plain `href` for the
+     *  `home` crumb, which usually leaves the router's `routeBase`. */
     to: string;
+    /** `'home'` marks the host-site link `<FileTree home>` prepends before
+     *  the root crumb; absent for tree crumbs. */
+    kind?: 'home';
     /** Store key this crumb addresses (directories include a trailing
      *  slash). Populated by `<FileTree>`; optional so hand-built
      *  `Crumb[]`s stay valid. */
@@ -229,8 +234,19 @@ interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
     rootPrefix?: string;
     /** Additional file extensions to render as text. */
     extraTexty?: string[];
-    /** Optional title to show above the breadcrumb. */
-    title?: string;
+    /** Optional title to show above the breadcrumb (text, or e.g. a logo). */
+    title?: ReactNode;
+    /** Make `title` a link (inherits color, underlines on hover) — typically
+     *  the host site's root, or the same `href` as `home`. */
+    titleHref?: string;
+    /** Link back to the site this tree is mounted in, rendered as the first
+     *  breadcrumb segment before the root: `Site / root / dir / file`. A plain
+     *  `<a href>` (it usually leaves `routeBase`), styled like the other
+     *  crumbs. `renderCrumb` sees it with `crumb.kind === 'home'`. */
+    home?: {
+        href: string;
+        label: ReactNode;
+    };
     /** Optional className for the outer wrapper. */
     className?: string;
     /** Optional inline style for the outer wrapper. */
@@ -355,7 +371,7 @@ interface ViewerActionCtx {
     /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
     entry?: string;
 }
-declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
+declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
 
 /** Adapter from `Store` to hyparquet's `AsyncBuffer` shape
  *  (`{ byteLength: number; slice(start, end?): Promise<ArrayBuffer> }`).

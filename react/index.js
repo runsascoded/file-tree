@@ -10,11 +10,11 @@ function Breadcrumb({ crumbs, separator = " / ", rightSlot, renderCrumb }) {
   return /* @__PURE__ */ jsxs("nav", { "aria-label": "Breadcrumb", style: { fontFamily: "ui-monospace, monospace", fontSize: "0.95em", marginBottom: "0.5em" }, children: [
     crumbs.map((c, i) => {
       const isLast = i === crumbs.length - 1;
-      const defaultNode = isLast ? /* @__PURE__ */ jsx("span", { style: { opacity: 0.7 }, children: c.label }) : /* @__PURE__ */ jsx(Link, { to: c.to, children: c.label });
+      const defaultNode = c.kind === "home" ? /* @__PURE__ */ jsx("a", { href: c.to, children: c.label }) : isLast ? /* @__PURE__ */ jsx("span", { style: { opacity: 0.7 }, children: c.label }) : /* @__PURE__ */ jsx(Link, { to: c.to, children: c.label });
       return /* @__PURE__ */ jsxs("span", { children: [
         i > 0 && /* @__PURE__ */ jsx("span", { style: { opacity: 0.5 }, children: separator }),
         renderCrumb ? renderCrumb({ crumb: c, index: i, isLast, defaultNode }) : defaultNode
-      ] }, c.to);
+      ] }, `${c.kind ?? "tree"}:${c.to}`);
     }),
     rightSlot && /* @__PURE__ */ jsx("span", { style: { marginLeft: "0.8em" }, children: rightSlot })
   ] });
@@ -351,7 +351,7 @@ function DefaultReadme({ store, entries, markdownRenderer }) {
 import { useEffect as useEffect2, useState as useState3 } from "react";
 import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 function MediaViewer({ store, path, kind }) {
-  const direct = typeof store.getUrl === "function" ? store.getUrl(path) : null;
+  const direct = typeof store.getUrl === "function" ? store.getUrl(path, { inline: true }) : null;
   const [blobUrl, setBlobUrl] = useState3(null);
   const [error, setError] = useState3(null);
   useEffect2(() => {
@@ -419,7 +419,7 @@ function MediaViewer({ store, path, kind }) {
 import { useEffect as useEffect3, useState as useState4 } from "react";
 import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 function PdfViewer({ store, path }) {
-  const direct = typeof store.getUrl === "function" ? store.getUrl(path) : null;
+  const direct = typeof store.getUrl === "function" ? store.getUrl(path, { inline: true }) : null;
   const [blobUrl, setBlobUrl] = useState4(null);
   const [error, setError] = useState4(null);
   useEffect3(() => {
@@ -877,12 +877,15 @@ function RegistryViewer({ entry, store, path, usePersistedState, fallback }) {
 
 // src/react/FileTree.tsx
 import { Fragment as Fragment5, jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
   const location = useLocation();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
   const parsed = useMemo3(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
-  const crumbs = useMemo3(() => buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? "root"), [parsed, routeBase, rootPrefix]);
+  const crumbs = useMemo3(() => {
+    const tree = buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? "root");
+    return home ? [{ label: home.label, to: home.href, kind: "home" }, ...tree] : tree;
+  }, [parsed, routeBase, rootPrefix, home]);
   const downloadable = parsed.kind !== "dir" && parsed.kind !== "zipEntry";
   const downloadName = downloadable ? basename(parsed.path) : "";
   const downloadHref = useDownloadHref(store, downloadable ? parsed.path : null);
@@ -898,7 +901,20 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
     downloadHref && /* @__PURE__ */ jsx9(DownloadIcon, { href: downloadHref, name: downloadName })
   ] }) : void 0;
   return /* @__PURE__ */ jsxs8("div", { className, style, children: [
-    title && /* @__PURE__ */ jsx9("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
+    title && /* @__PURE__ */ jsx9("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: titleHref ? /* @__PURE__ */ jsx9(
+      "a",
+      {
+        href: titleHref,
+        style: { color: "inherit", textDecoration: "none" },
+        onMouseEnter: (e) => {
+          e.currentTarget.style.textDecoration = "underline";
+        },
+        onMouseLeave: (e) => {
+          e.currentTarget.style.textDecoration = "none";
+        },
+        children: title
+      }
+    ) : title }),
     /* @__PURE__ */ jsx9(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
     /* @__PURE__ */ jsx9(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer })
   ] });

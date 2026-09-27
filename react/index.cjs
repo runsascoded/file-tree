@@ -61,11 +61,11 @@ function Breadcrumb({ crumbs, separator = " / ", rightSlot, renderCrumb }) {
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("nav", { "aria-label": "Breadcrumb", style: { fontFamily: "ui-monospace, monospace", fontSize: "0.95em", marginBottom: "0.5em" }, children: [
     crumbs.map((c, i) => {
       const isLast = i === crumbs.length - 1;
-      const defaultNode = isLast ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { opacity: 0.7 }, children: c.label }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react_router_dom.Link, { to: c.to, children: c.label });
+      const defaultNode = c.kind === "home" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", { href: c.to, children: c.label }) : isLast ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { opacity: 0.7 }, children: c.label }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react_router_dom.Link, { to: c.to, children: c.label });
       return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
         i > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { opacity: 0.5 }, children: separator }),
         renderCrumb ? renderCrumb({ crumb: c, index: i, isLast, defaultNode }) : defaultNode
-      ] }, c.to);
+      ] }, `${c.kind ?? "tree"}:${c.to}`);
     }),
     rightSlot && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { marginLeft: "0.8em" }, children: rightSlot })
   ] });
@@ -402,7 +402,7 @@ function DefaultReadme({ store, entries, markdownRenderer }) {
 var import_react3 = require("react");
 var import_jsx_runtime3 = require("react/jsx-runtime");
 function MediaViewer({ store, path, kind }) {
-  const direct = typeof store.getUrl === "function" ? store.getUrl(path) : null;
+  const direct = typeof store.getUrl === "function" ? store.getUrl(path, { inline: true }) : null;
   const [blobUrl, setBlobUrl] = (0, import_react3.useState)(null);
   const [error, setError] = (0, import_react3.useState)(null);
   (0, import_react3.useEffect)(() => {
@@ -470,7 +470,7 @@ function MediaViewer({ store, path, kind }) {
 var import_react4 = require("react");
 var import_jsx_runtime4 = require("react/jsx-runtime");
 function PdfViewer({ store, path }) {
-  const direct = typeof store.getUrl === "function" ? store.getUrl(path) : null;
+  const direct = typeof store.getUrl === "function" ? store.getUrl(path, { inline: true }) : null;
   const [blobUrl, setBlobUrl] = (0, import_react4.useState)(null);
   const [error, setError] = (0, import_react4.useState)(null);
   (0, import_react4.useEffect)(() => {
@@ -928,12 +928,15 @@ function RegistryViewer({ entry, store, path, usePersistedState, fallback }) {
 
 // src/react/FileTree.tsx
 var import_jsx_runtime9 = require("react/jsx-runtime");
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
   const location = (0, import_react_router_dom4.useLocation)();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
   const parsed = (0, import_react9.useMemo)(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
-  const crumbs = (0, import_react9.useMemo)(() => buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? "root"), [parsed, routeBase, rootPrefix]);
+  const crumbs = (0, import_react9.useMemo)(() => {
+    const tree = buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? "root");
+    return home ? [{ label: home.label, to: home.href, kind: "home" }, ...tree] : tree;
+  }, [parsed, routeBase, rootPrefix, home]);
   const downloadable = parsed.kind !== "dir" && parsed.kind !== "zipEntry";
   const downloadName = downloadable ? basename(parsed.path) : "";
   const downloadHref = useDownloadHref(store, downloadable ? parsed.path : null);
@@ -949,7 +952,20 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, classN
     downloadHref && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(DownloadIcon, { href: downloadHref, name: downloadName })
   ] }) : void 0;
   return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className, style, children: [
-    title && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: title }),
+    title && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: titleHref ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+      "a",
+      {
+        href: titleHref,
+        style: { color: "inherit", textDecoration: "none" },
+        onMouseEnter: (e) => {
+          e.currentTarget.style.textDecoration = "underline";
+        },
+        onMouseLeave: (e) => {
+          e.currentTarget.style.textDecoration = "none";
+        },
+        children: title
+      }
+    ) : title }),
     /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
     /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer })
   ] });

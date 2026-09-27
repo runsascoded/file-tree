@@ -68,7 +68,7 @@ interface Store {
      *  streams the bytes — no client buffering). Stores that can't expose a
      *  GET-able URL (in-memory, CFW R2 binding, presigning-required) omit
      *  this and the UI hides the download affordance. */
-    getUrl?(path: string): string;
+    getUrl?(path: string, opts?: GetUrlOptions): string;
     /** Like `getUrl(path)` but async — for stores that mint URLs on demand
      *  (SigV4 presigning, redirect lookups). The returned URL should point
      *  directly at the underlying storage so the browser streams bytes
@@ -125,5 +125,20 @@ interface ZipEntriesResult {
 declare class NotFoundError extends Error {
     constructor(path: string);
 }
+/** Thrown by a store whose `prefixes` allow-list excludes `path`. Servers
+ *  map it to 404 (not 403) so a hidden key's existence isn't confirmed; the
+ *  message names the path but not the allow-list. Match on
+ *  `e.name === 'ForbiddenPathError'` (see `NotFoundError`). */
+declare class ForbiddenPathError extends Error {
+    constructor(label: string, path: string);
+}
+/** Options for `Store.getUrl`. */
+interface GetUrlOptions {
+    /** The URL is for in-page rendering (`<iframe>`/`<img>`/`<video>`), not a
+     *  download: stores that proxy through a server which sets
+     *  `Content-Disposition` (e.g. `HttpStore` → `/get`) ask for `inline`
+     *  instead of `attachment`. Direct object URLs ignore it. */
+    inline?: boolean;
+}
 
-export { type Entry, type GetResult, type ListOptions, type ListResult, NotFoundError, type Range, type Store, type StoreCapabilities, type ZipEntriesResult, type ZipEntry };
+export { type Entry, ForbiddenPathError, type GetResult, type GetUrlOptions, type ListOptions, type ListResult, NotFoundError, type Range, type Store, type StoreCapabilities, type ZipEntriesResult, type ZipEntry };

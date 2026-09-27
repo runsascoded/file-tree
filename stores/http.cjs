@@ -71,8 +71,8 @@ function HttpStore(apiBase, opts = {}) {
       return out;
     },
     capabilities: { range: true },
-    getUrl(path) {
-      return `${base}/get?path=${encodeURIComponent(path)}`;
+    getUrl(path, urlOpts) {
+      return `${base}/get?path=${encodeURIComponent(path)}${urlOpts?.inline ? "&inline=1" : ""}`;
     },
     // Opt-in via `presign: true`. The server only mounts `/presign` when
     // its store implements `getDownloadUrl`, so without the flag we'd be
