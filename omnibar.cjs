@@ -68,6 +68,7 @@ async function treePathIndex(source, opts = {}) {
   return out;
 }
 var BOUNDARY = /[\s\-_./]/;
+var MIN_SUBSEQ = 3;
 function scoreToken(token, text) {
   const lo = text.toLowerCase();
   let best = null;
@@ -76,6 +77,7 @@ function scoreToken(token, text) {
     if (best === null || s > best) best = s;
   }
   if (best !== null) return best;
+  if (token.length < MIN_SUBSEQ) return null;
   let score = 0, run = 0, last = -2, ti = 0;
   for (let i = 0; i < lo.length && ti < token.length; i++) {
     if (lo[i] !== token[ti]) continue;
@@ -118,7 +120,7 @@ function treePathEndpoint(source, opts) {
   const base = routeBase.replace(/\/+$/, "");
   const kindSet = kinds ? new Set(kinds) : void 0;
   return {
-    group,
+    ...group !== null ? { group } : {},
     priority,
     minQueryLength,
     ...opts.enabled !== void 0 ? { enabled: opts.enabled } : {},
@@ -130,7 +132,7 @@ function treePathEndpoint(source, opts) {
         index = await cachedIndex(source, opts);
       } catch (e) {
         if (!(e instanceof Error && e.name === "TreeTooLargeError")) throw e;
-        return { entries: [{ id: `${group}:too-large`, label: "Tree too large to index", description: e.message, handler: () => {
+        return { entries: [{ id: `${group ?? "files"}:too-large`, label: "Tree too large to index", description: e.message, handler: () => {
         } }], total: 1 };
       }
       const hits = [];

@@ -41,10 +41,11 @@ declare function scorePath(query: string, path: string): number | null;
 interface TreePathEndpointOptions extends TreePathIndexOptions {
     /** Route base the hrefs resolve against: the `<FileTree routeBase>`. */
     routeBase: string;
-    /** Omnibar group label. Default `'Files'`. Register one endpoint per scope
-     *  (this subtree at a higher `priority`, ancestors lower) to rank nearer
-     *  hits first, each under its own label. */
-    group?: string;
+    /** Omnibar group label. Default `'Files'`; `null` for none (e.g. the
+     *  current folder's scope, whose hits' paths already say where they are).
+     *  Register one endpoint per scope (this subtree at a higher `priority`,
+     *  ancestors lower) to rank nearer hits first. */
+    group?: string | null;
     /** Group ordering among endpoints (higher first). Default 50. */
     priority?: number;
     /** Skip this subtree (tree-relative; the node and everything under it).
