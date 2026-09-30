@@ -150,6 +150,58 @@ export class TreeTooLargeError extends Error {
   }
 }
 
+/** Thrown when a request names a snapshot the source doesn't have.
+ *  Name-based, like `TreeTooLargeError`. */
+export class SnapshotNotFoundError extends Error {
+  override name = 'SnapshotNotFoundError'
+  constructor(readonly snapshot: string) {
+    super(`no such snapshot: ${snapshot}`)
+  }
+}
+
+/** disk-tree's per-node diff status (`diff_index.py`), for sources that
+ *  derive a diff from two snapshots' levels rather than reading one:
+ *  on one side only → `added`/`removed`; size, descendant count, or kind
+ *  differ → `changed`; only the mtime moved → `touched`. */
+export function diffStatus(a: TreeNode | null, b: TreeNode | null): TreeDiffNode['status'] {
+  if (!a) return 'added'
+  if (!b) return 'removed'
+  if (a.size !== b.size || (a.nDesc ?? null) !== (b.nDesc ?? null) || a.kind !== b.kind) return 'changed'
+  if ((a.mtime ?? null) !== (b.mtime ?? null)) return 'touched'
+  return 'unchanged'
+}
+
+/** One node's `a`→`b` diff. At least one side must be present. */
+export function diffNode(a: TreeNode | null, b: TreeNode | null): TreeDiffNode {
+  const n = (b ?? a)!
+  return {
+    path: n.path,
+    name: n.name,
+    kind: n.kind,
+    status: diffStatus(a, b),
+    sizeA: a ? a.size : null,
+    sizeB: b ? b.size : null,
+    nDescA: a?.nDesc ?? null,
+    nDescB: b?.nDesc ?? null,
+  }
+}
+
+/** Join one level of two snapshots into a `DiffLevel` — the whole of a
+ *  `diff()` for any source that can answer `children({snapshot})`. A
+ *  side is `null` where the viewed node doesn't exist in that snapshot
+ *  (so everything under it is `added`/`removed`). Children come in
+ *  `b`'s order, then those only in `a`. */
+export function diffLevels(a: TreeLevel | null, b: TreeLevel | null): DiffLevel {
+  if (!a && !b) throw new Error('diffLevels: node absent from both snapshots')
+  const aKids = new Map((a?.children ?? []).map(c => [c.path, c]))
+  const bPaths = new Set((b?.children ?? []).map(c => c.path))
+  const children: TreeDiffNode[] = [
+    ...(b?.children ?? []).map(c => diffNode(aKids.get(c.path) ?? null, c)),
+    ...(a?.children ?? []).filter(c => !bPaths.has(c.path)).map(c => diffNode(c, null)),
+  ]
+  return { node: diffNode(a?.node ?? null, b?.node ?? null), children }
+}
+
 /** Basename of a store key or tree path. `''` (the root) has none, so
  *  the caller supplies a label. */
 export function nodeName(path: string): string {

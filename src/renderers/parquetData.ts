@@ -15,11 +15,13 @@
  *  See `specs/renderer-extensibility.md`. */
 import { useEffect, useRef, useState } from 'react'
 import { parquetMetadataAsync, parquetRead, parquetSchema, type Compressors } from 'hyparquet'
-import { decompress as zstdDecompress } from 'fzstd'
 import type { Store } from '../types'
+import { defaultCompressors, withDefaultCompressors } from './parquetCompressors'
 import { asyncBufferFromStore } from '../react/asyncBuffer'
 import type { TemporalColumn } from './temporal'
 import type { TableColumn } from './table'
+
+export { defaultCompressors, withDefaultCompressors }
 
 /** Physical types we read as numbers — for alignment, and for the
  *  coarse `kind` every table viewer speaks. */
@@ -158,21 +160,6 @@ export function useParquetMeta(store: Store, path: string): { meta: ParquetMeta 
   }, [store, path])
 
   return { meta, error }
-}
-
-/** Decompressors used when a caller passes none. hyparquet decodes only
- *  Snappy (and uncompressed) natively; this adds ZSTD via `fzstd` (pure JS,
- *  no wasm, safe in Workers/SSR). Exported for consumers doing their own
- *  hyparquet reads. */
-export const defaultCompressors: Compressors = {
-  ZSTD: (input, outputLength) => zstdDecompress(input, new Uint8Array(outputLength)),
-}
-
-/** `defaultCompressors` with a consumer's set merged over it, so passing e.g.
- *  `hyparquet-compressors`' full set (brotli, gzip, lz4) adds codecs, and a
- *  custom `ZSTD` replaces the built-in one. */
-export function withDefaultCompressors(compressors?: Compressors): Compressors {
-  return compressors ? { ...defaultCompressors, ...compressors } : defaultCompressors
 }
 
 /** Decode rows `[rowStart, rowEnd)` (default: the whole file) as objects.

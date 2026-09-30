@@ -202,6 +202,31 @@
       "import": "./dist/renderers/walkTreeSource.js",
       "require": "./dist/renderers/walkTreeSource.cjs"
     },
+    "./renderers/snapshotTreeSource": {
+      "types": "./dist/renderers/snapshotTreeSource.d.ts",
+      "import": "./dist/renderers/snapshotTreeSource.js",
+      "require": "./dist/renderers/snapshotTreeSource.cjs"
+    },
+    "./renderers/diskTreeTreeSource": {
+      "types": "./dist/renderers/diskTreeTreeSource.d.ts",
+      "import": "./dist/renderers/diskTreeTreeSource.js",
+      "require": "./dist/renderers/diskTreeTreeSource.cjs"
+    },
+    "./renderers/httpTreeSource": {
+      "types": "./dist/renderers/httpTreeSource.d.ts",
+      "import": "./dist/renderers/httpTreeSource.js",
+      "require": "./dist/renderers/httpTreeSource.cjs"
+    },
+    "./renderers/parquetCompressors": {
+      "types": "./dist/renderers/parquetCompressors.d.ts",
+      "import": "./dist/renderers/parquetCompressors.js",
+      "require": "./dist/renderers/parquetCompressors.cjs"
+    },
+    "./server/tree": {
+      "types": "./dist/server/tree.d.ts",
+      "import": "./dist/server/tree.js",
+      "require": "./dist/server/tree.cjs"
+    },
     "./test/treeConformance": {
       "types": "./dist/test/treeConformance.d.ts",
       "import": "./dist/test/treeConformance.js",

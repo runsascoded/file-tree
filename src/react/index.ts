@@ -30,5 +30,15 @@ export { findViewer, RegistryViewer } from './viewers'
 export type { ViewerEntry, ViewerMatchCtx, ViewerProps } from './viewers'
 export { walkTreeSource } from '../renderers/walkTreeSource'
 export type { WalkTreeSourceOptions } from '../renderers/walkTreeSource'
-export { TreeTooLargeError } from '../renderers/treeSource'
-export type { TreeNode, TreeSource, TreeSourceCapabilities, TreeLevel, ChildrenRequest, Snapshot } from '../renderers/treeSource'
+export { diskTreeTreeSource } from '../renderers/diskTreeTreeSource'
+export type { DiskTreeTreeSourceOptions } from '../renderers/diskTreeTreeSource'
+export { httpTreeSource } from '../renderers/httpTreeSource'
+export type { HttpTreeSourceOptions } from '../renderers/httpTreeSource'
+// `snapshotTreeSource` itself pulls hyparquet (an optional peer), so only
+// its types ride here; import it from `@rdub/file-tree/renderers/snapshotTreeSource`.
+export type { SnapshotManifest, SnapshotManifestEntry, SnapshotTreeSourceOptions } from '../renderers/snapshotTreeSource'
+export { diffLevels, diffNode, diffStatus, SnapshotNotFoundError, TreeTooLargeError } from '../renderers/treeSource'
+export type {
+  ChildrenRequest, DiffLevel, DiffRequest, ScanJob, ScanRequest, Snapshot, TreeDiffNode, TreeLevel, TreeNode,
+  TreeSource, TreeSourceCapabilities,
+} from '../renderers/treeSource'

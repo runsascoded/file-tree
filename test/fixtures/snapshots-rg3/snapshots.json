@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "columns": [
+    "path",
+    "size",
+    "mtime",
+    "kind",
+    "parent",
+    "uri",
+    "n_desc",
+    "n_children",
+    "depth",
+    "mtime_mean?"
+  ],
+  "row_group_size": 65536,
+  "snapshots": [
+    {
+      "id": 1,
+      "path": "gcs://fixture",
+      "time": "2026-07-01T00:00:00",
+      "size": 368,
+      "n_desc": 14,
+      "n_children": 5,
+      "tree": "snapshots/1/tree.parquet"
+    },
+    {
+      "id": 2,
+      "path": "gcs://fixture",
+      "time": "2026-08-01T00:00:00",
+      "size": 343,
+      "n_desc": 14,
+      "n_children": 4,
+      "tree": "snapshots/2/tree.parquet"
+    }
+  ]
+}
