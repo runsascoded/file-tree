@@ -171,3 +171,7 @@ The three are independent and get less certain as they go:
 `kind`-per-format is fine *internally*; the problem is that it's closed and that
 consumers can't extend it. A registry that produces the same internal dispatch
 is the goal, not a rewrite of the viewers themselves.
+
+## Closed (2026-09-30)
+
+Parts 1 (tabular hooks) and 2 (viewer registry) shipped. Part 3 (container registry) stays deliberately deferred per above: revisit only if zip + multi-table `.db` justify a shared "file that browses like a directory" abstraction. Removing the per-renderer `*Renderer` props is likewise a future breaking change, not open work here.

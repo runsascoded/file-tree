@@ -381,3 +381,7 @@ Not built, and now deliberately not next:
   the SQLite viewer rather than `TableSource`.
 - **Does `TableSource` subsume `onPage`?** Probably — `onPage` publishes what a
   source just returned. Worth checking they don't end up as two ways to say it.
+
+## Closed (2026-09-30)
+
+All three modes (in-tab wasm, remote engine via `createTableHandlers`, the shared `TableCatalog` browser) and the Workers block cache shipped. The "not built, deliberately not next" items and the Open questions above are future directions, not remaining scope for this spec.
