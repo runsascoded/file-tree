@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { Entry, Store } from '../types'
 import type { TreeSource } from '../renderers/treeSource'
 import { fmtSize } from './fmt'
+import type { MarkdownRenderer } from './FileTree'
+import { markdownCtx } from './markdownLinks'
 import { makeMatcher } from './match'
 import { basename, keyToSplat } from './parsePath'
 import { defaultUseState, type PersistedState } from './persistedState'
@@ -56,7 +58,7 @@ export interface DirListingProps {
   usePersistedState?: PersistedState
   /** When set + a `README.md` (case-insensitive) is in the listing, the
    *  README is fetched and rendered below the table via this fn. */
-  markdownRenderer?: (source: string) => ReactNode
+  markdownRenderer?: MarkdownRenderer
   /** Optional per-cell render hook (see `CellRenderer`). */
   renderCell?: CellRenderer
   /** When set, directory rows show their *recursive* size (instead of
@@ -301,7 +303,7 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
         <button onClick={loadMore} style={{ marginTop: '0.5em' }}>load more</button>
       )}
       {markdownRenderer && (
-        <DefaultReadme store={store} entries={entries} markdownRenderer={markdownRenderer} />
+        <DefaultReadme store={store} entries={entries} markdownRenderer={markdownRenderer} routeBase={routeBase} rootPrefix={rootPrefix} />
       )}
     </>
   )
@@ -310,7 +312,8 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
 /** Find the directory's `README.md` (case-insensitive basename match) and
  *  render it below the listing. Renders nothing when no README is present
  *  or the fetch fails (404/network), so the dir UI stays clean. */
-function DefaultReadme({ store, entries, markdownRenderer }: { store: Store; entries: Entry[]; markdownRenderer: (source: string) => ReactNode }) {
+function DefaultReadme({ store, entries, markdownRenderer, routeBase, rootPrefix }: { store: Store; entries: Entry[]; markdownRenderer: MarkdownRenderer; routeBase: string; rootPrefix: string }) {
+  const navigate = useNavigate()
   const readme = entries.find(e => !e.isDir && /^README\.md$/i.test(basename(e.key)))
   const [text, setText] = useState<string | null>(null)
   useEffect(() => {
@@ -339,7 +342,7 @@ function DefaultReadme({ store, entries, markdownRenderer }: { store: Store; ent
       <div style={{ fontSize: '0.8em', opacity: 0.6, fontFamily: 'ui-monospace, monospace', marginBottom: '0.5em' }}>
         {basename(readme.key)}
       </div>
-      {markdownRenderer(text)}
+      {markdownRenderer(text, markdownCtx(readme.key, { store, routeBase, rootPrefix, navigate }))}
     </div>
   )
 }

@@ -662,6 +662,26 @@ test.describe('MockDemo', () => {
   })
 })
 
+test.describe('MockDemo markdown links', () => {
+  test('relative links resolve against the file\'s place in the tree, and navigate in-app', async ({ page }) => {
+    await page.goto('/mock/docs/regions/nyc.md')
+    const link = page.getByRole('link', { name: 'events.parquet', exact: true })
+    // The site's `<base href="/">` would send a raw `../../samples/…` to
+    // `/samples/…`; resolved against `docs/regions/`, it stays in the tree.
+    expect(await link.getAttribute('href')).toBe('/mock/samples/events.parquet')
+    await page.evaluate(() => { (window as unknown as { marker: number }).marker = 1 })
+    await link.click()
+    await expect(page).toHaveURL('/mock/samples/events.parquet')
+    await expect(page.getByText('240 rows · 7 columns · 1 row group · 6.4 KB')).toBeVisible()
+    expect(await page.evaluate(() => (window as unknown as { marker?: number }).marker)).toBe(1)
+  })
+
+  test('a dir link keeps its trailing slash', async ({ page }) => {
+    await page.goto('/mock/docs/intro.md')
+    expect(await page.getByRole('link', { name: 'data/', exact: true }).getAttribute('href')).toBe('/mock/data/')
+  })
+})
+
 /** ⌘K path search (`treePathEndpoint` + use-kbd's Omnibar): this folder's
  *  hits first (unlabeled), the rest of the tree under "Elsewhere", SPA navigation. */
 test.describe('MockDemo path search', () => {

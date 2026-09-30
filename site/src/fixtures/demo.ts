@@ -21,7 +21,7 @@ export const DEMO_FIXTURE = {
     '- **Search**: press ⌘K (or the search button) for fuzzy path search across the whole tree.',
     '- **Preview**: markdown, CSV, parquet, SQLite, JSON/YAML, notebooks, PDFs and logs each open in a viewer.',
     '',
-    'Start with [`samples/events.parquet`](/mock/samples/events.parquet) for the richest table, or [`data/`](/mock/data/) for small CSVs.',
+    'Start with [`samples/events.parquet`](../samples/events.parquet) for the richest table, or [`data/`](../data/) for small CSVs.',
     '',
   ].join('\n'),
   'docs/guide/setup.md': [
@@ -78,7 +78,7 @@ export const DEMO_FIXTURE = {
     '| --- | --- |',
     '| Timezone | `America/New_York` |',
     '| Center | 40.71, -74.01 |',
-    '| Events | rows tagged `nyc` in [`events.parquet`](/mock/samples/events.parquet) |',
+    '| Events | rows tagged `nyc` in [`events.parquet`](../../samples/events.parquet) |',
     '',
   ].join('\n'),
   'docs/regions/sfo.md': [
@@ -90,7 +90,7 @@ export const DEMO_FIXTURE = {
     '| --- | --- |',
     '| Timezone | `America/Los_Angeles` |',
     '| Center | 37.77, -122.42 |',
-    '| Events | rows tagged `sfo` in [`events.parquet`](/mock/samples/events.parquet) |',
+    '| Events | rows tagged `sfo` in [`events.parquet`](../../samples/events.parquet) |',
     '',
   ].join('\n'),
   'docs/regions/lax.md': [
@@ -102,7 +102,7 @@ export const DEMO_FIXTURE = {
     '| --- | --- |',
     '| Timezone | `America/Los_Angeles` |',
     '| Center | 34.05, -118.24 |',
-    '| Events | rows tagged `lax` in [`events.parquet`](/mock/samples/events.parquet) |',
+    '| Events | rows tagged `lax` in [`events.parquet`](../../samples/events.parquet) |',
     '',
   ].join('\n'),
   // A spread of sizes so the treemap is non-trivial: one dominant day (an

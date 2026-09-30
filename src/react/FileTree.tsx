@@ -11,6 +11,7 @@
  */
 import { cloneElement, isValidElement, useEffect, useMemo, useState, type ComponentProps, type ComponentType, type ReactElement, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { markdownCtx, type MarkdownCtx } from './markdownLinks'
 import type { Store } from '../types'
 import type { TreeSource } from '../renderers/treeSource'
 import { Breadcrumb, type Crumb, type CrumbRenderer } from './Breadcrumb'
@@ -31,8 +32,12 @@ export type { PersistedState } from './persistedState'
  *  consumers wire `react-markdown` (or any equivalent). When provided,
  *  `<TextViewer>` uses it for `.md`/`.markdown` files and
  *  `<DirListing>` uses it for default-README rendering below the
- *  directory table. */
-export type MarkdownRenderer = (source: string) => ReactNode
+ *  directory table.
+ *
+ *  `ctx` (absent outside a tree, e.g. a zip entry) resolves relative links
+ *  and images against the file's place in the tree; see `MarkdownCtx`.
+ *  `renderMarkdown` applies it; a custom renderer may ignore it. */
+export type MarkdownRenderer = (source: string, ctx?: MarkdownCtx) => ReactNode
 
 /** Optional component that renders a Parquet (`.parquet` / `.pqt`)
  *  file. Pluggable so the lib doesn't bundle `hyparquet` (or any
@@ -286,6 +291,7 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
 }
 
 function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; pdfRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState; treeSource?: TreeSource; treemapRenderer?: TreemapRenderer }) {
+  const navigate = useNavigate()
   // The registry wins over the built-ins: a consumer registering a
   // `.parquet` viewer means they want theirs, not the prop's. `dir` and
   // `zipEntry` are excluded — the first isn't a file, and the second is
@@ -327,7 +333,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
         <TextViewer
           store={store}
           path={parsed.path}
-          markdownRenderer={isMd ? markdownRenderer : undefined}
+          markdownRenderer={isMd && markdownRenderer ? s => markdownRenderer(s, markdownCtx(parsed.path, { store, routeBase, rootPrefix, navigate })) : undefined}
           jsonRenderer={isJson ? jsonRenderer : undefined}
           codeRenderer={!isMd && !isJson && lang ? codeRenderer : undefined}
           codeLang={lang}

@@ -273,6 +273,8 @@ import { renderViewerActions } from './viewerActions'                 // ↗ SQL
 | `renderCode` | `@rdub/file-tree/renderers/code` | `highlight.js` |
 | `renderJsonTree` | `@rdub/file-tree/renderers/json` | `jq-web` (optional, for jq filter only) |
 
+**Markdown links resolve against the tree.** `<FileTree>` calls `markdownRenderer(source, ctx)`, where `ctx` (`MarkdownCtx`) knows the file's store key: `renderMarkdown` uses it to point a relative link (`../data/`, `sfo.md#tz`) at that file's route in the browser, navigating in-app on a plain click (a real `href` stays, so cmd-click works), and a relative image at `store.getUrl` when the store can mint one. Absolute, external and `#anchor` links render as written, as do links that would climb out of the tree. A custom `markdownRenderer` can ignore `ctx`, or use `resolveTreeHref` / `markdownCtx` from `@rdub/file-tree/react` itself.
+
 `renderJsonTree` also comes in a parameterized form, for annotating domain-specific scalars (epoch timestamps, byte counts, ids) without forking the viewer. Same `defaultNode` convention as `renderCell` below:
 
 ### YAML

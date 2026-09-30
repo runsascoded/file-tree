@@ -1,4 +1,6 @@
 export { FileTree } from './FileTree'
+export { isPlainClick, markdownCtx, resolveTreeHref, resolveTreeKey } from './markdownLinks'
+export type { MarkdownCtx } from './markdownLinks'
 export type { FileTreeProps, MarkdownRenderer, ParquetRenderer, TreemapRenderer, TreemapRendererProps, ViewerActionCtx } from './FileTree'
 export type { CellColumn, CellCtx, CellRenderer } from './DirListing'
 export type { CrumbCtx, CrumbRenderer } from './Breadcrumb'
