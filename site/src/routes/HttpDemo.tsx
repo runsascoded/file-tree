@@ -10,6 +10,7 @@ import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
 import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
+import { HelpFab } from '../components/HelpFab'
 
 // Default points at the deployed demo worker (CFW, multi-bucket).
 // Override via `VITE_HTTP_DEMO_BASE` (e.g. `http://localhost:8732/v1/files`
@@ -73,8 +74,7 @@ export function HttpDemo() {
           </p>
         </aside>
       )}
-      <details style={{ marginTop: '2em', fontSize: '0.9em', opacity: 0.85 }}>
-        <summary>How this works</summary>
+      <HelpFab>
         <p>
           <code>HttpStore</code> talks to a backend that exposes the file-tree HTTP protocol
           (see <code>site/worker/src/index.ts</code> for the reference implementation —
@@ -89,7 +89,7 @@ GET /get?path=<p>                         (Range honored)`}</code></pre>
           Backends are pluggable: anything that implements the same <code>Store</code> interface
           can sit behind this same client (R2, S3, GitHub, GitLab, local FS, …).
         </p>
-      </details>
+      </HelpFab>
     </div>
   )
 }

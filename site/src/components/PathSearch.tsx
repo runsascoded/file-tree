@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { HotkeysProvider, Omnibar, SearchTrigger, useOmnibarEndpoint, type OmnibarEntry } from 'use-kbd'
+import { HotkeysProvider, Omnibar, SearchIcon, SearchTrigger, useOmnibarEndpoint, type OmnibarEntry } from 'use-kbd'
 import 'use-kbd/styles.css'
 import type { TreeSource } from '@rdub/file-tree/react'
 import { treePathEndpoint } from '@rdub/file-tree/omnibar'
@@ -14,11 +14,12 @@ function currentDir(pathname: string, routeBase: string): string {
   return i < 0 ? '' : rest.slice(0, i)
 }
 
-/** ⌘K path search: this folder's subtree first, then the rest of the tree
- *  (minus this folder, so nothing is listed twice) in a lower-priority group. */
+/** ⌘K path search: this folder's subtree first (unlabeled; each hit's path
+ *  says where it is), then the rest of the tree (minus this folder, so
+ *  nothing is listed twice) under "Elsewhere". */
 function Endpoints({ source, routeBase }: { source: TreeSource; routeBase: string }) {
   const dir = currentDir(useLocation().pathname, routeBase)
-  const here = useMemo(() => treePathEndpoint(source, { routeBase, path: dir, group: dir ? `In ${dir}/` : 'Files', priority: 50 }), [source, routeBase, dir])
+  const here = useMemo(() => treePathEndpoint(source, { routeBase, path: dir, group: null, priority: 50 }), [source, routeBase, dir])
   const rest = useMemo(() => treePathEndpoint(source, { routeBase, excludePath: dir, group: 'Elsewhere', priority: 40, enabled: !!dir }), [source, routeBase, dir])
   useOmnibarEndpoint('files-here', here)
   useOmnibarEndpoint('files-elsewhere', rest)
@@ -34,10 +35,16 @@ export function PathSearch({ source, routeBase, children }: { source: TreeSource
     <HotkeysProvider>
       <Endpoints source={source} routeBase={routeBase} />
       <Omnibar placeholder="Search paths…" onExecuteRemote={onExecuteRemote} />
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <SearchTrigger ariaLabel="Search paths (⌘K)" />
+      {/* Pinned to the top-right of the tree, level with its `<h1>` title,
+          rather than a row of its own above it. */}
+      <div style={{ position: 'relative' }}>
+        <div style={{ position: 'absolute', top: '0.1em', right: 0 }}>
+          <SearchTrigger ariaLabel="Search paths (⌘K)">
+            <SearchIcon /> <kbd style={{ fontSize: '0.8em', opacity: 0.75 }}>⌘K</kbd>
+          </SearchTrigger>
+        </div>
+        {children}
       </div>
-      {children}
     </HotkeysProvider>
   )
 }

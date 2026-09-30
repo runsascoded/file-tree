@@ -52,11 +52,14 @@ export async function treePathIndex(source: TreeSource, opts: TreePathIndexOptio
 }
 
 const BOUNDARY = /[\s\-_./]/
+/** Shortest token that may match as a scattered subsequence. */
+const MIN_SUBSEQ = 3
 
 /** Score one lowercase token against `text`, or `null` if it doesn't match.
  *  A contiguous hit beats a scattered one; a hit starting at a word boundary
  *  (start, or after `/ . _ -` / space) beats one mid-word; earlier beats later.
- *  Falls back to an in-order subsequence (`fbr` → `foo-bar`), scored per char
+ *  Tokens of 3+ chars fall back to an in-order subsequence (`fbr` →
+ *  `foo-bar`), scored per char
  *  with bonuses for runs and boundaries. */
 function scoreToken(token: string, text: string): number | null {
   const lo = text.toLowerCase()
@@ -66,6 +69,9 @@ function scoreToken(token: string, text: string): number | null {
     if (best === null || s > best) best = s
   }
   if (best !== null) return best
+  // Scattered matches of a short token are mostly noise (`ny` would hit
+  // `config.yaml`); only a longer one earns the subsequence fallback.
+  if (token.length < MIN_SUBSEQ) return null
   let score = 0, run = 0, last = -2, ti = 0
   for (let i = 0; i < lo.length && ti < token.length; i++) {
     if (lo[i] !== token[ti]) continue
@@ -103,10 +109,11 @@ export function scorePath(query: string, path: string): number | null {
 export interface TreePathEndpointOptions extends TreePathIndexOptions {
   /** Route base the hrefs resolve against: the `<FileTree routeBase>`. */
   routeBase: string
-  /** Omnibar group label. Default `'Files'`. Register one endpoint per scope
-   *  (this subtree at a higher `priority`, ancestors lower) to rank nearer
-   *  hits first, each under its own label. */
-  group?: string
+  /** Omnibar group label. Default `'Files'`; `null` for none (e.g. the
+   *  current folder's scope, whose hits' paths already say where they are).
+   *  Register one endpoint per scope (this subtree at a higher `priority`,
+   *  ancestors lower) to rank nearer hits first. */
+  group?: string | null
   /** Group ordering among endpoints (higher first). Default 50. */
   priority?: number
   /** Skip this subtree (tree-relative; the node and everything under it).
@@ -162,7 +169,7 @@ export function treePathEndpoint(source: TreeSource, opts: TreePathEndpointOptio
   const base = routeBase.replace(/\/+$/, '')
   const kindSet = kinds ? new Set(kinds) : undefined
   return {
-    group,
+    ...(group !== null ? { group } : {}),
     priority,
     minQueryLength,
     ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
@@ -174,7 +181,7 @@ export function treePathEndpoint(source: TreeSource, opts: TreePathEndpointOptio
         index = await cachedIndex(source, opts)
       } catch (e) {
         if (!(e instanceof Error && e.name === 'TreeTooLargeError')) throw e
-        return { entries: [{ id: `${group}:too-large`, label: 'Tree too large to index', description: e.message, handler: () => {} }], total: 1 }
+        return { entries: [{ id: `${group ?? 'files'}:too-large`, label: 'Tree too large to index', description: e.message, handler: () => {} }], total: 1 }
       }
       const hits: { node: TreeNode; score: number }[] = []
       for (const node of index) {

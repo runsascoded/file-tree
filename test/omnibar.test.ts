@@ -39,6 +39,15 @@ describe('scorePath', () => {
     expect(rank('fbr', ['src/foo-bar.ts', 'fbr.txt', 'README.md'])).toEqual(['fbr.txt', 'src/foo-bar.ts'])
   })
 
+  it('only lets 3+-char tokens match as a scattered subsequence', () => {
+    expect(rank('ny', ['docs/regions/nyc.md', 'config.yaml'])).toEqual(['docs/regions/nyc.md'])
+    expect(rank('cfy', ['config.yaml'])).toEqual(['config.yaml'])
+  })
+
+  it('omits the group label for `group: null`', () => {
+    expect(treePathEndpoint(tree(), { routeBase: '/files', group: null }).group).toBe(undefined)
+  })
+
   it('requires every whitespace-separated token, in any order', () => {
     expect(rank('csv data', ['data/sales.csv', 'data/2024/sales.parquet', 'csv/other.txt'])).toEqual(['data/sales.csv'])
   })

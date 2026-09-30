@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { FileTree, walkTreeSource, type CellRenderer, type TreemapRendererProps, type ViewerEntry } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import { DEMO_FIXTURE } from '../fixtures/demo'
@@ -16,6 +16,7 @@ import { renderViewerActions } from '../viewerActions'
 import { isS2Cell, S2Cell } from '../components/S2CellPreview'
 import { PageAside, type AsideState } from '../components/PageAside'
 import { PathSearch } from '../components/PathSearch'
+import { HelpFab } from '../components/HelpFab'
 
 /** Exercises the parquet viewer's presentation hooks. Built at module
  *  scope: `makeParquetViewer` mints a component type, so calling it in
@@ -388,6 +389,10 @@ export function MockDemo() {
   const [asideState, setAsideState] = useState<AsideState>({ page: null, cell: null })
   const aside = useCallback((s: Partial<AsideState>) => setAsideState(prev => ({ ...prev, ...s })), [])
   const parquetOptions = useParquetOptions(aside)
+  // The brush only styles the treemap, which only a folder page draws (in
+  // `tree` / `split` view; `?view=` absent means the `split` default).
+  const { pathname, search } = useLocation()
+  const showBrush = (pathname === '/mock' || pathname.endsWith('/')) && new URLSearchParams(search).get('view') !== 'list'
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5em' }}>
       <div style={{ display: 'flex', gap: '1em', alignItems: 'flex-start' }}>
@@ -418,12 +423,11 @@ export function MockDemo() {
       />
       </BrushContext.Provider>
       </PathSearch>
-      <BrushPanel value={brushKey} onChange={setBrushKey} />
+      {showBrush && <BrushPanel value={brushKey} onChange={setBrushKey} />}
       </div>
       {asideState.page && <PageAside {...asideState} />}
       </div>
-      <details style={{ marginTop: '2em', fontSize: '0.9em', opacity: 0.85 }}>
-        <summary>How this works</summary>
+      <HelpFab>
         <p>
           <strong>Render hooks.</strong> Everything a consumer can customize is on this page.
           In <code>samples/events.parquet</code>: <code>region</code> cells are{' '}
@@ -515,7 +519,7 @@ const store = MockStore({
 })
 
 <FileTree store={store} routeBase="/mock" />`}</code></pre>
-      </details>
+      </HelpFab>
     </div>
   )
 }

@@ -54,19 +54,19 @@ test.describe('MockDemo', () => {
   test('directory rows show their recursive size, not —', async ({ page }) => {
     await page.goto('/mock')
     // `walkTreeSource` rolls the store up in JS; the size cell of a dir
-    // row is its recursive byte total. `docs/` = guide 120 + regions 207 +
-    // intro.md 132 + squarified-treemaps.pdf 2.8 KB = 3.2 KB; assert the
+    // row is its recursive byte total. `docs/` = guide 698 + regions 742 +
+    // intro.md 587 + squarified-treemaps.pdf 2.8 KB = 4.8 KB; assert the
     // whole row so a regression that drops the rollup (back to —) fails loudly.
     const docsRow = page.getByRole('row').filter({ hasText: /📁\s*docs\// })
-    await expect(docsRow.getByRole('cell').nth(1)).toHaveText('3.2 KB')
+    await expect(docsRow.getByRole('cell').nth(1)).toHaveText('4.8 KB')
 
     // Drilling in, the level's own rows roll up their subtrees and stay
     // additive with the parent.
     await page.getByRole('link', { name: /^📁\s*docs\/$/ }).click()
     const guideRow = page.getByRole('row').filter({ hasText: /📁\s*guide\// })
-    await expect(guideRow.getByRole('cell').nth(1)).toHaveText('120 B')
+    await expect(guideRow.getByRole('cell').nth(1)).toHaveText('698 B')
     const regionsRow = page.getByRole('row').filter({ hasText: /📁\s*regions\// })
-    await expect(regionsRow.getByRole('cell').nth(1)).toHaveText('207 B')
+    await expect(regionsRow.getByRole('cell').nth(1)).toHaveText('742 B')
   })
 
   test('the treemap toggle renders the tree as area, and a dir tile navigates', async ({ page }) => {
@@ -78,9 +78,9 @@ test.describe('MockDemo', () => {
     await page.getByRole('button', { name: 'Treemap view' }).click()
     await expect(page).toHaveURL(/\?view=tree$/)
     // The map's own crumb bar reports the rooted node + its recursive
-    // total (93.7 KB = samples 84.7K + logs 4.4K + docs 3.2K + the rest).
+    // total (95.3 KB = samples 84.7K + logs 4.4K + docs 4.8K + the rest).
     await expect(page.getByText('root').first()).toBeVisible()
-    await expect(page.getByText('93.7 KB')).toBeVisible()
+    await expect(page.getByText('95.3 KB')).toBeVisible()
     // samples dominates the map; its cell carries label + size. Locate
     // the branch cell itself (the click handler) rather than the label
     // span inside it, which the cell div intercepts pointer events for.
@@ -663,7 +663,7 @@ test.describe('MockDemo', () => {
 })
 
 /** ⌘K path search (`treePathEndpoint` + use-kbd's Omnibar): this folder's
- *  hits first, the rest of the tree under "Elsewhere", SPA navigation. */
+ *  hits first (unlabeled), the rest of the tree under "Elsewhere", SPA navigation. */
 test.describe('MockDemo path search', () => {
   /** Remote results as `[group] label — description` lines, in display order. */
   async function results(page: Page): Promise<string[]> {
@@ -683,7 +683,7 @@ test.describe('MockDemo path search', () => {
     const input = page.locator('.kbd-omnibar-input')
     await input.fill('usage')
     await expect.poll(() => results(page)).toEqual([
-      '[In docs/] usage.md — docs/guide/usage.md · 55 B',
+      '[] usage.md — docs/guide/usage.md · 345 B',
     ])
     // Outside this folder: listed under the lower-priority "Elsewhere" group.
     await input.fill('q1')
