@@ -20,6 +20,7 @@ export default defineConfig({
     'src/sqlite/tableSource.ts',
     'src/sqlite/blockCache.ts',
     'src/renderers/table.ts',
+    'src/renderers/ditto.tsx',
     'src/renderers/tableSource.ts',
     'src/renderers/treeSource.ts',
     'src/renderers/walkTreeSource.ts',

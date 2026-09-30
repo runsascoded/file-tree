@@ -72,6 +72,11 @@
       "import": "./dist/renderers/table.js",
       "require": "./dist/renderers/table.cjs"
     },
+    "./renderers/ditto": {
+      "types": "./dist/renderers/ditto.d.ts",
+      "import": "./dist/renderers/ditto.js",
+      "require": "./dist/renderers/ditto.cjs"
+    },
     "./renderers/tableSource": {
       "types": "./dist/renderers/tableSource.d.ts",
       "import": "./dist/renderers/tableSource.js",

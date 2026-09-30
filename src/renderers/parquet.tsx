@@ -39,12 +39,12 @@ import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, 
 import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 import {
-  applyElide, cellTitle, isDitto, resolveColStyles, resolveElide, TD_STYLE, TH_STYLE,
+  applyElide, chainCellRenderers, resolveColStyles, tableCellCtx, resolveElide, TD_STYLE, TH_STYLE,
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
   type TableHeaderCtx, type TablePageCtx, type TableViewerOptions,
 } from './table'
 import { ellipsisWrap } from './elideNode'
-import { dittoMark } from './ditto'
+import { dittoRenderer } from './ditto'
 
 // Re-exported so a consumer writing one `renderCell` for a mixed tree
 // (`.parquet` here, `.csv` next to it) can name the shared types from
@@ -53,6 +53,8 @@ export type {
   TableCellCtx, TableCellRenderer, TableColumn, TableColumnProps,
   TableHeaderCtx, TableHeaderRenderer, TableViewerOptions,
 } from './table'
+export { chainCellRenderers, repeatsAbove } from './table'
+export { dittoMark, dittoRenderer } from './ditto'
 
 // Re-exported so a consumer writing a `renderCell` for a temporal
 // column can reuse the same reading + formatting the default does,
@@ -204,7 +206,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   )
 
   const el = useMemo(() => resolveElide(elide), [elide])
-  const dittoSet = useMemo(() => (ditto ? new Set(ditto) : undefined), [ditto])
+  const cellRenderer = useMemo(() => chainCellRenderers(ditto ? dittoRenderer<ParquetColumn>(ditto) : undefined, renderCell), [ditto, renderCell])
   // Whole-file-constant columns, folded out of the grid and stated once.
   // Empty unless opted in — and empty for a file whose footer lacks stats.
   const folded = useMemo(
@@ -456,21 +458,17 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                     const tf = temporal.get(c.name)
                     const defaultNode = fmtCell(value, tf)
                     const st = colStyles.get(c.name)
-                    const prev = i > 0 ? visibleRows[i - 1] : undefined
-                    const rendered = renderCell ? renderCell({ value, column: c, row: r, prevRow: prev, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode
-                    const dittoCell = !renderCell && isDitto(dittoSet, c.name, value, prev?.[c.name], i)
+                    const ctx = tableCellCtx({ value, column: c, row: r, at: d => visibleRows[i + d], rowIndex: pageRowStart + i, path, defaultNode })
+                    const rendered = cellRenderer ? cellRenderer(ctx) : defaultNode
+                    // A renderer returning `defaultNode` untouched leaves the cell
+                    // default: it keeps the native title and string-aware ellipsis.
+                    const custom = rendered !== defaultNode
                     // Ellipsis-wrap *before* the tooltip so a render-prop wraps the
                     // reshaped node (`'middle'` rebuilds from the string, discarding
-                    // whatever it wraps otherwise). A ditto cell shows the mark and
-                    // keeps the repeated value only on its `title`.
-                    let title: string | undefined, measure: ((e: ReactMouseEvent<HTMLElement>) => void) | undefined, node: ReactNode
-                    if (dittoCell) {
-                      node = dittoMark(); title = cellTitle(value)
-                    } else {
-                      const wrapped = ellipsisWrap(st?.ellipsis ?? 'end', rendered, !renderCell && typeof value === 'string' ? value : undefined)
-                      ;({ title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row: r, path, raw: cellRaw(value, tf), ellipsis: st?.ellipsis }))
-                    }
-                    const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : undefined
+                    // whatever it wraps otherwise).
+                    const wrapped = ellipsisWrap(st?.ellipsis ?? 'end', rendered, !custom && typeof value === 'string' ? value : undefined)
+                    const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row: r, path, raw: cellRaw(value, tf), ellipsis: st?.ellipsis })
+                    const hoverEnter = onCellHover ? () => notifyHover(ctx) : undefined
                     return (
                       <td
                         key={c.name}

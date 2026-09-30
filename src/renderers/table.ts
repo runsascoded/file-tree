@@ -36,11 +36,15 @@ export interface TableCellCtx<C extends TableColumn = TableColumn> {
   column: C
   /** The whole row, for cells whose rendering depends on a sibling. */
   row: Record<string, unknown>
-  /** The previous row *on the current page*, or `undefined` for the first
-   *  row of the page (and viewers that don't track it). The cheap seam for
-   *  a consumer's own "ditto"/run collapsing — compare `value` to
-   *  `prevRow?.[column.name]` — without the viewer imposing one. */
-  prevRow?: Record<string, unknown>
+  /** The row `dRow` positions from this one, in display order (after
+   *  sort/filter) *on the current page*: `at(-1)` is the row above, `at(1)`
+   *  the row below, `at(0)` this row. `undefined` past either edge of the
+   *  page. Lazy — a renderer that never calls it costs nothing — so it's the
+   *  seam for anything that depends on neighboring rows (run collapsing, deltas,
+   *  group boundaries); see {@link repeatsAbove}, `dittoRenderer`. */
+  at: (dRow: number) => Record<string, unknown> | undefined
+  /** @deprecated `at(-1)`. A getter over it, so equally lazy. */
+  readonly prevRow?: Record<string, unknown>
   /** Row index. Absolute within the file where the viewer can know it
    *  (parquet pages within a row group, so it can); page-relative where
    *  it can't — the CSV viewer paginates by *bytes*, so it has no way
@@ -61,6 +65,39 @@ export interface TableCellCtx<C extends TableColumn = TableColumn> {
  *  library hands back the node it would have rendered and gets out of
  *  the way. */
 export type TableCellRenderer<C extends TableColumn = TableColumn> = (ctx: TableCellCtx<C>) => ReactNode
+
+/** Build a {@link TableCellCtx}, with `prevRow` as a lazy getter over `at`. */
+export function tableCellCtx<C extends TableColumn>(ctx: Omit<TableCellCtx<C>, 'prevRow'>): TableCellCtx<C> {
+  return Object.defineProperty(ctx, 'prevRow', { get: () => ctx.at(-1), enumerable: true }) as TableCellCtx<C>
+}
+
+/** Compose cell renderers left to right: each receives the previous one's
+ *  output as `defaultNode`, so a stage that returns `defaultNode` for cells it
+ *  doesn't touch passes them through. `undefined` stages are skipped, so an
+ *  optional renderer can be chained unconditionally. E.g.
+ *  `chainCellRenderers(dittoRenderer(['owner']), formatMoney)` — `formatMoney`
+ *  sees the ditto mark as `defaultNode` on a repeated `owner`. */
+export function chainCellRenderers<C extends TableColumn>(
+  ...renderers: readonly (TableCellRenderer<C> | undefined)[]
+): TableCellRenderer<C> | undefined {
+  const rs = renderers.filter((r): r is TableCellRenderer<C> => r !== undefined)
+  if (rs.length <= 1) return rs[0]
+  return ctx => rs.reduce<ReactNode>((node, r) => {
+    // Copy descriptors, not values, so `prevRow` stays a lazy getter.
+    const next = Object.defineProperties({}, Object.getOwnPropertyDescriptors(ctx)) as TableCellCtx<C>
+    next.defaultNode = node
+    return r(next)
+  }, ctx.defaultNode)
+}
+
+/** Whether this cell's value repeats the row above's (same column, on the
+ *  page). `Object.is`, so a run of equal strings/numbers counts but two
+ *  distinct `Date`/blob objects (ref-unequal) never do. The first row of a
+ *  page has nothing above it, so never repeats. */
+export function repeatsAbove(ctx: Pick<TableCellCtx, 'value' | 'column' | 'at'>): boolean {
+  const above = ctx.at(-1)
+  return above !== undefined && Object.is(ctx.value, above[ctx.column.name])
+}
 
 export interface TableHeaderCtx<C extends TableColumn = TableColumn> {
   column: C
@@ -150,10 +187,12 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
    *  repeated value stays on the `<td>`'s `title` for recovery.
    *
    *  Per-column opt-in by name — a ditto on an unsorted or numeric column
-   *  is noise. Only the *default* rendering collapses; a `renderCell` owns
-   *  its column (read {@link TableCellCtx.prevRow} to do your own). Runs are
-   *  detected within the rendered page, so a run spanning a page boundary
-   *  restarts — the first row of a page always shows its value. */
+   *  is noise. Sugar for chaining `dittoRenderer(ditto)` ahead of
+   *  `renderCell` (see {@link chainCellRenderers}): a `renderCell` receives
+   *  the mark as `defaultNode` on a repeated cell, and can override it (test
+   *  {@link repeatsAbove}). Runs are detected within the rendered page, so a
+   *  run spanning a page boundary restarts — the first row of a page always
+   *  shows its value. */
   ditto?: readonly string[]
   /** How long cell values that outgrow their column are rendered — the
    *  clip and the way the full value comes back. `true`/absent is the
@@ -327,21 +366,6 @@ export function cellClipped(el: HTMLElement): boolean {
   return el.scrollWidth > el.clientWidth + 1
 }
 
-/** Whether a cell collapses to a ditto mark (see {@link TableViewerOptions.ditto}):
- *  its column opted in, it isn't the first row of the page (`rowInPage > 0`),
- *  and its value repeats the previous row's. `Object.is` so a run of equal
- *  strings/numbers collapses but two distinct `Date`/blob objects (ref-unequal)
- *  never do. */
-export function isDitto(
-  dittoCols: ReadonlySet<string> | undefined,
-  column: string,
-  value: unknown,
-  prevValue: unknown,
-  rowInPage: number,
-): boolean {
-  return dittoCols !== undefined && rowInPage > 0 && dittoCols.has(column) && Object.is(value, prevValue)
-}
-
 /** The per-cell result of an elide strategy: what to hang on the `<td>` for
  *  the native tooltip — either a static `title`, or an `onMouseEnter` that
  *  sets one only once the cell is measured to clip ({@link cellClipped}) —
@@ -354,8 +378,9 @@ export interface ElideCell {
 
 /** Apply an elide strategy's *tooltip* to one cell — the width cap is a
  *  style concern ({@link elideCellStyle}); this is the tooltip half.
- *  `hasCustomRender` gates the `'native'` default (a `renderCell` owns its
- *  own title), but a tooltip render-prop applies regardless. */
+ *  `hasCustomRender` (a `renderCell` replaced the default node, so owns its
+ *  own title) gates the `'native'` default, but a tooltip render-prop
+ *  applies regardless. */
 export function applyElide<C extends TableColumn>(
   el: ResolvedElide<C>,
   args: { value: unknown; node: ReactNode; hasCustomRender: boolean; column: C; row: Record<string, unknown>; path: string; raw?: string; ellipsis?: EllipsisMode },

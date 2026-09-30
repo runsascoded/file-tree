@@ -418,7 +418,7 @@ const ParquetViewer = makeParquetViewer({          // module scope, not inside r
 
 The two differ in one way that matters: `makeParquetViewer` mints a **component type**, so it belongs at module scope — calling it inside render produces a new type every pass, which remounts the table and drops its row-group cache. `parquetOptions` is just props on a stable type, so it's the one to reach for when a hook has to close over something that changes: a format toggle (raw epochs vs. formatted, bytes vs. MB — CSS can restyle a cell but can't rewrite its text), or data that isn't in the file, like an id→name lookup you fetched separately. Presentation that CSS *can* own — colors, alignment, theme — should stay in CSS; see [Theming](#theming). Options baked in by the factory win over `parquetOptions`, so the two compose as long as they don't set the same key.
 
-`renderCell` gets `{ value, column, row, rowIndex, path, defaultNode }` — `column` carries `{ name, physicalType, logicalType, timeUnit, convertedType }`, and `rowIndex` is absolute within the file, not within the page.
+`renderCell` gets `{ value, column, row, at, rowIndex, path, defaultNode }` — `column` carries `{ name, physicalType, logicalType, timeUnit, convertedType }`, and `rowIndex` is absolute within the file, not within the page.
 
 `path` is the file being viewed, so **one module-scope viewer covers a whole tree** of unrelated schemas — you dispatch inside the hook rather than minting a viewer per file:
 
@@ -497,6 +497,25 @@ const CsvViewer     = makeCsvViewer({ renderCell: renderMoney })
 ```
 
 Formats that know more extend the base: parquet's `ParquetColumn` adds the physical/logical type it read, and its `renderHeader` ctx carries row-group `stats`. `column.kind` is the coarse reading (`'number' | 'string' | 'temporal' | 'boolean' | 'binary'`) available everywhere — absent on CSV, which genuinely has no types, so guessing one is the consumer's call.
+
+### Neighboring rows, chaining, ditto
+
+`ctx.at(dRow)` returns the row `dRow` positions away on the current page, in display order (after sort/filter): `at(-1)` is the row above, `at(1)` the row below, and it's `undefined` past either edge. It's lazy, so a renderer that doesn't call it pays nothing. That's the seam for anything depending on adjacent rows: run collapsing, deltas, group boundaries. `repeatsAbove(ctx)` is the common case (`Object.is` against the same column one row up).
+
+`chainCellRenderers(a, b, …)` composes renderers left to right, each receiving the previous output as `defaultNode` (`undefined` stages are skipped). "Ditto" (collapsing a run of repeated values to a dimmed `〃`, value kept on its `title`) is just one such renderer:
+
+```tsx
+import { chainCellRenderers, dittoRenderer } from '@rdub/file-tree/renderers/parquet'
+
+const renderCell = chainCellRenderers(
+  dittoRenderer(['owner']),
+  ctx => ctx.column.name === 'value' ? renderMoney(ctx) : ctx.defaultNode,  // sees the mark as `defaultNode` on a repeat
+)
+```
+
+The `ditto: ['owner']` viewer option is sugar for exactly that: it chains `dittoRenderer` ahead of your `renderCell`. A renderer that wants the value back on a repeated cell tests `repeatsAbove(ctx)` and returns its own node.
+
+A cell whose renderer returns `defaultNode` untouched is treated as default: it keeps the native full-value `title` and string-aware ellipsis (`'middle'`). Only cells a renderer actually replaced own their title.
 
 Two differences worth knowing: `rowIndex` is absolute in parquet but **page-relative in CSV** (its pages are byte ranges, so it never learns how many rows preceded them), and numeric alignment is inferred by parquet from its schema but off by default in CSV for the same reason.
 
@@ -596,6 +615,7 @@ Site code in `site/src/components/` (`S2CellPreview`, `LogViewer`, `YamlViewer`)
 |---|---|
 | `@rdub/file-tree` | `Store` types, `NotFoundError`, `ZipEntry` types |
 | `@rdub/file-tree/react` | `<FileTree>`, `<DirListing>`, `<TextViewer>`, `<Breadcrumb>`, `<MediaViewer>`, `<ZipEntryList>`, `<ZipEntryPreview>`, `parsePath`, `asyncBufferFromStore`, `AUDIO`/`CODE_LANG`/`MarkdownRenderer`/`ParquetRenderer`/`ViewerActionCtx`/`CellRenderer`/`CrumbRenderer` |
+| `@rdub/file-tree/stores` | Every `Store` impl, plus the `Store` / `Entry` / … types |
 | `@rdub/file-tree/stores/r2` | `R2Store`, `R2StoreOptions`, `R2PresignOptions` |
 | `@rdub/file-tree/stores/s3` | `S3Store`, `S3StoreOptions` (works for AWS S3, R2 via S3 API, MinIO) |
 | `@rdub/file-tree/stores/http` | `HttpStore`, `HttpStoreOptions` |
@@ -605,6 +625,8 @@ Site code in `site/src/components/` (`S2CellPreview`, `LogViewer`, `YamlViewer`)
 | `@rdub/file-tree/renderers/parquet` | `ParquetViewer` (peer: `hyparquet`) |
 | `@rdub/file-tree/renderers/markdown` | `renderMarkdown` (peers: `react-markdown`, `remark-gfm`) |
 | `@rdub/file-tree/renderers/csv` | `CsvViewer` (pure JS) |
+| `@rdub/file-tree/renderers/table` | Format-neutral table hooks: `TableCellCtx`, `chainCellRenderers`, `repeatsAbove`, elide helpers |
+| `@rdub/file-tree/renderers/ditto` | `dittoRenderer`, `dittoMark` (also re-exported from `parquet` / `csv`) |
 | `@rdub/file-tree/renderers/notebook` | `NotebookViewer` (peers via `markdown`) |
 | `@rdub/file-tree/renderers/code` | `renderCode` (peer: `highlight.js`) |
 | `@rdub/file-tree/renderers/json` | `renderJsonTree` — search, jq filter (optional `jq-web` peer), expand/collapse-all, copy-jq-path on key click |

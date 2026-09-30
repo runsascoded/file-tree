@@ -148,7 +148,7 @@ test.describe('ElideDemo', () => {
     // The fixture's sweeper column: david, david, kaiyue, ahmed, ahmed, …
     await expect(sweeper.nth(0)).toHaveText('david')       // run head keeps its value
     await expect(sweeper.nth(1)).toHaveText('〃')           // repeat → mark
-    expect(await sweeper.nth(1).getAttribute('title')).toBe('david')  // value recoverable
+    expect(await sweeper.nth(1).getByLabel('ditto').getAttribute('title')).toBe('david')  // value recoverable
     await expect(sweeper.nth(2)).toHaveText('kaiyue')      // a change shows through
     await expect(sweeper.nth(4)).toHaveText('〃')           // ahmed after ahmed
   })

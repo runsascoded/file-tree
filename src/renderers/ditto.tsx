@@ -1,11 +1,27 @@
 import type { ReactNode } from 'react'
+import { cellTitle, repeatsAbove, type TableCellRenderer, type TableColumn } from './table'
 
-/** The ditto mark a collapsed repeated value renders instead of its text
- *  (see {@link import('./table').TableViewerOptions.ditto}). Dimmed and
- *  centered so a run reads as one block and the changes stand out; `〃`
- *  (U+3003) rather than a straight quote so it reads as "same as above"
- *  even mid-column. Kept out of `table.ts` so that module needs no React
- *  runtime. */
-export function dittoMark(): ReactNode {
-  return <span aria-label="ditto" style={{ opacity: 0.3, display: 'block', textAlign: 'center' }}>〃</span>
+/** The ditto mark a collapsed repeated value renders instead of its text.
+ *  Dimmed and centered so a run reads as one block and the changes stand
+ *  out; `〃` (U+3003) rather than a straight quote so it reads as "same as
+ *  above" even mid-column. `value` goes on the mark's `title`, so the
+ *  repeated value stays recoverable on hover. */
+export function dittoMark(value?: unknown): ReactNode {
+  const title = cellTitle(value)
+  return <span aria-label="ditto" {...(title != null ? { title } : {})} style={{ opacity: 0.3, display: 'block', textAlign: 'center' }}>〃</span>
+}
+
+/** A cell renderer collapsing repeated values in `columns` to {@link dittoMark}
+ *  (see {@link repeatsAbove}); other cells pass `defaultNode` through. Empty
+ *  values (`null`/`undefined`/`''`) never collapse — a run of blanks already
+ *  reads as one, and a mark over nothing is noise. Chain it
+ *  ahead of your own renderer with `chainCellRenderers`, or pass the viewer's
+ *  `ditto` option, which does exactly that. */
+export function dittoRenderer<C extends TableColumn = TableColumn>(columns: readonly string[]): TableCellRenderer<C> {
+  const cols = new Set(columns)
+  return ctx => {
+    const { value } = ctx
+    const empty = value == null || value === ''
+    return !empty && cols.has(ctx.column.name) && repeatsAbove(ctx) ? dittoMark(value) : ctx.defaultNode
+  }
 }

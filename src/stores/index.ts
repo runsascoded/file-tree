@@ -1,5 +1,8 @@
 /** Convenience re-export. Most consumers import directly from
  *  `@rdub/file-tree/stores/r2` etc. to keep their dep graph narrow. */
+// Type-only, so a consumer naming `Store` next to the impls it picks needn't
+// reach for the package root (no runtime cost; the error classes stay there).
+export type { Entry, GetResult, GetUrlOptions, ListOptions, ListResult, Range, Store, StoreCapabilities } from '../types'
 export { R2Store } from './r2'
 export type { R2StoreOptions } from './r2'
 export { HttpStore } from './http'
