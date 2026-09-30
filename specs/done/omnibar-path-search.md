@@ -225,10 +225,16 @@ one I reach for every day, I wire in four small pieces.
 
 ## Status
 
-**Design only.** No code. Grounded against `use-kbd@0.13`'s real omnibar
-endpoint API (`useOmnibar`, `OmnibarEndpointConfig`, `OmnibarLinkEntry`,
-`EndpointResponse`) and file-tree's existing `TreeSource` seam +
-href/splat construction. Sequenced after the treemap wrapper (built);
-independent of Layers 1–2, though a lazy/remote source makes the async
-endpoint scale. Companion seams:
-`specs/tree-sources-and-treemap.md`, `specs/url-state-opt-in.md` (done).
+**Built** (`@rdub/file-tree/omnibar`), with a MockDemo integration (`site/src/components/PathSearch.tsx`) and e2e. What landed, vs. the design above:
+
+- **`treePathEndpoint(source, opts)`** returns an async `OmnibarEndpointAsyncConfig`. The spec's sync-after-materialize flip was dropped: `useOmnibarEndpoint` fixes sync/async at registration, and the index is cached per `(source, scope, maxNodes)` in a `WeakMap` (so recreating the config each render is free), so after the first query it's an in-memory filter behind use-kbd's 150ms debounce. No `rootPrefix` option: `TreeNode.path` is already splat-space, so `href = routeBase/path` (+ `/` for dirs).
+- **Options:** `routeBase`, `path` (scope subtree), `excludePath` (so an ancestor-scope endpoint doesn't repeat a nearer scope's hits), `group`, `priority`, `kinds`, `enabled`, `minQueryLength` (default 1), `pageSize`, `maxNodes`.
+- **Entries:** link entries; `label` = basename (dirs `name/`), `description` = path + size, `id` = path.
+- **Corpus:** `treePathIndex(source, { path, maxNodes })`, breadth-first over `children()` (corpus option 1, no `TreeSource` change). Past `maxNodes` → `TreeTooLargeError`, which the endpoint surfaces as one explanatory entry.
+- **Ranking:** `scorePath(query, path)`, dependency-free: whitespace tokens (all required, any order), contiguous > subsequence, word-boundary and basename bonuses, shorter path breaks ties. `makeMatcher` unchanged.
+- **Navigation (open question resolved):** `<Omnibar onExecuteRemote>` overrides the default `window.location` assignment, so the consumer passes an SPA `navigate`; entries stay links.
+- **Ordering caveat:** the endpoint sets `sort: 'none'` so use-kbd keeps `scorePath`'s order, but that key is only on use-kbd `main` (`d9a8fb2`), unreleased as of 0.13.0; until a release, the omnibar re-ranks the same hits by its own fuzzy score.
+- **Ancestor scopes:** multi-endpoint shape (demo: "In <dir>/" at priority 50, "Elsewhere" at 40 with `excludePath`).
+- `use-kbd` is an optional peer (type-only import; no runtime dependency).
+
+Not done: omnibar state via `usePersistedState` (`?oq=`), an async search backend for lazy/remote sources (still enumerates via `children`), `TreeSource.paths?()`.

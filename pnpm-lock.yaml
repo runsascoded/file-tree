@@ -57,6 +57,9 @@ importers:
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
+      use-kbd:
+        specifier: ^0.13.0
+        version: 0.13.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       use-prms:
         specifier: ^0.5.0
         version: 0.5.0(react@18.3.1)
@@ -1204,6 +1207,12 @@ packages:
 
   unist-util-visit@5.1.0:
     resolution: {integrity: sha512-m+vIdyeCOpdr/QeQCu2EzxX/ohgS8KbnPDgFni4dQsfSCtpz8UqDyY5GjRru8PDKuYn7Fq19j1CQ+nJSsGKOzg==}
+
+  use-kbd@0.13.0:
+    resolution: {integrity: sha512-36/ALKDhSTtwAc0luTXwA3pGlmIvb505XJ2aRkOKB3cevDyaiHbvW126XuPgfiLzya8r3B6E2qm6H/tS6RyKEQ==}
+    peerDependencies:
+      react: '>=18.0.0'
+      react-dom: '>=18.0.0'
 
   use-prms@0.5.0:
     resolution: {integrity: sha512-oWgETG/6KxEzJToR0MltHgIkJBLVBcibjjvx7qdMg63SqUVgNAy6iYBjODjcXwC7OYtw9UyyrnFfqC6JumQdKQ==}
@@ -2506,6 +2515,11 @@ snapshots:
       '@types/unist': 3.0.3
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
+
+  use-kbd@0.13.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+    dependencies:
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
 
   use-prms@0.5.0(react@18.3.1):
     optionalDependencies:

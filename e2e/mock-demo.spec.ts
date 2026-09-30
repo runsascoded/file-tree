@@ -661,3 +661,40 @@ test.describe('MockDemo', () => {
     await expect(page.getByText(/^error:.*NotFoundError/)).toBeVisible()
   })
 })
+
+/** ⌘K path search (`treePathEndpoint` + use-kbd's Omnibar): this folder's
+ *  hits first, the rest of the tree under "Elsewhere", SPA navigation. */
+test.describe('MockDemo path search', () => {
+  /** Remote results as `[group] label — description` lines, in display order. */
+  async function results(page: Page): Promise<string[]> {
+    const rows = page.locator('.kbd-omnibar-result')
+    return rows.evaluateAll(els => els.map(el => {
+      const t = (cls: string) => el.querySelector(`.${cls}`)?.textContent?.trim() ?? ''
+      return `[${t('kbd-omnibar-result-category')}] ${t('kbd-omnibar-result-label')} — ${t('kbd-omnibar-result-description')}`
+    }))
+  }
+
+  test('ranks the current folder above the rest, and navigates without a reload', async ({ page }) => {
+    await page.goto('/mock/docs/')
+    await expect(page.getByRole('link', { name: 'intro.md', exact: true })).toBeVisible()
+    await page.evaluate(() => { (window as unknown as { marker: number }).marker = 1 })
+
+    await page.getByRole('button', { name: 'Search paths (⌘K)' }).click()
+    const input = page.locator('.kbd-omnibar-input')
+    await input.fill('usage')
+    await expect.poll(() => results(page)).toEqual([
+      '[In docs/] usage.md — docs/guide/usage.md · 55 B',
+    ])
+    // Outside this folder: listed under the lower-priority "Elsewhere" group.
+    await input.fill('q1')
+    await expect.poll(() => results(page)).toEqual([
+      '[Elsewhere] q1.csv — data/2024/q1.csv · 56 B',
+      '[Elsewhere] q1.csv — data/2025/q1.csv · 56 B',
+    ])
+    await input.press('Enter')
+    await expect(page).toHaveURL('/mock/data/2024/q1.csv')
+    await expect(page.locator('.kbd-omnibar')).toHaveCount(0)
+    // Same document: `onExecuteRemote` navigated the SPA, no full reload.
+    expect(await page.evaluate(() => (window as unknown as { marker?: number }).marker)).toBe(1)
+  })
+})

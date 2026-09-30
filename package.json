@@ -17,6 +17,11 @@
       "import": "./dist/react/index.js",
       "require": "./dist/react/index.cjs"
     },
+    "./omnibar": {
+      "types": "./dist/omnibar.d.ts",
+      "import": "./dist/omnibar.js",
+      "require": "./dist/omnibar.cjs"
+    },
     "./stores": {
       "types": "./dist/stores/index.d.ts",
       "import": "./dist/stores/index.js",
@@ -250,11 +255,15 @@
     "react-markdown": "^7 || ^8 || ^9 || ^10",
     "react-router-dom": "^6 || ^7",
     "remark-gfm": "^3 || ^4",
+    "use-kbd": "^0.13",
     "use-prms": "^0.5.0",
     "wa-sqlite": "^1",
     "yaml": "^2"
   },
   "peerDependenciesMeta": {
+    "use-kbd": {
+      "optional": true
+    },
     "yaml": {
       "optional": true
     },
@@ -306,6 +315,7 @@
     "remark-gfm": "^4.0.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
+    "use-kbd": "^0.13.0",
     "use-prms": "^0.5.0",
     "vitest": "^2.1.8",
     "wa-sqlite": "^1.0.0",

@@ -318,6 +318,24 @@ The peers are declared `optional` in `peerDependenciesMeta`, so installing only 
 
 Built-in kinds (no renderer needed): plain text (`<pre>`), image (`<img>`), video (`<video>`), audio (`<audio>`), zip (entry list + per-entry preview, with client-side `DecompressionStream` fallback if `Store.getZipEntries?` isn't provided).
 
+## ⌘K path search — opt-in
+
+`@rdub/file-tree/omnibar` turns the `treeSource` you already pass for dir sizes into a [`use-kbd`] omnibar endpoint: fuzzy search over every path, hits linking where a listing click would.
+
+```tsx
+import { HotkeysProvider, Omnibar, useOmnibarEndpoint } from 'use-kbd'
+import { treePathEndpoint } from '@rdub/file-tree/omnibar'
+
+function PathSearch({ treeSource }) {
+  useOmnibarEndpoint('files', treePathEndpoint(treeSource, { routeBase: '/files' }))
+  const navigate = useNavigate()
+  // SPA navigation; the Omnibar's default is a full-page `window.location` assignment.
+  return <Omnibar onExecuteRemote={e => 'href' in e && e.href && navigate(e.href)} />
+}
+```
+
+Scope with `path` (a subtree) and register more endpoints for ancestors at lower `priority`, each with `excludePath` set to the nearer scope so nothing lists twice; see `site/src/components/PathSearch.tsx`. The index is enumerated on first query (bounded by `maxNodes`) and cached per source.
+
 ## URL state — opt-in
 
 By default `<FileTree>` keeps the dir-listing filter, parquet pagination, and the JSON viewer's search/jq inputs in `useState` (in-memory, no URL writes). Opt in to shareable URL state by passing the bundled hook:
@@ -630,6 +648,7 @@ Site code in `site/src/components/` (`S2CellPreview`, `LogViewer`, `YamlViewer`)
 | `@rdub/file-tree/renderers/notebook` | `NotebookViewer` (peers via `markdown`) |
 | `@rdub/file-tree/renderers/code` | `renderCode` (peer: `highlight.js`) |
 | `@rdub/file-tree/renderers/json` | `renderJsonTree` — search, jq filter (optional `jq-web` peer), expand/collapse-all, copy-jq-path on key click |
+| `@rdub/file-tree/omnibar` | `treePathEndpoint` (⌘K path search over a `TreeSource`, as a `use-kbd` omnibar endpoint), `treePathIndex`, `scorePath` (optional peer: `use-kbd`) |
 | `@rdub/file-tree/url-state` | `useUrlPersistedState` — opt-in URL-state hook (binds `?q=`, `?page=`, `?json-q=`, `?jq=` via `use-prms`) |
 | `@rdub/file-tree/test/conformance` | `runStoreConformance(makeStore)` — vitest battery any new Store impl can opt into |
 
@@ -656,3 +675,4 @@ Other open items: `<StoreAuthForm>` for credential-paste UX, manifest-based stat
 See [`specs/handoff.md`](specs/handoff.md) for full status + roadmap, and [`site/worker/README.md`](site/worker/README.md) for the demo worker setup runbook (R2 presign).
 
 [disk-tree]: https://github.com/runsascoded/disk-tree
+[`use-kbd`]: https://github.com/runsascoded/use-kbd

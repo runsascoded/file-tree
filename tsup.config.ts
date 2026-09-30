@@ -3,6 +3,7 @@ import { defineConfig } from 'tsup'
 export default defineConfig({
   entry: [
     'src/index.ts',
+    'src/omnibar.ts',
     'src/react/index.ts',
     'src/stores/index.ts',
     'src/stores/r2.ts',

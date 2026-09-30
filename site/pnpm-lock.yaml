@@ -41,6 +41,9 @@ importers:
       s2js:
         specifier: ^1.44.0
         version: 1.44.0
+      use-kbd:
+        specifier: ^0.13.0
+        version: 0.13.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       wa-sqlite:
         specifier: ^1.0.0
         version: 1.0.0
@@ -1007,6 +1010,12 @@ packages:
     hasBin: true
     peerDependencies:
       browserslist: '>= 4.21.0'
+
+  use-kbd@0.13.0:
+    resolution: {integrity: sha512-36/ALKDhSTtwAc0luTXwA3pGlmIvb505XJ2aRkOKB3cevDyaiHbvW126XuPgfiLzya8r3B6E2qm6H/tS6RyKEQ==}
+    peerDependencies:
+      react: '>=18.0.0'
+      react-dom: '>=18.0.0'
 
   vfile-message@4.0.3:
     resolution: {integrity: sha512-QTHzsGd1EhbZs4AsQ20JX1rC3cOlt/IWJruk893DfLRr57lcnOeMaWG4K0JrRta4mIJZKth2Au3mM3u03/JWKw==}
@@ -2197,6 +2206,11 @@ snapshots:
       browserslist: 4.28.2
       escalade: 3.2.0
       picocolors: 1.1.1
+
+  use-kbd@0.13.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+    dependencies:
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
 
   vfile-message@4.0.3:
     dependencies:

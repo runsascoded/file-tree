@@ -15,6 +15,7 @@ import { useUrlPersistedState } from '@rdub/file-tree/url-state'
 import { renderViewerActions } from '../viewerActions'
 import { isS2Cell, S2Cell } from '../components/S2CellPreview'
 import { PageAside, type AsideState } from '../components/PageAside'
+import { PathSearch } from '../components/PathSearch'
 
 /** Exercises the parquet viewer's presentation hooks. Built at module
  *  scope: `makeParquetViewer` mints a component type, so calling it in
@@ -52,7 +53,7 @@ const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' 
  *
  *  Note the CSV branch has to coerce: CSV has no types, so `value`
  *  arrives as a string where parquet hands over a `DOUBLE`. */
-function renderMoney({ column, value, defaultNode }: TableCellCtx): ReactNode {
+function renderMoney({ column, value, defaultNode }: Pick<TableCellCtx, 'column' | 'value' | 'defaultNode'>): ReactNode {
   if (column.name !== 'value') return defaultNode
   const n = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(n) ? usd.format(n) : defaultNode
@@ -155,7 +156,7 @@ function useParquetOptions(aside: (s: Partial<AsideState>) => void): ParquetView
   // re-fire anything.
   onPage: page => aside({ page }),
   onCellHover: cell => aside({ cell }),
-  renderCell: ({ column, value, row, rowIndex, path, defaultNode }) => {
+  renderCell: ({ column, value, row, path, defaultNode }) => {
     if (path !== EVENTS) return defaultNode
 
     const chosen = formats[column.name]
@@ -185,7 +186,7 @@ function useParquetOptions(aside: (s: Partial<AsideState>) => void): ParquetView
     // hides float noise like `36.960000000000004`, which is why
     // formatting has to happen here and not in CSS. Shared with the CSV
     // viewer, which takes the same hook.
-    if (column.name === 'value') return renderMoney({ column, value, row, rowIndex, path, defaultNode })
+    if (column.name === 'value') return renderMoney({ column, value, defaultNode })
 
     return defaultNode
   },
@@ -391,6 +392,7 @@ export function MockDemo() {
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5em' }}>
       <div style={{ display: 'flex', gap: '1em', alignItems: 'flex-start' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
+      <PathSearch source={treeSource} routeBase="/mock">
       <BrushContext.Provider value={BRUSHES[brushKey].fn}>
       <FileTree
         store={store}
@@ -415,6 +417,7 @@ export function MockDemo() {
         usePersistedState={useUrlPersistedState}
       />
       </BrushContext.Provider>
+      </PathSearch>
       <BrushPanel value={brushKey} onChange={setBrushKey} />
       </div>
       {asideState.page && <PageAside {...asideState} />}

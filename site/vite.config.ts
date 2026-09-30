@@ -96,7 +96,7 @@ export default defineConfig({
     port: PORT,
     strictPort: true,
     host: true,
-    allowedHosts: process.env.VITE_ALLOWED_HOSTS?.split(',') ?? [],
+    allowedHosts: true,  // trusted-tailnet dev server, reached by bare MagicDNS name (`m3:8731`)
   },
   preview: {
     port: PORT,
