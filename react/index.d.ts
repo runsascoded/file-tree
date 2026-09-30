@@ -1,5 +1,7 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode, ComponentType, ComponentProps } from 'react';
+import { M as MarkdownCtx } from '../markdownLinks-CyvzSz5A.js';
+export { i as isPlainClick, m as markdownCtx, r as resolveTreeHref, a as resolveTreeKey } from '../markdownLinks-CyvzSz5A.js';
 import { Entry, Store, ZipEntriesResult, GetResult } from '../index.js';
 import { TreeSource } from '../renderers/treeSource.js';
 export { ChildrenRequest, Snapshot, TreeLevel, TreeNode, TreeSourceCapabilities, TreeTooLargeError } from '../renderers/treeSource.js';
@@ -85,7 +87,7 @@ interface DirListingProps {
     usePersistedState?: PersistedState;
     /** When set + a `README.md` (case-insensitive) is in the listing, the
      *  README is fetched and rendered below the table via this fn. */
-    markdownRenderer?: (source: string) => ReactNode;
+    markdownRenderer?: MarkdownRenderer;
     /** Optional per-cell render hook (see `CellRenderer`). */
     renderCell?: CellRenderer;
     /** When set, directory rows show their *recursive* size (instead of
@@ -162,8 +164,12 @@ declare function RegistryViewer({ entry, store, path, usePersistedState, fallbac
  *  consumers wire `react-markdown` (or any equivalent). When provided,
  *  `<TextViewer>` uses it for `.md`/`.markdown` files and
  *  `<DirListing>` uses it for default-README rendering below the
- *  directory table. */
-type MarkdownRenderer = (source: string) => ReactNode;
+ *  directory table.
+ *
+ *  `ctx` (absent outside a tree, e.g. a zip entry) resolves relative links
+ *  and images against the file's place in the tree; see `MarkdownCtx`.
+ *  `renderMarkdown` applies it; a custom renderer may ignore it. */
+type MarkdownRenderer = (source: string, ctx?: MarkdownCtx) => ReactNode;
 /** Optional component that renders a Parquet (`.parquet` / `.pqt`)
  *  file. Pluggable so the lib doesn't bundle `hyparquet` (or any
  *  equivalent). When provided, parquet paths render via this component
@@ -480,4 +486,4 @@ declare function fmtSize(n: number | undefined): string;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { type AsyncBuffer, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PdfViewer, type PdfViewerProps, PersistedState, RegistryViewer, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, findViewer, fmtSize, makeMatcher, readZipEntries, readZipEntry };
+export { type AsyncBuffer, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, MarkdownCtx, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PdfViewer, type PdfViewerProps, PersistedState, RegistryViewer, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, findViewer, fmtSize, makeMatcher, readZipEntries, readZipEntry };

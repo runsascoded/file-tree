@@ -40,11 +40,15 @@ __export(react_exports, {
   extOf: () => extOf,
   findViewer: () => findViewer,
   fmtSize: () => fmtSize,
+  isPlainClick: () => isPlainClick,
   keyToSplat: () => keyToSplat,
   makeMatcher: () => makeMatcher,
+  markdownCtx: () => markdownCtx,
   parsePath: () => parsePath,
   readZipEntries: () => readZipEntries,
   readZipEntry: () => readZipEntry,
+  resolveTreeHref: () => resolveTreeHref,
+  resolveTreeKey: () => resolveTreeKey,
   walkTreeSource: () => walkTreeSource
 });
 module.exports = __toCommonJS(react_exports);
@@ -52,49 +56,6 @@ module.exports = __toCommonJS(react_exports);
 // src/react/FileTree.tsx
 var import_react9 = require("react");
 var import_react_router_dom4 = require("react-router-dom");
-
-// src/react/Breadcrumb.tsx
-var import_react_router_dom = require("react-router-dom");
-var import_jsx_runtime = require("react/jsx-runtime");
-function Breadcrumb({ crumbs, separator = " / ", rightSlot, renderCrumb }) {
-  if (crumbs.length === 0 && !rightSlot) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("nav", { "aria-label": "Breadcrumb", style: { fontFamily: "ui-monospace, monospace", fontSize: "0.95em", marginBottom: "0.5em" }, children: [
-    crumbs.map((c, i) => {
-      const isLast = i === crumbs.length - 1;
-      const defaultNode = c.kind === "home" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", { href: c.to, children: c.label }) : isLast ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { opacity: 0.7 }, children: c.label }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react_router_dom.Link, { to: c.to, children: c.label });
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-        i > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { opacity: 0.5 }, children: separator }),
-        renderCrumb ? renderCrumb({ crumb: c, index: i, isLast, defaultNode }) : defaultNode
-      ] }, `${c.kind ?? "tree"}:${c.to}`);
-    }),
-    rightSlot && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { marginLeft: "0.8em" }, children: rightSlot })
-  ] });
-}
-
-// src/react/DirListing.tsx
-var import_react2 = require("react");
-var import_react_router_dom2 = require("react-router-dom");
-
-// src/react/fmt.ts
-function fmtSize(n) {
-  if (n === void 0) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
-  return `${(n / 1024 ** 3).toFixed(2)} GB`;
-}
-
-// src/react/match.ts
-function makeMatcher(q) {
-  if (!q) return () => true;
-  if (!/[*?]/.test(q)) {
-    const lower = q.toLowerCase();
-    return (s) => s.toLowerCase().includes(lower);
-  }
-  const pattern = q.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
-  const re = new RegExp(`^${pattern}$`, "i");
-  return (s) => re.test(s);
-}
 
 // src/react/parsePath.ts
 var TEXTY = /* @__PURE__ */ new Set(["txt", "csv", "tsv", "json", "md", "log", "yaml", "yml", "toml", "ini", "sql", "sh", "py", "ts", "tsx", "js", "jsx", "html", "css"]);
@@ -172,6 +133,101 @@ function basename(key) {
   const trimmed = key.replace(/\/+$/, "");
   const i = trimmed.lastIndexOf("/");
   return i < 0 ? trimmed : trimmed.slice(i + 1);
+}
+
+// src/react/markdownLinks.ts
+var SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+function resolveTreeKey(href, fileKey, rootPrefix = "") {
+  if (!href || SCHEME.test(href) || href.startsWith("/") || href.startsWith("#") || href.startsWith("?")) return null;
+  const m = /^([^?#]*)(.*)$/.exec(href);
+  const [, rel, suffix] = m;
+  const dir = fileKey.slice(0, fileKey.lastIndexOf("/") + 1);
+  const parts = `${dir}${rel}`.split("/");
+  const out = [];
+  for (const p of parts) {
+    if (p === "" || p === ".") continue;
+    if (p === "..") {
+      if (!out.length) return null;
+      out.pop();
+    } else {
+      out.push(p);
+    }
+  }
+  const isDir = ["", ".", ".."].includes(parts[parts.length - 1]);
+  const key = out.join("/") + (isDir && out.length ? "/" : "");
+  if (!key.startsWith(rootPrefix)) return null;
+  return { key, suffix };
+}
+function resolveTreeHref(href, fileKey, opts) {
+  const r = resolveTreeKey(href, fileKey, opts.rootPrefix);
+  if (!r) return null;
+  return `${opts.routeBase.replace(/\/+$/, "")}/${keyToSplat(r.key, opts.rootPrefix)}${r.suffix}`;
+}
+function markdownCtx(path, opts) {
+  const { store, routeBase, rootPrefix = "", navigate } = opts;
+  return {
+    path,
+    navigate,
+    resolveHref: (href) => {
+      const to = resolveTreeHref(href, path, { routeBase, rootPrefix });
+      return to === null ? { href, internal: false } : { href: to, internal: true };
+    },
+    resolveSrc: (src) => {
+      const r = resolveTreeKey(src, path, rootPrefix);
+      if (!r || r.key.endsWith("/") || !store.getUrl) return src;
+      try {
+        return store.getUrl(decodeURIComponent(r.key), { inline: true }) + r.suffix;
+      } catch {
+        return src;
+      }
+    }
+  };
+}
+function isPlainClick(e) {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.defaultPrevented;
+}
+
+// src/react/Breadcrumb.tsx
+var import_react_router_dom = require("react-router-dom");
+var import_jsx_runtime = require("react/jsx-runtime");
+function Breadcrumb({ crumbs, separator = " / ", rightSlot, renderCrumb }) {
+  if (crumbs.length === 0 && !rightSlot) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("nav", { "aria-label": "Breadcrumb", style: { fontFamily: "ui-monospace, monospace", fontSize: "0.95em", marginBottom: "0.5em" }, children: [
+    crumbs.map((c, i) => {
+      const isLast = i === crumbs.length - 1;
+      const defaultNode = c.kind === "home" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", { href: c.to, children: c.label }) : isLast ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { opacity: 0.7 }, children: c.label }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react_router_dom.Link, { to: c.to, children: c.label });
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+        i > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { opacity: 0.5 }, children: separator }),
+        renderCrumb ? renderCrumb({ crumb: c, index: i, isLast, defaultNode }) : defaultNode
+      ] }, `${c.kind ?? "tree"}:${c.to}`);
+    }),
+    rightSlot && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { marginLeft: "0.8em" }, children: rightSlot })
+  ] });
+}
+
+// src/react/DirListing.tsx
+var import_react2 = require("react");
+var import_react_router_dom2 = require("react-router-dom");
+
+// src/react/fmt.ts
+function fmtSize(n) {
+  if (n === void 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
+  return `${(n / 1024 ** 3).toFixed(2)} GB`;
+}
+
+// src/react/match.ts
+function makeMatcher(q) {
+  if (!q) return () => true;
+  if (!/[*?]/.test(q)) {
+    const lower = q.toLowerCase();
+    return (s) => s.toLowerCase().includes(lower);
+  }
+  const pattern = q.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+  const re = new RegExp(`^${pattern}$`, "i");
+  return (s) => re.test(s);
 }
 
 // src/react/persistedState.ts
@@ -358,10 +414,11 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
       }) })
     ] }),
     cursor && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { onClick: loadMore, style: { marginTop: "0.5em" }, children: "load more" }),
-    markdownRenderer && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(DefaultReadme, { store, entries, markdownRenderer })
+    markdownRenderer && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(DefaultReadme, { store, entries, markdownRenderer, routeBase, rootPrefix })
   ] });
 }
-function DefaultReadme({ store, entries, markdownRenderer }) {
+function DefaultReadme({ store, entries, markdownRenderer, routeBase, rootPrefix }) {
+  const navigate = (0, import_react_router_dom2.useNavigate)();
   const readme = entries.find((e) => !e.isDir && /^README\.md$/i.test(basename(e.key)));
   const [text, setText] = (0, import_react2.useState)(null);
   (0, import_react2.useEffect)(() => {
@@ -392,7 +449,7 @@ function DefaultReadme({ store, entries, markdownRenderer }) {
       },
       children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { fontSize: "0.8em", opacity: 0.6, fontFamily: "ui-monospace, monospace", marginBottom: "0.5em" }, children: basename(readme.key) }),
-        markdownRenderer(text)
+        markdownRenderer(text, markdownCtx(readme.key, { store, routeBase, rootPrefix, navigate }))
       ]
     }
   );
@@ -971,6 +1028,7 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleH
   ] });
 }
 function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
+  const navigate = (0, import_react_router_dom4.useNavigate)();
   if (parsed.kind !== "dir" && parsed.kind !== "zipEntry") {
     const entry = findViewer(viewers, parsed.path);
     if (entry) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(RegistryViewer, { entry, store, path: parsed.path, usePersistedState });
@@ -1008,7 +1066,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
         {
           store,
           path: parsed.path,
-          markdownRenderer: isMd ? markdownRenderer : void 0,
+          markdownRenderer: isMd && markdownRenderer ? (s) => markdownRenderer(s, markdownCtx(parsed.path, { store, routeBase, rootPrefix, navigate })) : void 0,
           jsonRenderer: isJson ? jsonRenderer : void 0,
           codeRenderer: !isMd && !isJson && lang ? codeRenderer : void 0,
           codeLang: lang,
@@ -1396,11 +1454,15 @@ function walkTreeSource(store, opts = {}) {
   extOf,
   findViewer,
   fmtSize,
+  isPlainClick,
   keyToSplat,
   makeMatcher,
+  markdownCtx,
   parsePath,
   readZipEntries,
   readZipEntry,
+  resolveTreeHref,
+  resolveTreeKey,
   walkTreeSource
 });
 //# sourceMappingURL=index.cjs.map
