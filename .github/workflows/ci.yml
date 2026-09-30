@@ -125,6 +125,10 @@ jobs:
     # `./index.js` while files still lived under `./dist/index.js` →
     # validator failure. Default mode keeps both in sync.
 
+  # One Worker for the demo's whole edge: `/v1/files/*` (the R2 API), the
+  # built SPA (static assets), and per-path OG tags + `/og/*` card PNGs.
+  # GH Pages (above) keeps serving `file-tree.rbw.sh` until its DNS is
+  # cut over to this Worker; see `specs/done/cfw-og-images.md`.
   deploy-worker:
     needs: [test, e2e]
     if: github.ref == 'refs/heads/main'
@@ -139,8 +143,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build lib (worker consumes via link:../..)
+      - name: Build lib (worker + site consume via link:)
         run: pnpm build
+      # `[assets]` in `wrangler.toml` ships `site/dist`; the worker also
+      # bundles the site's `MockStore` fixture for `/og/mock/*` cards.
+      - name: Install site deps
+        run: pnpm install --frozen-lockfile
+        working-directory: site
+      - name: Build site
+        run: pnpm build
+        working-directory: site
       - name: Install worker deps
         run: pnpm install --frozen-lockfile
         working-directory: site/worker

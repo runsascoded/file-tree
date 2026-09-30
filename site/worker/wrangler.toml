@@ -2,16 +2,41 @@ name = "file-tree-demo"
 main = "src/index.ts"
 compatibility_date = "2025-04-01"
 
+# `file-tree-demo.<account>.workers.dev` stays on: it's the `/v1/files`
+# origin the GHP-hosted site calls today, and where the Worker-hosted
+# site is reachable before `file-tree.rbw.sh` is cut over to it.
+workers_dev = true
+
 [dev]
 port = 8732
 
 [vars]
 CORS_ORIGIN = "*"
 
+# The built SPA (`pnpm build` in `site/`). The Worker runs first for
+# every path except the hashed bundles + static files, so it can serve
+# `/v1/files/*` + `/og/*` and stamp per-path OG tags into SPA HTML;
+# `env.ASSETS.fetch` then answers any route with `index.html`.
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/*", "!/assets/*", "!/favicon.svg", "!/jq.wasm"]
+
+# Keys the OG image cache per deploy (see `src/og.ts`).
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+# The OG card's fonts (`fonts/*.ttf`), imported as `ArrayBuffer`s for
+# resvg. (`*.wasm` imports are a built-in rule.)
+[[rules]]
+type = "Data"
+globs = ["**/*.ttf"]
+fallthrough = true
+
 # Two prod buckets exposed read-only via MultiStore. Each is scoped to a
 # safe prefix subset (matching the existing ctbk + crashes consumer
-# integrations). When/if a dedicated `file-tree-demo` bucket is created
-# (frozen demo fixture), add a third binding here.
+# integrations). `DEMO` is the frozen demo fixture bucket.
 
 [[r2_buckets]]
 binding = "CTBK"

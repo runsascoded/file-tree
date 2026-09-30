@@ -1,22 +1,41 @@
 # `site/worker/` — `file-tree-demo` Cloudflare Worker
 
-Backs `/http` on the demo site. Wraps `MultiStore({ demo, ctbk, crashes })`
-over R2 bindings and exposes the file-tree HTTP protocol at `/v1/files/*`.
+The demo site's whole edge (Workers + Assets), one Worker:
+
+| Path | Serves |
+| --- | --- |
+| `/v1/files/*` | the file-tree HTTP protocol over `MultiStore({ demo, ctbk, crashes })` (R2 bindings) — what `/http` browses |
+| `/og/<mount>/<splat>.png` (or `.svg`) | a 1200×630 share card for that path: `renderOgCard(await ogCardData(...))` from `@rdub/file-tree/og`, rasterized by `@resvg/resvg-wasm` with the bundled [fonts](fonts/README.md) |
+| everything else | the built SPA (`../dist`, `[assets]`), with per-path `og:*` / `twitter:*` tags stamped into `index.html`'s `<head>` |
+
+The image URL is the page's splat verbatim plus the extension, so a dir keeps its slash: `/mock/docs/` → `/og/mock/docs/.png`, `/mock` → `/og/mock/.png` (`src/routes.ts`). Cards per mount (`MOUNT_SOURCES`): `mock` → the site's `MockStore` fixture (`../src/fixtures/demo.ts`, bundled); `http` → the live R2 `MultiStore` (walk capped at 500 nodes, else a plain dir card); `s3` / `r2` / `gcs` → path-only (those browsers are client-credentialed). Pages outside a mount get the `/og/mock/.png` site card. PNGs are `Cache-Control`'d (1 day fixture/path-only, 1 h R2) and put in the colo cache keyed by deploy version (a no-op on `*.workers.dev`).
+
+Bundle: ~720 KB JS (~150 KB gz), resvg wasm 2.4 MB (~950 KB gz), fonts ~180 KB (~90 KB gz) — ~1.2 MB gzipped total, under the free plan's 3 MB.
 
 ## Run locally
 
 ```bash
 pnpm install
-pnpm dev          # wrangler dev on :8732
+pnpm dev          # wrangler dev on :8732 (API only; `../dist` may be empty)
+pnpm dev:site     # build the site first, then serve it + OG from the worker
 ```
 
 Per-binding `remote = true` (see `wrangler.toml`) routes R2 ops through
-the real buckets without deploying the worker.
+the real buckets without deploying the worker (needs `wrangler login`).
+
+Check the OG half with e.g.:
+
+```bash
+curl -s http://localhost:8732/mock/docs/ | grep og:image
+curl -s -o docs.png http://localhost:8732/og/mock/docs/.png && file docs.png   # PNG 1200 x 630
+```
 
 ## Deploy
 
+CI's `deploy-worker` job (push to `main`) builds the lib + site and runs `wrangler deploy`. By hand:
+
 ```bash
-pnpm deploy
+pnpm deploy       # builds ../dist first
 ```
 
 ## Optional: R2 presigned downloads

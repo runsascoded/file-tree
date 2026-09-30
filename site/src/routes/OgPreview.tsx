@@ -1,6 +1,7 @@
 /** Preview of `@rdub/file-tree/og`'s share card, rendered inline so the
  *  card is visible without the Cloudflare edge that serves it in prod.
- *  Renders the same SVG a Pages Function would rasterize to PNG. */
+ *  Renders the same SVG the site Worker rasterizes to PNG at
+ *  `/og/mock/<path>.png` (`site/worker/src/og.ts`). */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { MockStore } from '@rdub/file-tree/stores/mock'

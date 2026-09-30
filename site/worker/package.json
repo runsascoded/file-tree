@@ -4,13 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "mkdir -p ../dist && wrangler dev",
+    "dev:site": "pnpm --dir .. build && wrangler dev",
+    "deploy": "pnpm --dir .. build && wrangler deploy",
     "tail": "wrangler tail",
     "tc": "tsc --noEmit"
   },
   "dependencies": {
-    "@rdub/file-tree": "link:../.."
+    "@rdub/file-tree": "link:../..",
+    "@resvg/resvg-wasm": "^2.6.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
