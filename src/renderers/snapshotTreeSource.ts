@@ -76,6 +76,10 @@ export interface SnapshotTreeSourceOptions {
   /** Label for the root node. Default: the scan root's basename
    *  (`gcs://bucket` → `bucket`), else `'root'`. */
   rootLabel?: string
+  /** Snapshot id a request without one reads. Default: the newest. Lets a
+   *  consumer pin every view (listing sizes, treemap) to one point in
+   *  history without threading `snapshot` through each call. */
+  snapshot?: string
   /** Extra decompressors, merged over the built-in ZSTD. */
   compressors?: Compressors
 }
@@ -220,8 +224,9 @@ export function snapshotTreeSource(opts: SnapshotTreeSourceOptions): TreeSource 
     return manifestP
   }
 
-  async function entryFor(snapshot: string | undefined): Promise<SnapshotManifestEntry> {
+  async function entryFor(requested: string | undefined): Promise<SnapshotManifestEntry> {
     const { entries } = await manifest()
+    const snapshot = requested ?? opts.snapshot
     if (snapshot === undefined) {
       const newest = entries[0]
       if (!newest) throw new SnapshotNotFoundError('(newest)')

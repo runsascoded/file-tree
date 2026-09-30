@@ -320,6 +320,26 @@ The peers are declared `optional` in `peerDependenciesMeta`, so installing only 
 
 Built-in kinds (no renderer needed): plain text (`<pre>`), image (`<img>`), video (`<video>`), audio (`<audio>`), zip (entry list + per-entry preview, with client-side `DecompressionStream` fallback if `Store.getZipEntries?` isn't provided).
 
+## Tree sources — recursive sizes, treemap, history
+
+A `TreeSource` answers what a `Store` can't: a directory's recursive size, over time, diffable. Pass one as `<FileTree treeSource>` and dir rows show rolled-up sizes instead of `—`; add `treemapRenderer={TreeMapView}` (`@rdub/file-tree/renderers/treemap`, peer `@rdub/treemap`) for a list / map / split toggle. Four impls:
+
+| Source | Reads | `history` / `diff` / `scan` |
+|---|---|---|
+| `walkTreeSource(store)` | Recursively `list()`s any `Store`, rolls up in JS (capped by `maxNodes`) | – / – / – |
+| `snapshotTreeSource({ store, path })` | A [disk-tree] snapshot library (`disk-tree snapshots DEST`: `snapshots.json` + `snapshots/<id>/tree.parquet`) through any `Store`; row-group stats prune each level read (peer: `hyparquet`) | ✓ / ✓ (any pair, derived) / – |
+| `diskTreeTreeSource({ baseUrl, uri })` | A live disk-tree server's existing Flask API | ✓ / ✓ / ✓ |
+| `httpTreeSource({ baseUrl })` | `createTreeHandlers(source)` (`@rdub/file-tree/server/tree`), serving any of the above | as declared |
+
+```ts
+import { snapshotTreeSource } from '@rdub/file-tree/renderers/snapshotTreeSource'
+
+// A bucket holding `scans/snapshots.json` + `scans/snapshots/<id>/tree.parquet`:
+const treeSource = snapshotTreeSource({ store, path: 'scans' })   // newest scan; `snapshot: '<id>'` pins one
+```
+
+New sources opt into `runTreeSourceConformance` (`@rdub/file-tree/test/treeConformance`). See [`specs/tree-sources-and-treemap.md`](specs/tree-sources-and-treemap.md).
+
 ## ⌘K path search — opt-in
 
 `@rdub/file-tree/omnibar` turns the `treeSource` you already pass for dir sizes into a [`use-kbd`] omnibar endpoint: fuzzy search over every path, hits linking where a listing click would.
@@ -642,6 +662,12 @@ Site code in `site/src/components/` (`S2CellPreview`, `LogViewer`, `YamlViewer`)
 | `@rdub/file-tree/stores/multi` | `MultiStore` |
 | `@rdub/file-tree/stores/mock` | `MockStore` (in-memory) |
 | `@rdub/file-tree/server` | `createHandlers` (HTTP endpoints over any Store) |
+| `@rdub/file-tree/server/tree` | `createTreeHandlers` (HTTP endpoints over any `TreeSource`) |
+| `@rdub/file-tree/renderers/treeSource` | `TreeSource` types, `TreeTooLargeError`, `SnapshotNotFoundError`, `diffLevels` |
+| `@rdub/file-tree/renderers/walkTreeSource` | `walkTreeSource` (also re-exported from `/react`) |
+| `@rdub/file-tree/renderers/snapshotTreeSource` | `snapshotTreeSource` (peer: `hyparquet`) |
+| `@rdub/file-tree/renderers/diskTreeTreeSource` | `diskTreeTreeSource` (also re-exported from `/react`) |
+| `@rdub/file-tree/renderers/httpTreeSource` | `httpTreeSource` (also re-exported from `/react`) |
 | `@rdub/file-tree/renderers/parquet` | `ParquetViewer` (peer: `hyparquet`) |
 | `@rdub/file-tree/renderers/markdown` | `renderMarkdown` (peers: `react-markdown`, `remark-gfm`) |
 | `@rdub/file-tree/renderers/csv` | `CsvViewer` (pure JS) |

@@ -90,6 +90,14 @@ describe('snapshotTreeSource', () => {
     ])
   })
 
+  it('pins requests without a snapshot to the `snapshot` option', async () => {
+    const pinned = snapshotTreeSource({ store: MockStore(LIB), path: 'scans', snapshot: '1' })
+    expect((await pinned.children()).snapshot).toBe('1')
+    expect((await pinned.children({ snapshot: '2' })).snapshot).toBe('2')
+    const bad = snapshotTreeSource({ store: MockStore(LIB), path: 'scans', snapshot: '9' })
+    await expect(bad.children()).rejects.toMatchObject({ name: 'SnapshotNotFoundError', snapshot: '9' })
+  })
+
   it('prefetches `depth` levels, serving the deeper drills from cache', async () => {
     const inner = MockStore(LIB)
     const get = vi.fn(inner.get)

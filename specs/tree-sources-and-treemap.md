@@ -436,14 +436,98 @@ library like ours. Plan:
   toggle renders the map, drills `samples`→`catalog.sqlite`, and restores the
   list. 233 unit, 35 e2e (+1 treemap), verified in-browser.
 
-**Not built yet (in priority order):**
+**Built — Layers 1 & 2** (DT published its snapshot contract in disky
+`790d943`, 2026-08-31 — its spec's B1, and B2/B3 were already live):
 
-- **Layers 1 & 2** — `snapshotTreeSource` (read DT's rollup parquet; can reuse
-  the SQLite block cache), `httpTreeSource` + `createTreeHandlers`, and the
-  `diskTreeTreeSource` adapter over DT's existing Flask API.
-- **Snapshot / diff / rescan chrome**, capability-gated, once a source with
-  `history`/`diff`/`scan` exists to drive it.
+- `src/renderers/snapshotTreeSource.ts` — `snapshotTreeSource({ store, path,
+  root?, snapshot?, rootLabel?, compressors? })` reads DT's published library
+  (`<path>/snapshots.json` + `snapshots/<id>/tree.parquet`, layout version 1)
+  through **any `Store`**. A level is one `(depth, path-prefix)` range per
+  depth (`[P/, P0)`, DT's `path_prefix_bounds`); row-group min/max stats on
+  `depth` + `path` prune it (path stats trusted only in single-depth groups,
+  compared in code-point = UTF-8 byte order), and only the surviving groups
+  are fetched and decoded via hyparquet (`metadata` parsed once per
+  snapshot, only the `TreeNode` columns projected). `depth` > 1 prefetches
+  and caches every fully-read descendant level. Snapshots are immutable, so
+  levels cache forever (failures aren't cached). `snapshots()` newest first;
+  default snapshot = newest, or the `snapshot` option (pins a whole view —
+  listing sizes + treemap — without threading it through each call). A
+  multi-root index requires `root`. Int64 columns arrive as `bigint` →
+  `Number`. `n_desc` passed through as DT reports it (includes self for
+  imported scans — "subtree node count", advisory).
+  `capabilities: { history:true, diff:true, scan:false, lazy:true }`.
+- **`diff()` is derived, not read**: `diffLevels(levelA, levelB)` (new, in
+  `treeSource.ts`, with `diffStatus`/`diffNode`) joins one level of two
+  snapshots with DT's status rules (one side → added/removed; size, n_desc
+  or kind → changed; mtime only → touched). This works for **any** pair,
+  whereas DT's `-d` diff blobs only cover consecutive published snapshots
+  and store only changed rows + "context" siblings — so the blobs are not
+  read at all. (A possible optimization for huge trees: read the blob when
+  the pair has one. Not needed at level granularity.)
+- `src/renderers/diskTreeTreeSource.ts` — `diskTreeTreeSource({ baseUrl,
+  uri, scan?, rootLabel?, fetch? })`, the adapter over DT's Flask API:
+  `children` → `/api/scan?uri=&depth=1&expand_single=false[&scan_id=]`
+  (**`expand_single=false` is required** — DT otherwise collapses
+  single-child chains into the viewed node), `snapshots` →
+  `/api/scans/history` (integer ids stringified; SQLite `YYYY-MM-DD HH:MM:SS`
+  times → ISO `T`), `diff` → `/api/compare?scan1=&scan2=&depth=1` (sizes by
+  side from `size`/`size_old`), `scan` → `POST /api/scan/start` (a 409
+  "already in progress" attaches to that job), `scanStatus` →
+  `/api/scan/status/<id>`. One level per call: `rows` (deeper levels) is
+  `max_rows`-truncated server-side, so it isn't cached as complete levels.
+  404s → `NotFoundError` / `SnapshotNotFoundError`. SSE progress
+  (`itemsFound`) is not wired.
+- `src/renderers/httpTreeSource.ts` + `src/server/tree.ts` — FT's own
+  protocol, as speced above (`GET /children`, `/snapshots`, `/diff`,
+  `/scan/status`; `POST /scan`; `OPTIONS` preflight). `createTreeHandlers(
+  source, { basePath, corsOrigin, scanner?, maxDepth? })` wraps any
+  `TreeSource`; `scanner` supplies dispatch when the source has none. Typed
+  errors cross the wire by `name` (`NotFoundError`/`SnapshotNotFoundError` →
+  404, `TreeTooLargeError` → 413 + `nodesWalked`) and `httpTreeSource`
+  re-throws the same class. Capabilities are **declared** client-side
+  (default: plain lazy tree), and methods for undeclared ones are omitted —
+  the client can't discover them synchronously.
+- `src/renderers/parquetCompressors.ts` — `defaultCompressors`/
+  `withDefaultCompressors` moved out of `parquetData.ts` (re-exported there)
+  so non-React readers don't pull the hooks.
+- Tests (+56 unit: 343 → 399): conformance for snapshot (64K-row-group and 3-row-group
+  libraries), disk-tree adapter, and http over both a walk and a snapshot
+  library; plus history, derived diffs (every status), typed errors,
+  pinning, prefetch caching, `rowSpans` pruning, multi-root refusal, URL
+  construction, scan dispatch/409 attach. Fixtures: `test/fixtures/
+  gen-snapshots.py` runs **DT's own** `import` + `snapshots -a` (needs a
+  `disk-tree` binary) to publish `test/fixtures/snapshots/` (newest scan =
+  `CONFORMANCE_FIXTURE`; older scan has one of each diff status) and a
+  3-row-group copy `snapshots-rg3/`. The disk-tree adapter runs against a
+  `fetch` double replaying `server.py`'s response shapes (quirks included:
+  `parent` `'.'` vs `''`, size-desc children, `scanned`/`scan_time`
+  annotations).
+- Exports: subpaths `./renderers/{snapshot,diskTree,http}TreeSource`,
+  `./renderers/parquetCompressors`, `./server/tree`; `/react` re-exports
+  `diskTreeTreeSource`, `httpTreeSource`, the diff helpers,
+  `SnapshotNotFoundError`, and all tree types — but only the *types* of
+  `snapshotTreeSource` (it pulls the optional `hyparquet` peer).
+- Demo: `/snapshots` (`site/src/routes/SnapshotDemo.tsx`) —
+  `snapshotTreeSource` over an in-browser-built library of two scans of the
+  `/mock` tree (`site/src/fixtures/snapshots.ts`, DT's layout written by
+  `hyparquet-writer` in 8-row groups), a demo-level snapshot picker, the
+  split treemap, and a root `diff()` table. e2e `snapshot-demo.spec.ts`
+  (+2): newest rollups agree with `/mock`'s live walk (`docs/` 4.8 KB);
+  picking the older scan changes sizes and shows its since-deleted `tmp/` as
+  a map tile with no listing row; the diff table's rows exactly.
 
-Companion: `~/c/disk-tree/specs/file-tree-integration.md` (the reciprocal half —
+**Not built yet:**
+
+- **Snapshot / diff / rescan chrome in `<FileTree>`**, capability-gated: a
+  snapshot dropdown when `history`, a compare toggle + diverging `lens` on
+  the treemap when `diff`, a rescan button (`scan()` + `scanStatus()`
+  polling) when `scan`. The `/snapshots` demo's picker and diff table are
+  scaffolding standing in for it.
+- disk-tree adapter niceties: SSE progress → `ScanJob.itemsFound`; reading
+  DT's persisted diff blobs as a fast path.
+- A demo/dev-middleware mount of `createTreeHandlers` (the SQLite engine
+  toggle's analogue) — the protocol is covered by unit tests only.
+
+Companion: `~/c/disky/specs/file-tree-integration.md` (the reciprocal half —
 DT adopts `<FileTree>`, publishes the snapshot contract, ships the
-`@disk-tree/react` dist branch). That session is reading it now.
+`@rdub/treemap` dist branch).

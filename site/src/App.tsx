@@ -9,6 +9,7 @@ import { GcsDemo } from './routes/GcsDemo'
 import { ElideDemo } from './routes/ElideDemo'
 import { FoldDemo } from './routes/FoldDemo'
 import { SqlStub } from './routes/SqlStub'
+import { SnapshotDemo } from './routes/SnapshotDemo'
 
 export function App() {
   return (
@@ -23,6 +24,7 @@ export function App() {
           <Link to="/gcs">GCS</Link>
           <Link to="/elide">Elide</Link>
           <Link to="/fold">Fold</Link>
+          <Link to="/snapshots">Snapshots</Link>
           <a href="https://github.com/runsascoded/file-tree" target="_blank" rel="noreferrer">GitHub</a>
         </nav>
       </header>
@@ -41,6 +43,8 @@ export function App() {
           <Route path="/gcs/:slug/*" element={<GcsDemo />} />
           <Route path="/elide" element={<ElideDemo />} />
           <Route path="/fold" element={<FoldDemo />} />
+          <Route path="/snapshots" element={<SnapshotDemo />} />
+          <Route path="/snapshots/*" element={<SnapshotDemo />} />
           <Route path="/sql" element={<SqlStub />} />
           <Route path="/og" element={<OgPreview />} />
           <Route path="/og/*" element={<OgPreview />} />
