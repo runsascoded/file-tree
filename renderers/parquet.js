@@ -796,6 +796,22 @@ function sortGlyph(column, sort) {
 }
 
 // src/renderers/table.ts
+function tableCellCtx(ctx) {
+  return Object.defineProperty(ctx, "prevRow", { get: () => ctx.at(-1), enumerable: true });
+}
+function chainCellRenderers(...renderers) {
+  const rs = renderers.filter((r) => r !== void 0);
+  if (rs.length <= 1) return rs[0];
+  return (ctx) => rs.reduce((node, r) => {
+    const next = Object.defineProperties({}, Object.getOwnPropertyDescriptors(ctx));
+    next.defaultNode = node;
+    return r(next);
+  }, ctx.defaultNode);
+}
+function repeatsAbove(ctx) {
+  const above = ctx.at(-1);
+  return above !== void 0 && Object.is(ctx.value, above[ctx.column.name]);
+}
 var MIDDLE_TAIL = 12;
 var ELLIPSIS_END = () => "end";
 function normalizeEllipsis(e) {
@@ -822,9 +838,6 @@ function elideCellStyle(el) {
 }
 function cellClipped(el) {
   return el.scrollWidth > el.clientWidth + 1;
-}
-function isDitto(dittoCols, column, value, prevValue, rowInPage) {
-  return dittoCols !== void 0 && rowInPage > 0 && dittoCols.has(column) && Object.is(value, prevValue);
 }
 function applyElide(el, args) {
   const { value, node, hasCustomRender, column, row, path, raw, ellipsis } = args;
@@ -916,8 +929,17 @@ function ellipsisWrap(mode, node, text, tail = MIDDLE_TAIL) {
 
 // src/renderers/ditto.tsx
 import { jsx as jsx4 } from "react/jsx-runtime";
-function dittoMark() {
-  return /* @__PURE__ */ jsx4("span", { "aria-label": "ditto", style: { opacity: 0.3, display: "block", textAlign: "center" }, children: "\u3003" });
+function dittoMark(value) {
+  const title = cellTitle(value);
+  return /* @__PURE__ */ jsx4("span", { "aria-label": "ditto", ...title != null ? { title } : {}, style: { opacity: 0.3, display: "block", textAlign: "center" }, children: "\u3003" });
+}
+function dittoRenderer(columns) {
+  const cols = new Set(columns);
+  return (ctx) => {
+    const { value } = ctx;
+    const empty = value == null || value === "";
+    return !empty && cols.has(ctx.column.name) && repeatsAbove(ctx) ? dittoMark(value) : ctx.defaultNode;
+  };
 }
 
 // src/renderers/parquet.tsx
@@ -962,7 +984,7 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
     [meta, rows, inferTimestamps]
   );
   const el = useMemo4(() => resolveElide(elide), [elide]);
-  const dittoSet = useMemo4(() => ditto ? new Set(ditto) : void 0, [ditto]);
+  const cellRenderer = useMemo4(() => chainCellRenderers(ditto ? dittoRenderer(ditto) : void 0, renderCell), [ditto, renderCell]);
   const folded = useMemo4(
     () => foldConstantColumns && meta ? constantColumns(meta) : /* @__PURE__ */ new Map(),
     [foldConstantColumns, meta]
@@ -1172,18 +1194,12 @@ function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeade
         const tf = temporal.get(c.name);
         const defaultNode = fmtCell(value, tf);
         const st = colStyles.get(c.name);
-        const prev = i > 0 ? visibleRows[i - 1] : void 0;
-        const rendered = renderCell ? renderCell({ value, column: c, row: r, prevRow: prev, rowIndex: pageRowStart + i, path, defaultNode }) : defaultNode;
-        const dittoCell = !renderCell && isDitto(dittoSet, c.name, value, prev?.[c.name], i);
-        let title, measure, node;
-        if (dittoCell) {
-          node = dittoMark();
-          title = cellTitle(value);
-        } else {
-          const wrapped = ellipsisWrap(st?.ellipsis ?? "end", rendered, !renderCell && typeof value === "string" ? value : void 0);
-          ({ title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row: r, path, raw: cellRaw(value, tf), ellipsis: st?.ellipsis }));
-        }
-        const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: r, rowIndex: pageRowStart + i, path, defaultNode }) : void 0;
+        const ctx = tableCellCtx({ value, column: c, row: r, at: (d) => visibleRows[i + d], rowIndex: pageRowStart + i, path, defaultNode });
+        const rendered = cellRenderer ? cellRenderer(ctx) : defaultNode;
+        const custom = rendered !== defaultNode;
+        const wrapped = ellipsisWrap(st?.ellipsis ?? "end", rendered, !custom && typeof value === "string" ? value : void 0);
+        const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row: r, path, raw: cellRaw(value, tf), ellipsis: st?.ellipsis });
+        const hoverEnter = onCellHover ? () => notifyHover(ctx) : void 0;
         return /* @__PURE__ */ jsx5(
           "td",
           {
@@ -1311,14 +1327,18 @@ export {
   NUMERIC_TYPES,
   ParquetViewer,
   RG_CACHE_SIZE,
+  chainCellRenderers,
   coarseKind,
   parquet_default as default,
   defaultCompressors,
+  dittoMark,
+  dittoRenderer,
   formatTemporal,
   inferColumnFormats,
   inferTemporalFormat,
   makeParquetViewer,
   readParquetRows,
+  repeatsAbove,
   toMillis,
   useAllRows,
   useParquetMeta,

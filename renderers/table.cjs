@@ -28,12 +28,30 @@ __export(table_exports, {
   applyElide: () => applyElide,
   cellClipped: () => cellClipped,
   cellTitle: () => cellTitle,
+  chainCellRenderers: () => chainCellRenderers,
   elideCellStyle: () => elideCellStyle,
-  isDitto: () => isDitto,
+  repeatsAbove: () => repeatsAbove,
   resolveColStyles: () => resolveColStyles,
-  resolveElide: () => resolveElide
+  resolveElide: () => resolveElide,
+  tableCellCtx: () => tableCellCtx
 });
 module.exports = __toCommonJS(table_exports);
+function tableCellCtx(ctx) {
+  return Object.defineProperty(ctx, "prevRow", { get: () => ctx.at(-1), enumerable: true });
+}
+function chainCellRenderers(...renderers) {
+  const rs = renderers.filter((r) => r !== void 0);
+  if (rs.length <= 1) return rs[0];
+  return (ctx) => rs.reduce((node, r) => {
+    const next = Object.defineProperties({}, Object.getOwnPropertyDescriptors(ctx));
+    next.defaultNode = node;
+    return r(next);
+  }, ctx.defaultNode);
+}
+function repeatsAbove(ctx) {
+  const above = ctx.at(-1);
+  return above !== void 0 && Object.is(ctx.value, above[ctx.column.name]);
+}
 var MIDDLE_TAIL = 12;
 var ELLIPSIS_END = () => "end";
 function normalizeEllipsis(e) {
@@ -60,9 +78,6 @@ function elideCellStyle(el) {
 }
 function cellClipped(el) {
   return el.scrollWidth > el.clientWidth + 1;
-}
-function isDitto(dittoCols, column, value, prevValue, rowInPage) {
-  return dittoCols !== void 0 && rowInPage > 0 && dittoCols.has(column) && Object.is(value, prevValue);
 }
 function applyElide(el, args) {
   const { value, node, hasCustomRender, column, row, path, raw, ellipsis } = args;
@@ -140,9 +155,11 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
   applyElide,
   cellClipped,
   cellTitle,
+  chainCellRenderers,
   elideCellStyle,
-  isDitto,
+  repeatsAbove,
   resolveColStyles,
-  resolveElide
+  resolveElide,
+  tableCellCtx
 });
 //# sourceMappingURL=table.cjs.map

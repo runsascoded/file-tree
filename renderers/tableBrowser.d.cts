@@ -1,7 +1,7 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode, CSSProperties } from 'react';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
-import { T as TableViewerOptions } from '../columnResize-BtITuksz.cjs';
+import { T as TableViewerOptions } from '../columnResize-BtIe50BE.cjs';
 import { TableCatalog, TableObject } from './tableSource.cjs';
 
 /** Rows per page.

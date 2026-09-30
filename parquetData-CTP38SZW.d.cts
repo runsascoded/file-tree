@@ -1,6 +1,6 @@
 import { Compressors } from 'hyparquet';
 import { Store } from './index.cjs';
-import { a as TableColumn } from './columnResize-BtITuksz.cjs';
+import { a as TableColumn } from './columnResize-BtIe50BE.cjs';
 
 /** Temporal inference + formatting for tabular cells.
  *

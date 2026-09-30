@@ -1,9 +1,10 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { Store } from '../index.cjs';
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.cjs';
-import { T as TableViewerOptions, a as TableColumn } from '../columnResize-BtITuksz.cjs';
-export { b as TableCellCtx, c as TableCellRenderer } from '../columnResize-BtITuksz.cjs';
+import { T as TableViewerOptions, a as TableColumn } from '../columnResize-BtIe50BE.cjs';
+export { b as TableCellCtx, c as TableCellRenderer, d as chainCellRenderers, r as repeatsAbove } from '../columnResize-BtIe50BE.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
+export { dittoMark, dittoRenderer } from './ditto.cjs';
 import 'react';
 
 /** Note `rowIndex` in `renderCell` is **page-relative** here: pages are

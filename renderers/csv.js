@@ -339,6 +339,22 @@ function sortGlyph(column, sort) {
 }
 
 // src/renderers/table.ts
+function tableCellCtx(ctx) {
+  return Object.defineProperty(ctx, "prevRow", { get: () => ctx.at(-1), enumerable: true });
+}
+function chainCellRenderers(...renderers) {
+  const rs = renderers.filter((r) => r !== void 0);
+  if (rs.length <= 1) return rs[0];
+  return (ctx) => rs.reduce((node, r) => {
+    const next = Object.defineProperties({}, Object.getOwnPropertyDescriptors(ctx));
+    next.defaultNode = node;
+    return r(next);
+  }, ctx.defaultNode);
+}
+function repeatsAbove(ctx) {
+  const above = ctx.at(-1);
+  return above !== void 0 && Object.is(ctx.value, above[ctx.column.name]);
+}
 var MIDDLE_TAIL = 12;
 var ELLIPSIS_END = () => "end";
 function normalizeEllipsis(e) {
@@ -365,9 +381,6 @@ function elideCellStyle(el) {
 }
 function cellClipped(el) {
   return el.scrollWidth > el.clientWidth + 1;
-}
-function isDitto(dittoCols, column, value, prevValue, rowInPage) {
-  return dittoCols !== void 0 && rowInPage > 0 && dittoCols.has(column) && Object.is(value, prevValue);
 }
 function applyElide(el, args) {
   const { value, node, hasCustomRender, column, row, path, raw, ellipsis } = args;
@@ -459,8 +472,17 @@ function ellipsisWrap(mode, node, text, tail = MIDDLE_TAIL) {
 
 // src/renderers/ditto.tsx
 import { jsx as jsx3 } from "react/jsx-runtime";
-function dittoMark() {
-  return /* @__PURE__ */ jsx3("span", { "aria-label": "ditto", style: { opacity: 0.3, display: "block", textAlign: "center" }, children: "\u3003" });
+function dittoMark(value) {
+  const title = cellTitle(value);
+  return /* @__PURE__ */ jsx3("span", { "aria-label": "ditto", ...title != null ? { title } : {}, style: { opacity: 0.3, display: "block", textAlign: "center" }, children: "\u3003" });
+}
+function dittoRenderer(columns) {
+  const cols = new Set(columns);
+  return (ctx) => {
+    const { value } = ctx;
+    const empty = value == null || value === "";
+    return !empty && cols.has(ctx.column.name) && repeatsAbove(ctx) ? dittoMark(value) : ctx.defaultNode;
+  };
 }
 
 // src/renderers/columnResize.tsx
@@ -666,7 +688,7 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
     [filteredKeyed, allColumns]
   );
   const el = useMemo4(() => resolveElide(elide), [elide]);
-  const dittoSet = useMemo4(() => ditto ? new Set(ditto) : void 0, [ditto]);
+  const cellRenderer = useMemo4(() => chainCellRenderers(ditto ? dittoRenderer(ditto) : void 0, renderCell), [ditto, renderCell]);
   const cw = useColumnWidths({
     on: !!resizableColumns,
     scope: typeof resizableColumns === "object" ? resizableColumns.scope ?? "path" : "path",
@@ -688,8 +710,9 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
   if (total === null || header === null) return /* @__PURE__ */ jsx5("div", { style: { opacity: 0.6 }, children: "reading CSV header\u2026" });
   const rows = smallTable ? allSorted : pageRows;
   const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES));
+  const rowObjs = (rows ?? []).map((r) => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? ""])));
   pageCtxRef.current = {
-    rows: (rows ?? []).map((r) => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? ""]))),
+    rows: rowObjs,
     columns,
     path,
     pageStart: 0,
@@ -774,26 +797,18 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
         ] }, c.name);
       }) }) }),
       /* @__PURE__ */ jsx5("tbody", { children: rows === null ? /* @__PURE__ */ jsx5("tr", { children: /* @__PURE__ */ jsx5("td", { colSpan: columns.length, style: { padding: "0.5em", opacity: 0.6 }, children: "loading\u2026" }) }) : rows.map((r, i) => {
-        let asRow = null;
-        const row = () => asRow ??= Object.fromEntries(allColumns.map((c, j) => [c.name, r[j] ?? ""]));
-        let asPrev = null;
-        const prevRow = () => i > 0 ? asPrev ??= Object.fromEntries(allColumns.map((c, j) => [c.name, rows[i - 1][j] ?? ""])) : void 0;
+        const row = rowObjs[i];
+        const at = (d) => rowObjs[i + d];
         return /* @__PURE__ */ jsx5("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.15)" }, children: columns.map((c) => {
           const st = colStyles.get(c.name);
           const j = colIndex.get(c.name);
           const value = r[j] ?? "";
-          const prevVal = i > 0 ? rows[i - 1][j] ?? "" : void 0;
-          const rendered = renderCell ? renderCell({ value, column: c, row: row(), prevRow: prevRow(), rowIndex: i, path, defaultNode: value }) : value;
-          const dittoCell = !renderCell && isDitto(dittoSet, c.name, value, prevVal, i);
-          let title, measure, node;
-          if (dittoCell) {
-            node = dittoMark();
-            title = cellTitle(value);
-          } else {
-            const wrapped = ellipsisWrap(st?.ellipsis ?? "end", rendered, !renderCell && typeof value === "string" ? value : void 0);
-            ({ title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: !!renderCell, column: c, row: row(), path, ellipsis: st?.ellipsis }));
-          }
-          const hoverEnter = onCellHover ? () => notifyHover({ value, column: c, row: row(), rowIndex: i, path, defaultNode: value }) : void 0;
+          const ctx = tableCellCtx({ value, column: c, row, at, rowIndex: i, path, defaultNode: value });
+          const rendered = cellRenderer ? cellRenderer(ctx) : value;
+          const custom = rendered !== value;
+          const wrapped = ellipsisWrap(st?.ellipsis ?? "end", rendered, !custom && typeof value === "string" ? value : void 0);
+          const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row, path, ellipsis: st?.ellipsis });
+          const hoverEnter = onCellHover ? () => notifyHover(ctx) : void 0;
           return /* @__PURE__ */ jsx5(
             "td",
             {
@@ -819,9 +834,13 @@ export {
   CsvViewer,
   HEADER_PROBE_BYTES,
   PAGE_BYTES,
+  chainCellRenderers,
   csv_default as default,
+  dittoMark,
+  dittoRenderer,
   makeCsvViewer,
   parseLine,
+  repeatsAbove,
   useCsvHeader,
   useCsvPage
 };

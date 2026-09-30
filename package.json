@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.cef98b1",
+  "version": "0.0.1-dist.efd4fb2",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -13,6 +13,11 @@
       "types": "./react/index.d.ts",
       "import": "./react/index.js",
       "require": "./react/index.cjs"
+    },
+    "./omnibar": {
+      "types": "./omnibar.d.ts",
+      "import": "./omnibar.js",
+      "require": "./omnibar.cjs"
     },
     "./stores": {
       "types": "./stores/index.d.ts",
@@ -68,6 +73,11 @@
       "types": "./renderers/table.d.ts",
       "import": "./renderers/table.js",
       "require": "./renderers/table.cjs"
+    },
+    "./renderers/ditto": {
+      "types": "./renderers/ditto.d.ts",
+      "import": "./renderers/ditto.js",
+      "require": "./renderers/ditto.cjs"
     },
     "./renderers/tableSource": {
       "types": "./renderers/tableSource.d.ts",
@@ -231,6 +241,7 @@
     "react-markdown": "^7 || ^8 || ^9 || ^10",
     "react-router-dom": "^6 || ^7",
     "remark-gfm": "^3 || ^4",
+    "use-kbd": "^0.13",
     "use-prms": "^0.5.0",
     "wa-sqlite": "^1",
     "yaml": "^2"

@@ -1,6 +1,6 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
-import { a as TableColumn } from '../columnResize-BrXJQBZi.js';
+import { a as TableColumn } from '../columnResize-Ci0IcSHV.js';
 import 'react';
 
 interface ColumnVisibility {

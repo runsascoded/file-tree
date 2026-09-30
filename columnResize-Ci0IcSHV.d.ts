@@ -76,11 +76,15 @@ interface TableCellCtx<C extends TableColumn = TableColumn> {
     column: C;
     /** The whole row, for cells whose rendering depends on a sibling. */
     row: Record<string, unknown>;
-    /** The previous row *on the current page*, or `undefined` for the first
-     *  row of the page (and viewers that don't track it). The cheap seam for
-     *  a consumer's own "ditto"/run collapsing — compare `value` to
-     *  `prevRow?.[column.name]` — without the viewer imposing one. */
-    prevRow?: Record<string, unknown>;
+    /** The row `dRow` positions from this one, in display order (after
+     *  sort/filter) *on the current page*: `at(-1)` is the row above, `at(1)`
+     *  the row below, `at(0)` this row. `undefined` past either edge of the
+     *  page. Lazy — a renderer that never calls it costs nothing — so it's the
+     *  seam for anything that depends on neighboring rows (run collapsing, deltas,
+     *  group boundaries); see {@link repeatsAbove}, `dittoRenderer`. */
+    at: (dRow: number) => Record<string, unknown> | undefined;
+    /** @deprecated `at(-1)`. A getter over it, so equally lazy. */
+    readonly prevRow?: Record<string, unknown>;
     /** Row index. Absolute within the file where the viewer can know it
      *  (parquet pages within a row group, so it can); page-relative where
      *  it can't — the CSV viewer paginates by *bytes*, so it has no way
@@ -100,6 +104,20 @@ interface TableCellCtx<C extends TableColumn = TableColumn> {
  *  library hands back the node it would have rendered and gets out of
  *  the way. */
 type TableCellRenderer<C extends TableColumn = TableColumn> = (ctx: TableCellCtx<C>) => ReactNode;
+/** Build a {@link TableCellCtx}, with `prevRow` as a lazy getter over `at`. */
+declare function tableCellCtx<C extends TableColumn>(ctx: Omit<TableCellCtx<C>, 'prevRow'>): TableCellCtx<C>;
+/** Compose cell renderers left to right: each receives the previous one's
+ *  output as `defaultNode`, so a stage that returns `defaultNode` for cells it
+ *  doesn't touch passes them through. `undefined` stages are skipped, so an
+ *  optional renderer can be chained unconditionally. E.g.
+ *  `chainCellRenderers(dittoRenderer(['owner']), formatMoney)` — `formatMoney`
+ *  sees the ditto mark as `defaultNode` on a repeated `owner`. */
+declare function chainCellRenderers<C extends TableColumn>(...renderers: readonly (TableCellRenderer<C> | undefined)[]): TableCellRenderer<C> | undefined;
+/** Whether this cell's value repeats the row above's (same column, on the
+ *  page). `Object.is`, so a run of equal strings/numbers counts but two
+ *  distinct `Date`/blob objects (ref-unequal) never do. The first row of a
+ *  page has nothing above it, so never repeats. */
+declare function repeatsAbove(ctx: Pick<TableCellCtx, 'value' | 'column' | 'at'>): boolean;
 interface TableHeaderCtx<C extends TableColumn = TableColumn> {
     column: C;
     path: string;
@@ -186,10 +204,12 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
      *  repeated value stays on the `<td>`'s `title` for recovery.
      *
      *  Per-column opt-in by name — a ditto on an unsorted or numeric column
-     *  is noise. Only the *default* rendering collapses; a `renderCell` owns
-     *  its column (read {@link TableCellCtx.prevRow} to do your own). Runs are
-     *  detected within the rendered page, so a run spanning a page boundary
-     *  restarts — the first row of a page always shows its value. */
+     *  is noise. Sugar for chaining `dittoRenderer(ditto)` ahead of
+     *  `renderCell` (see {@link chainCellRenderers}): a `renderCell` receives
+     *  the mark as `defaultNode` on a repeated cell, and can override it (test
+     *  {@link repeatsAbove}). Runs are detected within the rendered page, so a
+     *  run spanning a page boundary restarts — the first row of a page always
+     *  shows its value. */
     ditto?: readonly string[];
     /** How long cell values that outgrow their column are rendered — the
      *  clip and the way the full value comes back. `true`/absent is the
@@ -326,12 +346,6 @@ declare function elideCellStyle(el: ResolvedElide): CSSProperties;
  *  handler with the `<td>` (a length heuristic mis-fires on narrow columns
  *  and under `maxWidth: false`). The `+1` absorbs sub-pixel rounding. */
 declare function cellClipped(el: HTMLElement): boolean;
-/** Whether a cell collapses to a ditto mark (see {@link TableViewerOptions.ditto}):
- *  its column opted in, it isn't the first row of the page (`rowInPage > 0`),
- *  and its value repeats the previous row's. `Object.is` so a run of equal
- *  strings/numbers collapses but two distinct `Date`/blob objects (ref-unequal)
- *  never do. */
-declare function isDitto(dittoCols: ReadonlySet<string> | undefined, column: string, value: unknown, prevValue: unknown, rowInPage: number): boolean;
 /** The per-cell result of an elide strategy: what to hang on the `<td>` for
  *  the native tooltip — either a static `title`, or an `onMouseEnter` that
  *  sets one only once the cell is measured to clip ({@link cellClipped}) —
@@ -343,8 +357,9 @@ interface ElideCell {
 }
 /** Apply an elide strategy's *tooltip* to one cell — the width cap is a
  *  style concern ({@link elideCellStyle}); this is the tooltip half.
- *  `hasCustomRender` gates the `'native'` default (a `renderCell` owns its
- *  own title), but a tooltip render-prop applies regardless. */
+ *  `hasCustomRender` (a `renderCell` replaced the default node, so owns its
+ *  own title) gates the `'native'` default, but a tooltip render-prop
+ *  applies regardless. */
 declare function applyElide<C extends TableColumn>(el: ResolvedElide<C>, args: {
     value: unknown;
     node: ReactNode;
@@ -456,4 +471,4 @@ declare function ColumnResizeHandle({ col, widths }: {
     widths: ColumnWidths;
 }): react_jsx_runtime.JSX.Element;
 
-export { resolveElide as A, ColumnResizeHandle as B, type ColStyle as C, DEFAULT_FULL_LOAD_MAX_BYTES as D, ELIDE_DEFAULTS as E, type ColumnWidths as F, type ResizeScope as G, columnFingerprint as H, parseWidths as I, scopeKey as J, serializeWidths as K, useColumnWidths as L, MIDDLE_TAIL as M, NUMERIC_ALIGN as N, type ResolvedElide as R, type SortComparators as S, type TableViewerOptions as T, type UseColumnWidthsArgs as U, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, type TableColumnProps as d, type TableHeaderCtx as e, type TableHeaderRenderer as f, type SortDir as g, type SortState as h, compareValues as i, useSortedRows as j, type ColumnResizeConfig as k, type ElideCell as l, type ElideConfig as m, type ElideCtx as n, type EllipsisMode as o, TD_STYLE as p, TH_STYLE as q, type TablePageCtx as r, sortGlyph as s, applyElide as t, useSort as u, cellClipped as v, cellTitle as w, elideCellStyle as x, isDitto as y, resolveColStyles as z };
+export { resolveColStyles as A, resolveElide as B, type ColStyle as C, DEFAULT_FULL_LOAD_MAX_BYTES as D, ELIDE_DEFAULTS as E, tableCellCtx as F, ColumnResizeHandle as G, type ColumnWidths as H, type ResizeScope as I, columnFingerprint as J, parseWidths as K, scopeKey as L, MIDDLE_TAIL as M, NUMERIC_ALIGN as N, serializeWidths as O, useColumnWidths as P, type ResolvedElide as R, type SortComparators as S, type TableViewerOptions as T, type UseColumnWidthsArgs as U, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, chainCellRenderers as d, type TableColumnProps as e, type TableHeaderCtx as f, type TableHeaderRenderer as g, type SortDir as h, type SortState as i, compareValues as j, useSortedRows as k, type ColumnResizeConfig as l, type ElideCell as m, type ElideConfig as n, type ElideCtx as o, type EllipsisMode as p, TD_STYLE as q, repeatsAbove as r, sortGlyph as s, TH_STYLE as t, useSort as u, type TablePageCtx as v, applyElide as w, cellClipped as x, cellTitle as y, elideCellStyle as z };
