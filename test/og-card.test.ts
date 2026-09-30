@@ -60,10 +60,45 @@ describe('renderOgCard', () => {
     expect(labels).toEqual(['alpha', '100 B', 'bravo', '90 B', 'gamma', '80 B'])
   })
 
-  it('omits the treemap and shows a folder glyph for a plain dir card', () => {
+  it('omits the treemap and draws a folder mark (a path, not an emoji) for a plain dir card', () => {
     const svg = renderOgCard({ crumbs: [], name: 'empty', kind: 'dir', storeLabel: 's' })
-    expect(texts(svg)).toEqual(['s', 'empty', '📁', '@rdub/file-tree'])
+    expect(texts(svg)).toEqual(['s', 'empty', '@rdub/file-tree'])
     expect(count(svg, 'rect')).toBe(3) // bg + accent + panel, no tiles
+    // Centered in the body panel (60,268 1080×270 → center 600,403).
+    expect([...svg.matchAll(/<path d="([^"]*)"/g)].map(m => m[1])).toEqual([
+      'M530 360q0-12 12-12h40l14 16h62q12 0 12 12v70q0 12-12 12h-116q-12 0-12-12z',
+    ])
+  })
+})
+
+describe('renderOgCard root', () => {
+  it('drops the header at a store root, where the title is already the store label', () => {
+    const svg = renderOgCard({ crumbs: [], name: 'mock://b', kind: 'dir', storeLabel: 'mock://b' })
+    expect(texts(svg)).toEqual(['mock://b', '@rdub/file-tree'])
+  })
+})
+
+describe('renderOgCard fonts', () => {
+  const families = (svg: string) => [...new Set([...svg.matchAll(/font-family="([^"]*)"/g)].map(m => m[1]))]
+  const tiles = [{ name: 'a', size: 1 }, { name: 'b', size: 1 }]
+
+  it('uses the system stacks by default', () => {
+    const svg = renderOgCard({ crumbs: [], name: 'd', kind: 'dir', storeLabel: 's', treemap: tiles })
+    expect(families(svg)).toEqual([
+      'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif',
+    ])
+  })
+
+  it('puts `sansFont` / `monoFont` first in every stack, treemap labels included', () => {
+    const svg = renderOgCard(
+      { crumbs: [], name: 'd', kind: 'dir', storeLabel: 's', treemap: tiles },
+      { sansFont: 'Inter', monoFont: 'JetBrains Mono' },
+    )
+    expect(families(svg)).toEqual([
+      `'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`,
+      `'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif`,
+    ])
   })
 })
 

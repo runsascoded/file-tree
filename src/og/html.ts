@@ -4,7 +4,7 @@
  *  to stamp per-path `og:*` / `twitter:*` tags into that HTML *before*
  *  it reaches an unfurler, which never runs the JS that would otherwise
  *  set them. Pure string→string, so it's testable and host-agnostic.
- *  See `specs/cfp-og-images.md`. */
+ *  See `specs/done/cfw-og-images.md`. */
 
 export interface OgMeta {
   /** `og:title` + `<title>`. */

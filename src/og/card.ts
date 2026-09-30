@@ -12,11 +12,11 @@
  *     Degrades: no `treeSource`, or a `TreeTooLargeError`, → a plain dir
  *     card (no treemap), never a throw.
  *
- *  The edge (a CF Pages Function) resolves data, renders SVG, and
- *  rasterizes to PNG with `@resvg/resvg-wasm`; unfurlers want PNG at
- *  1200×630. `@rdub/treemap` is an optional peer here, imported
+ *  The edge (the demo's Worker, `site/worker/src/og.ts`) resolves data,
+ *  renders SVG, and rasterizes to PNG with `@resvg/resvg-wasm`;
+ *  unfurlers want PNG at 1200×630. `@rdub/treemap` is an optional peer here, imported
  *  statically and marked `external`, exactly as `renderers/treemap` does.
- *  See `specs/cfp-og-images.md`.
+ *  See `specs/done/cfw-og-images.md`.
  */
 import { squarifyRemainder, DEFAULT_PALETTE } from '@rdub/treemap'
 import type { Store } from '../types'
@@ -57,6 +57,13 @@ export interface OgCardOptions {
   muted?: string
   /** Palette for treemap tiles. Default `@rdub/treemap`'s. */
   palette?: readonly string[]
+  /** Font families to put first in the sans / monospace stacks. A
+   *  rasterizer with bundled fonts (resvg in a Worker) should name them
+   *  here: resvg-wasm doesn't map the generic `monospace` to its
+   *  configured family, so without a concrete name mono text falls back
+   *  to the default (sans) font. */
+  sansFont?: string
+  monoFont?: string
 }
 
 const DEFAULTS = {
@@ -66,8 +73,8 @@ const DEFAULTS = {
   muted: '#9aa0aa',
 } as const
 
-const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
-const SANS = 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif'
+const MONO_STACK = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+const SANS_STACK = 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif'
 
 function esc(s: string): string {
   return s.replace(/[<>&"']/g, c => (
@@ -90,8 +97,13 @@ export function renderOgCard(data: OgCardData, opts: OgCardOptions = {}): string
   const palette = opts.palette ?? DEFAULT_PALETTE
   const W = OG_WIDTH, H = OG_HEIGHT
   const pad = 60
+  const SANS = opts.sansFont ? `'${esc(opts.sansFont)}', ${SANS_STACK}` : SANS_STACK
+  const MONO = opts.monoFont ? `'${esc(opts.monoFont)}', ${MONO_STACK}` : MONO_STACK
 
-  const header = [data.storeLabel, ...data.crumbs].filter(Boolean).join(' / ')
+  // At a store's root the title already *is* the store label; don't
+  // repeat it as the header.
+  const atRoot = data.crumbs.length === 0 && data.name === data.storeLabel
+  const header = atRoot ? '' : [data.storeLabel, ...data.crumbs].filter(Boolean).join(' / ')
   const title = clipMiddle(data.name || 'root', 34)
   const sizeStr = data.size == null ? '' : fmtSize(data.size)
   const meta = [sizeStr, data.badge].filter(Boolean).join('  ·  ')
@@ -119,19 +131,33 @@ export function renderOgCard(data: OgCardData, opts: OgCardOptions = {}): string
   const bodyH = H - bodyY - 92
   const bodyW = W - pad * 2
   if (data.kind === 'dir' && data.treemap && data.treemap.length > 0) {
-    parts.push(renderTreemapBody(data.treemap, pad, bodyY, bodyW, bodyH, palette, o.ink))
+    parts.push(renderTreemapBody(data.treemap, pad, bodyY, bodyW, bodyH, palette, o.ink, MONO))
   } else {
-    // A big monospace glyph for the type — path leaf's extension for a
-    // file, a folder mark for a dir.
-    const glyph = data.kind === 'dir' ? '📁' : `.${data.badge || 'file'}`
+    // A big type mark — the path leaf's extension for a file, a folder
+    // for a dir. The folder is a `<path>`, not an emoji: a rasterizer
+    // with only a text font bundled (resvg in a Worker) has no emoji
+    // glyphs, and would draw a blank or a `.notdef` box.
     parts.push(`<rect x="${pad}" y="${bodyY}" width="${bodyW}" height="${bodyH}" rx="16" fill="#ffffff" fill-opacity="0.04"/>`)
-    parts.push(`<text x="${W / 2}" y="${bodyY + bodyH / 2 + 24}" text-anchor="middle" font-family="${MONO}" font-size="72" fill="${o.muted}">${esc(clipMiddle(String(glyph), 28))}</text>`)
+    if (data.kind === 'dir') {
+      parts.push(folderMark(W / 2, bodyY + bodyH / 2, o.muted))
+    } else {
+      const glyph = `.${data.badge || 'file'}`
+      parts.push(`<text x="${W / 2}" y="${bodyY + bodyH / 2 + 24}" text-anchor="middle" font-family="${MONO}" font-size="72" fill="${o.muted}">${esc(clipMiddle(glyph, 28))}</text>`)
+    }
   }
 
   // Footer wordmark.
   parts.push(`<text x="${W - pad}" y="${H - 40}" text-anchor="end" font-family="${MONO}" font-size="28" fill="${o.muted}">${esc(o.brand)}</text>`)
   parts.push(`</svg>`)
   return parts.join('')
+}
+
+/** A 140×110 folder silhouette (tab + body, rounded) centered on
+ *  `(cx, cy)`. */
+function folderMark(cx: number, cy: number, fill: string): string {
+  const x = cx - 70, y = cy - 55
+  const d = `M${x} ${y + 12}q0-12 12-12h40l14 16h62q12 0 12 12v70q0 12-12 12h-116q-12 0-12-12z`
+  return `<path d="${d}" fill="${fill}" fill-opacity="0.6"/>`
 }
 
 /** The squarified-rects body for a directory card. */
@@ -143,6 +169,7 @@ function renderTreemapBody(
   h: number,
   palette: readonly string[],
   ink: string,
+  mono: string,
 ): string {
   // `squarifyRemainder` gives a dominant-child tree's long tail its own
   // legible 2D band instead of unreadable slivers; it falls back to a
@@ -160,9 +187,11 @@ function renderTreemapBody(
     if (r.w > 96 && r.h > 40) {
       const lx = r.x + 12
       const ly = r.y + 34
-      out.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-family="${MONO}" font-size="24" font-weight="600" fill="${ink}">${esc(clipMiddle(r.it.name, Math.max(4, Math.floor(r.w / 13))))}</text>`)
+      // A 24px monospace glyph advances ~0.6em ≈ 14.5px; clip to what
+      // fits inside the tile's side padding.
+      out.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-family="${mono}" font-size="24" font-weight="600" fill="${ink}">${esc(clipMiddle(r.it.name, Math.max(4, Math.floor((r.w - 16) / 14.5))))}</text>`)
       if (r.h > 70) {
-        out.push(`<text x="${lx.toFixed(1)}" y="${(ly + 30).toFixed(1)}" font-family="${MONO}" font-size="22" fill="${ink}" fill-opacity="0.85">${esc(fmtSize(r.it.size))}</text>`)
+        out.push(`<text x="${lx.toFixed(1)}" y="${(ly + 30).toFixed(1)}" font-family="${mono}" font-size="22" fill="${ink}" fill-opacity="0.85">${esc(fmtSize(r.it.size))}</text>`)
       }
     }
   })
