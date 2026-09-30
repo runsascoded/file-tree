@@ -1,6 +1,7 @@
 // src/renderers/parquetData.ts
 import { useEffect, useRef, useState } from "react";
 import { parquetMetadataAsync, parquetRead, parquetSchema } from "hyparquet";
+import { decompress as zstdDecompress } from "fzstd";
 
 // src/react/asyncBuffer.ts
 async function asyncBufferFromStore(store, path) {
@@ -113,7 +114,28 @@ function useParquetMeta(store, path) {
   }, [store, path]);
   return { meta, error };
 }
-function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
+var defaultCompressors = {
+  ZSTD: (input, outputLength) => zstdDecompress(input, new Uint8Array(outputLength))
+};
+function withDefaultCompressors(compressors) {
+  return compressors ? { ...defaultCompressors, ...compressors } : defaultCompressors;
+}
+async function readParquetRows(store, path, { rowStart, rowEnd, compressors } = {}) {
+  const file = await asyncBufferFromStore(store, path);
+  const out = [];
+  await parquetRead({
+    file,
+    ...rowStart != null ? { rowStart } : {},
+    ...rowEnd != null ? { rowEnd } : {},
+    ...compressors ? { compressors } : {},
+    rowFormat: "object",
+    onComplete: (data) => {
+      if (Array.isArray(data)) for (const r of data) out.push(r);
+    }
+  });
+  return out;
+}
+function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE, compressors) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
   const cache = useRef(/* @__PURE__ */ new Map());
@@ -121,7 +143,7 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
     cache.current = /* @__PURE__ */ new Map();
     setRows(null);
     setError(null);
-  }, [store, path]);
+  }, [store, path, compressors]);
   useEffect(() => {
     if (!meta || meta.rowGroups.length === 0) return;
     const rgIdx = Math.min(index, meta.rowGroups.length - 1);
@@ -137,16 +159,10 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
     setRows(null);
     (async () => {
       try {
-        const file = await asyncBufferFromStore(store, path);
-        const out = [];
-        await parquetRead({
-          file,
+        const out = await readParquetRows(store, path, {
           rowStart: rg.rowStart,
           rowEnd: rg.rowEnd,
-          rowFormat: "object",
-          onComplete: (data) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r);
-          }
+          compressors: withDefaultCompressors(compressors)
         });
         if (cancelled) return;
         cache.current.set(rgIdx, out);
@@ -163,10 +179,10 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
     return () => {
       cancelled = true;
     };
-  }, [store, path, index, meta, cacheSize]);
+  }, [store, path, index, meta, cacheSize, compressors]);
   return { rows, error };
 }
-function useAllRows(store, path, meta, enabled) {
+function useAllRows(store, path, meta, enabled, compressors) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
   useEffect(() => {
@@ -179,15 +195,7 @@ function useAllRows(store, path, meta, enabled) {
     setError(null);
     (async () => {
       try {
-        const file = await asyncBufferFromStore(store, path);
-        const out = [];
-        await parquetRead({
-          file,
-          rowFormat: "object",
-          onComplete: (data) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r);
-          }
-        });
+        const out = await readParquetRows(store, path, { compressors: withDefaultCompressors(compressors) });
         if (!cancelled) setRows(out);
       } catch (e) {
         if (!cancelled) setError(String(e));
@@ -196,7 +204,7 @@ function useAllRows(store, path, meta, enabled) {
     return () => {
       cancelled = true;
     };
-  }, [store, path, meta, enabled]);
+  }, [store, path, meta, enabled, compressors]);
   return { rows, error };
 }
 var PREDICATE_RE = /^\s*([^<>=\s]+)\s*(>=|<=|=|<|>)\s*(.+?)\s*$/;
@@ -278,12 +286,15 @@ export {
   RG_CACHE_SIZE,
   coarseKind,
   constantColumns,
+  defaultCompressors,
   isSortedBy,
   parsePredicate,
   pruneRowGroups,
+  readParquetRows,
   rowGroupMatches,
   useAllRows,
   useParquetMeta,
-  useRowGroup
+  useRowGroup,
+  withDefaultCompressors
 };
 //# sourceMappingURL=parquetData.js.map

@@ -1,3 +1,4 @@
+import { Compressors } from 'hyparquet';
 import { Store } from './index.js';
 import { a as TableColumn } from './columnResize-BrXJQBZi.js';
 
@@ -136,6 +137,23 @@ declare function useParquetMeta(store: Store, path: string): {
     meta: ParquetMeta | null;
     error: string | null;
 };
+/** Decompressors used when a caller passes none. hyparquet decodes only
+ *  Snappy (and uncompressed) natively; this adds ZSTD via `fzstd` (pure JS,
+ *  no wasm, safe in Workers/SSR). Exported for consumers doing their own
+ *  hyparquet reads. */
+declare const defaultCompressors: Compressors;
+/** `defaultCompressors` with a consumer's set merged over it, so passing e.g.
+ *  `hyparquet-compressors`' full set (brotli, gzip, lz4) adds codecs, and a
+ *  custom `ZSTD` replaces the built-in one. */
+declare function withDefaultCompressors(compressors?: Compressors): Compressors;
+/** Decode rows `[rowStart, rowEnd)` (default: the whole file) as objects.
+ *  `compressors` is passed to hyparquet *as-is* — callers wanting the
+ *  built-in ZSTD go through {@link withDefaultCompressors} (the hooks do). */
+declare function readParquetRows(store: Store, path: string, { rowStart, rowEnd, compressors }?: {
+    rowStart?: number;
+    rowEnd?: number;
+    compressors?: Compressors;
+}): Promise<Record<string, unknown>[]>;
 /** Decoded rows of one row group, LRU-cached.
  *
  *  A row group is parquet's unit of compression, so this is also the
@@ -147,7 +165,11 @@ declare function useParquetMeta(store: Store, path: string): {
  *  and dropped when either changes — the indices mean something
  *  different in a different file, and reusing them would silently
  *  mis-render. */
-declare function useRowGroup(store: Store, path: string, meta: ParquetMeta | null, index: number, cacheSize?: number): {
+declare function useRowGroup(store: Store, path: string, meta: ParquetMeta | null, index: number, cacheSize?: number, 
+/** Extra/override decompressors, merged over {@link defaultCompressors}.
+ *  Should be referentially stable (a module-level constant): it's an
+ *  effect dependency, and the row-group cache drops when it changes. */
+compressors?: Compressors): {
     rows: Record<string, unknown>[] | null;
     error: string | null;
 };
@@ -157,7 +179,9 @@ declare function useRowGroup(store: Store, path: string, meta: ParquetMeta | nul
  *  whether the file is small enough. One `parquetRead` over the whole
  *  file rather than per-group, so hyparquet can plan it.
  */
-declare function useAllRows(store: Store, path: string, meta: ParquetMeta | null, enabled: boolean): {
+declare function useAllRows(store: Store, path: string, meta: ParquetMeta | null, enabled: boolean, 
+/** As in {@link useRowGroup}: merged over the defaults; keep it stable. */
+compressors?: Compressors): {
     rows: Record<string, unknown>[] | null;
     error: string | null;
 };
@@ -200,4 +224,4 @@ declare function isSortedBy(meta: ParquetMeta, column: string): boolean;
  *  (`BYTE_ARRAY` → string), so a text column folds by its readable value. */
 declare function constantColumns(meta: ParquetMeta): Map<string, unknown>;
 
-export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type SortingColumn as S, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, formatTemporal as i, inferColumnFormats as j, inferTemporalFormat as k, useRowGroup as l, type Predicate as m, constantColumns as n, isSortedBy as o, parsePredicate as p, pruneRowGroups as q, rowGroupMatches as r, useAllRows as s, toMillis as t, useParquetMeta as u };
+export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type SortingColumn as S, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, defaultCompressors as i, formatTemporal as j, inferColumnFormats as k, inferTemporalFormat as l, useParquetMeta as m, useRowGroup as n, type Predicate as o, constantColumns as p, isSortedBy as q, readParquetRows as r, parsePredicate as s, toMillis as t, useAllRows as u, pruneRowGroups as v, withDefaultCompressors as w, rowGroupMatches as x };

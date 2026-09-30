@@ -24,17 +24,21 @@ __export(parquetData_exports, {
   RG_CACHE_SIZE: () => RG_CACHE_SIZE,
   coarseKind: () => coarseKind,
   constantColumns: () => constantColumns,
+  defaultCompressors: () => defaultCompressors,
   isSortedBy: () => isSortedBy,
   parsePredicate: () => parsePredicate,
   pruneRowGroups: () => pruneRowGroups,
+  readParquetRows: () => readParquetRows,
   rowGroupMatches: () => rowGroupMatches,
   useAllRows: () => useAllRows,
   useParquetMeta: () => useParquetMeta,
-  useRowGroup: () => useRowGroup
+  useRowGroup: () => useRowGroup,
+  withDefaultCompressors: () => withDefaultCompressors
 });
 module.exports = __toCommonJS(parquetData_exports);
 var import_react = require("react");
 var import_hyparquet = require("hyparquet");
+var import_fzstd = require("fzstd");
 
 // src/react/asyncBuffer.ts
 async function asyncBufferFromStore(store, path) {
@@ -147,7 +151,28 @@ function useParquetMeta(store, path) {
   }, [store, path]);
   return { meta, error };
 }
-function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
+var defaultCompressors = {
+  ZSTD: (input, outputLength) => (0, import_fzstd.decompress)(input, new Uint8Array(outputLength))
+};
+function withDefaultCompressors(compressors) {
+  return compressors ? { ...defaultCompressors, ...compressors } : defaultCompressors;
+}
+async function readParquetRows(store, path, { rowStart, rowEnd, compressors } = {}) {
+  const file = await asyncBufferFromStore(store, path);
+  const out = [];
+  await (0, import_hyparquet.parquetRead)({
+    file,
+    ...rowStart != null ? { rowStart } : {},
+    ...rowEnd != null ? { rowEnd } : {},
+    ...compressors ? { compressors } : {},
+    rowFormat: "object",
+    onComplete: (data) => {
+      if (Array.isArray(data)) for (const r of data) out.push(r);
+    }
+  });
+  return out;
+}
+function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE, compressors) {
   const [rows, setRows] = (0, import_react.useState)(null);
   const [error, setError] = (0, import_react.useState)(null);
   const cache = (0, import_react.useRef)(/* @__PURE__ */ new Map());
@@ -155,7 +180,7 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
     cache.current = /* @__PURE__ */ new Map();
     setRows(null);
     setError(null);
-  }, [store, path]);
+  }, [store, path, compressors]);
   (0, import_react.useEffect)(() => {
     if (!meta || meta.rowGroups.length === 0) return;
     const rgIdx = Math.min(index, meta.rowGroups.length - 1);
@@ -171,16 +196,10 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
     setRows(null);
     (async () => {
       try {
-        const file = await asyncBufferFromStore(store, path);
-        const out = [];
-        await (0, import_hyparquet.parquetRead)({
-          file,
+        const out = await readParquetRows(store, path, {
           rowStart: rg.rowStart,
           rowEnd: rg.rowEnd,
-          rowFormat: "object",
-          onComplete: (data) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r);
-          }
+          compressors: withDefaultCompressors(compressors)
         });
         if (cancelled) return;
         cache.current.set(rgIdx, out);
@@ -197,10 +216,10 @@ function useRowGroup(store, path, meta, index, cacheSize = RG_CACHE_SIZE) {
     return () => {
       cancelled = true;
     };
-  }, [store, path, index, meta, cacheSize]);
+  }, [store, path, index, meta, cacheSize, compressors]);
   return { rows, error };
 }
-function useAllRows(store, path, meta, enabled) {
+function useAllRows(store, path, meta, enabled, compressors) {
   const [rows, setRows] = (0, import_react.useState)(null);
   const [error, setError] = (0, import_react.useState)(null);
   (0, import_react.useEffect)(() => {
@@ -213,15 +232,7 @@ function useAllRows(store, path, meta, enabled) {
     setError(null);
     (async () => {
       try {
-        const file = await asyncBufferFromStore(store, path);
-        const out = [];
-        await (0, import_hyparquet.parquetRead)({
-          file,
-          rowFormat: "object",
-          onComplete: (data) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r);
-          }
-        });
+        const out = await readParquetRows(store, path, { compressors: withDefaultCompressors(compressors) });
         if (!cancelled) setRows(out);
       } catch (e) {
         if (!cancelled) setError(String(e));
@@ -230,7 +241,7 @@ function useAllRows(store, path, meta, enabled) {
     return () => {
       cancelled = true;
     };
-  }, [store, path, meta, enabled]);
+  }, [store, path, meta, enabled, compressors]);
   return { rows, error };
 }
 var PREDICATE_RE = /^\s*([^<>=\s]+)\s*(>=|<=|=|<|>)\s*(.+?)\s*$/;
@@ -313,12 +324,15 @@ function constantColumns(meta) {
   RG_CACHE_SIZE,
   coarseKind,
   constantColumns,
+  defaultCompressors,
   isSortedBy,
   parsePredicate,
   pruneRowGroups,
+  readParquetRows,
   rowGroupMatches,
   useAllRows,
   useParquetMeta,
-  useRowGroup
+  useRowGroup,
+  withDefaultCompressors
 });
 //# sourceMappingURL=parquetData.cjs.map
