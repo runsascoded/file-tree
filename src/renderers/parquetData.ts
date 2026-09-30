@@ -14,7 +14,8 @@
  *
  *  See `specs/renderer-extensibility.md`. */
 import { useEffect, useRef, useState } from 'react'
-import { parquetMetadataAsync, parquetRead, parquetSchema } from 'hyparquet'
+import { parquetMetadataAsync, parquetRead, parquetSchema, type Compressors } from 'hyparquet'
+import { decompress as zstdDecompress } from 'fzstd'
 import type { Store } from '../types'
 import { asyncBufferFromStore } from '../react/asyncBuffer'
 import type { TemporalColumn } from './temporal'
@@ -159,6 +160,44 @@ export function useParquetMeta(store: Store, path: string): { meta: ParquetMeta 
   return { meta, error }
 }
 
+/** Decompressors used when a caller passes none. hyparquet decodes only
+ *  Snappy (and uncompressed) natively; this adds ZSTD via `fzstd` (pure JS,
+ *  no wasm, safe in Workers/SSR). Exported for consumers doing their own
+ *  hyparquet reads. */
+export const defaultCompressors: Compressors = {
+  ZSTD: (input, outputLength) => zstdDecompress(input, new Uint8Array(outputLength)),
+}
+
+/** `defaultCompressors` with a consumer's set merged over it, so passing e.g.
+ *  `hyparquet-compressors`' full set (brotli, gzip, lz4) adds codecs, and a
+ *  custom `ZSTD` replaces the built-in one. */
+export function withDefaultCompressors(compressors?: Compressors): Compressors {
+  return compressors ? { ...defaultCompressors, ...compressors } : defaultCompressors
+}
+
+/** Decode rows `[rowStart, rowEnd)` (default: the whole file) as objects.
+ *  `compressors` is passed to hyparquet *as-is* — callers wanting the
+ *  built-in ZSTD go through {@link withDefaultCompressors} (the hooks do). */
+export async function readParquetRows(
+  store: Store,
+  path: string,
+  { rowStart, rowEnd, compressors }: { rowStart?: number; rowEnd?: number; compressors?: Compressors } = {},
+): Promise<Record<string, unknown>[]> {
+  const file = await asyncBufferFromStore(store, path)
+  const out: Record<string, unknown>[] = []
+  await parquetRead({
+    file,
+    ...(rowStart != null ? { rowStart } : {}),
+    ...(rowEnd != null ? { rowEnd } : {}),
+    ...(compressors ? { compressors } : {}),
+    rowFormat: 'object',
+    onComplete: (data: unknown) => {
+      if (Array.isArray(data)) for (const r of data) out.push(r as Record<string, unknown>)
+    },
+  })
+  return out
+}
+
 /** Decoded rows of one row group, LRU-cached.
  *
  *  A row group is parquet's unit of compression, so this is also the
@@ -176,6 +215,10 @@ export function useRowGroup(
   meta: ParquetMeta | null,
   index: number,
   cacheSize: number = RG_CACHE_SIZE,
+  /** Extra/override decompressors, merged over {@link defaultCompressors}.
+   *  Should be referentially stable (a module-level constant): it's an
+   *  effect dependency, and the row-group cache drops when it changes. */
+  compressors?: Compressors,
 ): { rows: Record<string, unknown>[] | null; error: string | null } {
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -184,7 +227,7 @@ export function useRowGroup(
   useEffect(() => {
     cache.current = new Map()
     setRows(null); setError(null)
-  }, [store, path])
+  }, [store, path, compressors])
 
   useEffect(() => {
     if (!meta || meta.rowGroups.length === 0) return
@@ -203,16 +246,8 @@ export function useRowGroup(
     setRows(null)
     ;(async () => {
       try {
-        const file = await asyncBufferFromStore(store, path)
-        const out: Record<string, unknown>[] = []
-        await parquetRead({
-          file,
-          rowStart: rg.rowStart,
-          rowEnd: rg.rowEnd,
-          rowFormat: 'object',
-          onComplete: (data: unknown) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r as Record<string, unknown>)
-          },
+        const out = await readParquetRows(store, path, {
+          rowStart: rg.rowStart, rowEnd: rg.rowEnd, compressors: withDefaultCompressors(compressors),
         })
         if (cancelled) return
         cache.current.set(rgIdx, out)
@@ -227,7 +262,7 @@ export function useRowGroup(
       }
     })()
     return () => { cancelled = true }
-  }, [store, path, index, meta, cacheSize])
+  }, [store, path, index, meta, cacheSize, compressors])
 
   return { rows, error }
 }
@@ -240,6 +275,8 @@ export function useRowGroup(
  */
 export function useAllRows(
   store: Store, path: string, meta: ParquetMeta | null, enabled: boolean,
+  /** As in {@link useRowGroup}: merged over the defaults; keep it stable. */
+  compressors?: Compressors,
 ): { rows: Record<string, unknown>[] | null; error: string | null } {
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -250,22 +287,14 @@ export function useAllRows(
     setRows(null); setError(null)
     ;(async () => {
       try {
-        const file = await asyncBufferFromStore(store, path)
-        const out: Record<string, unknown>[] = []
-        await parquetRead({
-          file,
-          rowFormat: 'object',
-          onComplete: (data: unknown) => {
-            if (Array.isArray(data)) for (const r of data) out.push(r as Record<string, unknown>)
-          },
-        })
+        const out = await readParquetRows(store, path, { compressors: withDefaultCompressors(compressors) })
         if (!cancelled) setRows(out)
       } catch (e) {
         if (!cancelled) setError(String(e))
       }
     })()
     return () => { cancelled = true }
-  }, [store, path, meta, enabled])
+  }, [store, path, meta, enabled, compressors])
 
   return { rows, error }
 }

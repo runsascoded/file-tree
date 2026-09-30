@@ -51,3 +51,11 @@ disky wants to write its layer-2 listings and index parquet as zstd (≈ 35 % of
 ## Done when
 
 A file-tree release (dist branch or npm) that disky's `site/` can pin, after which disky flips `$DISK_TREE_PARQUET_CODEC` to `zstd` (or makes it the default).
+
+## Resolution (2026-09-30)
+
+- `compressors?: Compressors` on `ParquetViewerOptions`, threaded to both hooks as a trailing optional arg: `useRowGroup(store, path, meta, index, cacheSize?, compressors?)` and `useAllRows(store, path, meta, enabled, compressors?)`. It's an effect dependency in both (a change re-decodes and drops the row-group cache), so it should be stable. That's documented on the option.
+- **Default decodes ZSTD:** `defaultCompressors = { ZSTD }` via `fzstd`, a regular dependency (external in `dist/`). It can't be a lazy `import()` inside the decompressor, because hyparquet's `Compressors` are synchronous. It is only pulled in by the `renderers/parquet*` subpaths, which consumers already lazy-load. A consumer set is merged over it (`withDefaultCompressors`).
+- The two `parquetRead` calls are factored into `readParquetRows(store, path, { rowStart?, rowEnd?, compressors? })`, which passes `compressors` through as-is (the hooks merge in the defaults). `defaultCompressors`, `withDefaultCompressors` and `readParquetRows` are exported from `renderers/parquet` (and `renderers/parquetData`).
+- Fixtures `test/fixtures/sample-{zstd,snappy}.parquet` come from `test/fixtures/gen-parquet.py` (a `uv run --script` with inline pyarrow dep).
+- Tests (`test/parquet-compressors.test.ts`): both codecs decode to identical rows, whole-file and per row group. `compressors: {}` makes zstd throw `parquet unsupported compression codec: ZSTD`. A custom `ZSTD` spy wins (12 calls: dictionary + data page × 3 columns × 2 row groups). Snappy never calls it. The optional demo e2e was skipped, because adding a file to the demo's `samples/` would shift its size/entry-count assertions; the unit tests cover the same read path.

@@ -1,7 +1,7 @@
 {
   "name": "@rdub/file-tree",
   "version": "0.0.1",
-  "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, \u2026).",
+  "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "files": [
     "dist"
@@ -236,6 +236,7 @@
     "url": "https://github.com/runsascoded/file-tree"
   },
   "peerDependencies": {
+    "@rdub/treemap": "*",
     "highlight.js": "^11",
     "hyparquet": "^1",
     "jq-web": "^0.6",
@@ -245,9 +246,8 @@
     "react-router-dom": "^6 || ^7",
     "remark-gfm": "^3 || ^4",
     "use-prms": "^0.5.0",
-    "yaml": "^2",
     "wa-sqlite": "^1",
-    "@rdub/treemap": "*"
+    "yaml": "^2"
   },
   "peerDependenciesMeta": {
     "yaml": {
@@ -289,6 +289,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@rdub/treemap": "github:runsascoded/disk-tree#b047e3754dd1d49dc8bfcbc2d45998b10b2753fc",
     "@types/react": "^18.3.27",
     "@types/react-dom": "^18.3.0",
     "highlight.js": "^11.11.1",
@@ -303,10 +304,10 @@
     "use-prms": "^0.5.0",
     "vitest": "^2.1.8",
     "wa-sqlite": "^1.0.0",
-    "yaml": "^2.9.0",
-    "@rdub/treemap": "github:runsascoded/disk-tree#b047e3754dd1d49dc8bfcbc2d45998b10b2753fc"
+    "yaml": "^2.9.0"
   },
   "dependencies": {
-    "aws4fetch": "^1.0.20"
+    "aws4fetch": "^1.0.20",
+    "fzstd": "^0.1.1"
   }
 }

@@ -18,6 +18,7 @@
  *  reads, fed via `asyncBufferFromStore` so it works against any
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
 import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useRef } from 'react'
+import type { Compressors } from 'hyparquet'
 import type { Store } from '../types'
 import {
   constantColumns, isSortedBy, NUMERIC_TYPES, parsePredicate, pruneRowGroups, useAllRows, useParquetMeta, useRowGroup,
@@ -27,7 +28,8 @@ import {
 // Re-exported so the public subpath keeps every name it had; the
 // plumbing now lives in `./parquetData` and is importable on its own.
 export {
-  coarseKind, NUMERIC_TYPES, RG_CACHE_SIZE, useParquetMeta, useRowGroup,
+  coarseKind, defaultCompressors, NUMERIC_TYPES, readParquetRows, RG_CACHE_SIZE, useAllRows, useParquetMeta, useRowGroup,
+  withDefaultCompressors,
 } from './parquetData'
 export type { ParquetColumn, ParquetColumnStats, ParquetMeta, RowGroupInfo } from './parquetData'
 import { fmtSize } from '../react/fmt'
@@ -99,6 +101,11 @@ export interface ParquetViewerOptions extends TableViewerOptions<ParquetColumn> 
    *  a reader may want the constant column visible regardless. Parquet-only
    *  (CSV never has whole-file stats). */
   foldConstantColumns?: boolean
+  /** Extra/override hyparquet decompressors, merged over the built-in
+   *  `defaultCompressors` (which already decodes ZSTD via `fzstd`). Pass e.g.
+   *  `hyparquet-compressors`' set for brotli/gzip/lz4. Keep it referentially
+   *  stable (a module-level constant): a new object re-decodes. */
+  compressors?: Compressors
 }
 
 
@@ -136,7 +143,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, ditto, foldConstantColumns = false, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, ditto, foldConstantColumns = false, compressors, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -156,8 +163,8 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // it always has — see `specs/small-table-mode.md` for why this is a
   // mode switch rather than a feature flag.
   const smallTable = meta !== null && meta.byteSize <= fullLoadMaxBytes
-  const { rows: rgRows, error: rgError } = useRowGroup(store, path, meta, page)
-  const { rows: allRows, error: allError } = useAllRows(store, path, meta, smallTable)
+  const { rows: rgRows, error: rgError } = useRowGroup(store, path, meta, page, undefined, compressors)
+  const { rows: allRows, error: allError } = useAllRows(store, path, meta, smallTable, compressors)
   const sort = useSort(usePersistedState)
   const [filter, setFilter] = useFilter(usePersistedState)
   const { visible, ...vis } = useColumnVisibility(meta?.schema ?? [], usePersistedState, hiddenColumns)
