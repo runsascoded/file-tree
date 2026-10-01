@@ -13,10 +13,11 @@ import { renderViewerActions } from '../viewerActions'
 import { HelpFab } from '../components/HelpFab'
 
 // Default points at the deployed demo worker (CFW, multi-bucket).
-// Override via `VITE_HTTP_DEMO_BASE` (e.g. `http://localhost:8732/v1/files`
-// when running `site/worker/` locally).
-const API_BASE = import.meta.env.VITE_HTTP_DEMO_BASE
-  ?? 'https://file-tree-demo.ryan-0dc.workers.dev/v1/files'
+// Same-origin in production: the Worker serving the site also serves the
+// API. Override via `VITE_HTTP_DEMO_BASE` (e.g. `http://localhost:8732/v1/files`
+// when running `site/worker/` locally; `.env.development` points the Vite dev
+// server at the deployed Worker).
+const API_BASE = import.meta.env.VITE_HTTP_DEMO_BASE ?? '/v1/files'
 
 // Flip `VITE_HTTP_DEMO_PRESIGN=true` once the worker has R2 S3-compat
 // creds wired (see `site/worker/README.md`) to make the download icon

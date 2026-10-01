@@ -2,13 +2,12 @@ name = "file-tree-demo"
 main = "src/index.ts"
 compatibility_date = "2025-04-01"
 
-# `file-tree-demo.<account>.workers.dev` stays on: it's the `/v1/files`
-# origin the GHP-hosted site calls today, and where the Worker-hosted
-# site is reachable before `file-tree.rbw.sh` is cut over to it.
+# `file-tree-demo.<account>.workers.dev` stays on: the HttpDemo's
+# `/v1/files` API base, and a second URL for the same site.
 workers_dev = true
 
 # The demo's public host. A custom domain: `wrangler deploy` creates its DNS
-# record + certificate (the old GHP CNAME had to be deleted first).
+# record + certificate.
 routes = [{ pattern = "file-tree.rbw.sh", custom_domain = true }]
 
 [dev]
