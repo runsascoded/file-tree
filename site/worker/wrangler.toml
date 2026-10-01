@@ -7,6 +7,10 @@ compatibility_date = "2025-04-01"
 # site is reachable before `file-tree.rbw.sh` is cut over to it.
 workers_dev = true
 
+# The demo's public host. A custom domain: `wrangler deploy` creates its DNS
+# record + certificate (the old GHP CNAME had to be deleted first).
+routes = [{ pattern = "file-tree.rbw.sh", custom_domain = true }]
+
 [dev]
 port = 8732
 
