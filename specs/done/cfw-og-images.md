@@ -82,7 +82,7 @@ The library ships `renderOgCard` + `ogCardData` + `injectOgTags` only; no CF dep
 ## CI
 
 - `deploy-worker` now also installs site deps and builds `site/dist` before `wrangler deploy` (assets ship with the Worker; the Worker bundles the site fixture).
-- `build-pages` / `deploy-pages` are **unchanged**: GHP keeps serving `file-tree.rbw.sh` until the DNS cutover. Both hosts deploy the same build on every push to `main`.
+- `build-pages` / `deploy-pages` were removed after the cutover (`dd094a3`); `deploy-worker` is the site's only deploy.
 - `build-dist` (npm-dist) unchanged.
 
 ## Verified locally
@@ -94,17 +94,13 @@ The library ships `renderOgCard` + `ogCardData` + `injectOgTags` only; no CF dep
 
 Tests: `test/site-worker-routes.test.ts` (URL scheme + mount mapping), `test/og-card.test.ts` (folder mark, font options, root header).
 
-## Owner's remaining steps (manual)
+## Cutover (done, 2026-09-30)
 
-1. **Merge + push to `main`** → CI deploys the Worker with assets. Check `https://file-tree-demo.ryan-0dc.workers.dev/mock/docs/` (HTML tags) and `…/og/mock/docs/.png`.
-2. **Cut `file-tree.rbw.sh` over from GHP to the Worker**: in the CF dashboard (Workers → `file-tree-demo` → Settings → Domains & Routes) add the custom domain `file-tree.rbw.sh` — CF creates the proxied DNS record, but only once the existing `CNAME file-tree → runsascoded.github.io` (or wherever it points) record is deleted/replaced in the `rbw.sh` zone. Equivalently, add to `wrangler.toml`:
-   ```toml
-   routes = [{ pattern = "file-tree.rbw.sh", custom_domain = true }]
-   ```
-   and push (deliberately *not* done here). Then remove the custom domain in the GH repo's Pages settings.
-3. **After cutover** (cleanup, code): drop `build-pages` / `deploy-pages` from `ci.yml` and the `pages: write` / `id-token: write` permissions, delete `site/public/CNAME`, and optionally point `HttpDemo`'s default `API_BASE` at the same origin (`/v1/files`) instead of the `workers.dev` host.
-4. **Unfurl check** on the custom domain (Slack/Discord or opengraph.xyz) — the colo cache is only active there.
-5. No new secrets or bindings: the Worker reuses `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` and its three R2 bindings. (The token needs Workers Scripts edit, which it already has; assets upload uses the same permission.)
+1. Pushed; CI deployed the Worker with assets; checked `file-tree-demo.ryan-0dc.workers.dev` (tags + PNG).
+2. Deleted the `file-tree` CNAME (→ `runsascoded.github.io`) in the `rbw.sh` zone (dashboard), then added `routes = [{ pattern = "file-tree.rbw.sh", custom_domain = true }]` to `wrangler.toml` (`29557cc`), so `wrangler deploy` owns the domain, DNS record and cert.
+3. Removed GHP: CI jobs + permissions, `site/public/CNAME`, the repo's Pages site (`gh api -X DELETE repos/runsascoded/file-tree/pages`) and its `github-pages` environment. `HttpDemo`'s API base is now same-origin `/v1/files` (`dd094a3`).
+4. Unfurls verified on `file-tree.rbw.sh` in Slack, iMessage and WhatsApp.
+5. No new secrets or bindings: the Worker reuses `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` and its three R2 bindings.
 
 ## Deferred: the debounced public scan route
 
