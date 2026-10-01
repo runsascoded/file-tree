@@ -4,11 +4,15 @@ import { M as MarkdownCtx } from '../markdownLinks-D-g_0glm.cjs';
 export { i as isPlainClick, m as markdownCtx, r as resolveTreeHref, a as resolveTreeKey } from '../markdownLinks-D-g_0glm.cjs';
 import { Entry, Store, ZipEntriesResult, GetResult } from '../index.cjs';
 import { TreeSource } from '../renderers/treeSource.cjs';
-export { ChildrenRequest, Snapshot, TreeLevel, TreeNode, TreeSourceCapabilities, TreeTooLargeError } from '../renderers/treeSource.cjs';
+export { ChildrenRequest, DiffLevel, DiffRequest, ScanJob, ScanRequest, Snapshot, SnapshotNotFoundError, TreeDiffNode, TreeLevel, TreeNode, TreeSourceCapabilities, TreeTooLargeError, diffLevels, diffNode, diffStatus } from '../renderers/treeSource.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
 import { a as Parsed } from '../parsePath-CLQfXstk.cjs';
 export { A as AUDIO, C as CODE_LANG, I as IMAGE, P as ParsePathOptions, T as TEXTY, V as VIDEO, b as basename, e as extOf, k as keyToSplat, p as parsePath } from '../parsePath-CLQfXstk.cjs';
 export { WalkTreeSourceOptions, walkTreeSource } from '../renderers/walkTreeSource.cjs';
+export { DiskTreeTreeSourceOptions, diskTreeTreeSource } from '../renderers/diskTreeTreeSource.cjs';
+export { HttpTreeSourceOptions, httpTreeSource } from '../renderers/httpTreeSource.cjs';
+export { SnapshotManifest, SnapshotManifestEntry, SnapshotTreeSourceOptions } from '../renderers/snapshotTreeSource.cjs';
+import 'hyparquet';
 
 interface Crumb {
     label: ReactNode;

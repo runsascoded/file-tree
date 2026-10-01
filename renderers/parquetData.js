@@ -1,7 +1,15 @@
 // src/renderers/parquetData.ts
 import { useEffect, useRef, useState } from "react";
 import { parquetMetadataAsync, parquetRead, parquetSchema } from "hyparquet";
+
+// src/renderers/parquetCompressors.ts
 import { decompress as zstdDecompress } from "fzstd";
+var defaultCompressors = {
+  ZSTD: (input, outputLength) => zstdDecompress(input, new Uint8Array(outputLength))
+};
+function withDefaultCompressors(compressors) {
+  return compressors ? { ...defaultCompressors, ...compressors } : defaultCompressors;
+}
 
 // src/react/asyncBuffer.ts
 async function asyncBufferFromStore(store, path) {
@@ -113,12 +121,6 @@ function useParquetMeta(store, path) {
     };
   }, [store, path]);
   return { meta, error };
-}
-var defaultCompressors = {
-  ZSTD: (input, outputLength) => zstdDecompress(input, new Uint8Array(outputLength))
-};
-function withDefaultCompressors(compressors) {
-  return compressors ? { ...defaultCompressors, ...compressors } : defaultCompressors;
 }
 async function readParquetRows(store, path, { rowStart, rowEnd, compressors } = {}) {
   const file = await asyncBufferFromStore(store, path);

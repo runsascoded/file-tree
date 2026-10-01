@@ -35,6 +35,13 @@ interface OgCardOptions {
     muted?: string;
     /** Palette for treemap tiles. Default `@rdub/treemap`'s. */
     palette?: readonly string[];
+    /** Font families to put first in the sans / monospace stacks. A
+     *  rasterizer with bundled fonts (resvg in a Worker) should name them
+     *  here: resvg-wasm doesn't map the generic `monospace` to its
+     *  configured family, so without a concrete name mono text falls back
+     *  to the default (sans) font. */
+    sansFont?: string;
+    monoFont?: string;
 }
 /** Render `OgCardData` to a 1200×630 SVG string. Pure. */
 declare function renderOgCard(data: OgCardData, opts?: OgCardOptions): string;
@@ -62,7 +69,7 @@ declare function ogCardData(opts: OgCardDataOptions): Promise<OgCardData>;
  *  to stamp per-path `og:*` / `twitter:*` tags into that HTML *before*
  *  it reaches an unfurler, which never runs the JS that would otherwise
  *  set them. Pure string→string, so it's testable and host-agnostic.
- *  See `specs/cfp-og-images.md`. */
+ *  See `specs/done/cfw-og-images.md`. */
 interface OgMeta {
     /** `og:title` + `<title>`. */
     title: string;

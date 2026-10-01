@@ -38,7 +38,15 @@ __export(parquetData_exports, {
 module.exports = __toCommonJS(parquetData_exports);
 var import_react = require("react");
 var import_hyparquet = require("hyparquet");
+
+// src/renderers/parquetCompressors.ts
 var import_fzstd = require("fzstd");
+var defaultCompressors = {
+  ZSTD: (input, outputLength) => (0, import_fzstd.decompress)(input, new Uint8Array(outputLength))
+};
+function withDefaultCompressors(compressors) {
+  return compressors ? { ...defaultCompressors, ...compressors } : defaultCompressors;
+}
 
 // src/react/asyncBuffer.ts
 async function asyncBufferFromStore(store, path) {
@@ -150,12 +158,6 @@ function useParquetMeta(store, path) {
     };
   }, [store, path]);
   return { meta, error };
-}
-var defaultCompressors = {
-  ZSTD: (input, outputLength) => (0, import_fzstd.decompress)(input, new Uint8Array(outputLength))
-};
-function withDefaultCompressors(compressors) {
-  return compressors ? { ...defaultCompressors, ...compressors } : defaultCompressors;
 }
 async function readParquetRows(store, path, { rowStart, rowEnd, compressors } = {}) {
   const file = await asyncBufferFromStore(store, path);

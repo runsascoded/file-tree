@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.9e646c8",
+  "version": "0.0.1-dist.20f5c76",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -198,6 +198,31 @@
       "types": "./renderers/walkTreeSource.d.ts",
       "import": "./renderers/walkTreeSource.js",
       "require": "./renderers/walkTreeSource.cjs"
+    },
+    "./renderers/snapshotTreeSource": {
+      "types": "./renderers/snapshotTreeSource.d.ts",
+      "import": "./renderers/snapshotTreeSource.js",
+      "require": "./renderers/snapshotTreeSource.cjs"
+    },
+    "./renderers/diskTreeTreeSource": {
+      "types": "./renderers/diskTreeTreeSource.d.ts",
+      "import": "./renderers/diskTreeTreeSource.js",
+      "require": "./renderers/diskTreeTreeSource.cjs"
+    },
+    "./renderers/httpTreeSource": {
+      "types": "./renderers/httpTreeSource.d.ts",
+      "import": "./renderers/httpTreeSource.js",
+      "require": "./renderers/httpTreeSource.cjs"
+    },
+    "./renderers/parquetCompressors": {
+      "types": "./renderers/parquetCompressors.d.ts",
+      "import": "./renderers/parquetCompressors.js",
+      "require": "./renderers/parquetCompressors.cjs"
+    },
+    "./server/tree": {
+      "types": "./server/tree.d.ts",
+      "import": "./server/tree.js",
+      "require": "./server/tree.cjs"
     },
     "./test/treeConformance": {
       "types": "./test/treeConformance.d.ts",

@@ -135,8 +135,28 @@ declare class TreeTooLargeError extends Error {
     /** How far the walk got before giving up. */
     nodesWalked: number);
 }
+/** Thrown when a request names a snapshot the source doesn't have.
+ *  Name-based, like `TreeTooLargeError`. */
+declare class SnapshotNotFoundError extends Error {
+    readonly snapshot: string;
+    name: string;
+    constructor(snapshot: string);
+}
+/** disk-tree's per-node diff status (`diff_index.py`), for sources that
+ *  derive a diff from two snapshots' levels rather than reading one:
+ *  on one side only → `added`/`removed`; size, descendant count, or kind
+ *  differ → `changed`; only the mtime moved → `touched`. */
+declare function diffStatus(a: TreeNode | null, b: TreeNode | null): TreeDiffNode['status'];
+/** One node's `a`→`b` diff. At least one side must be present. */
+declare function diffNode(a: TreeNode | null, b: TreeNode | null): TreeDiffNode;
+/** Join one level of two snapshots into a `DiffLevel` — the whole of a
+ *  `diff()` for any source that can answer `children({snapshot})`. A
+ *  side is `null` where the viewed node doesn't exist in that snapshot
+ *  (so everything under it is `added`/`removed`). Children come in
+ *  `b`'s order, then those only in `a`. */
+declare function diffLevels(a: TreeLevel | null, b: TreeLevel | null): DiffLevel;
 /** Basename of a store key or tree path. `''` (the root) has none, so
  *  the caller supplies a label. */
 declare function nodeName(path: string): string;
 
-export { type ChildrenRequest, type DiffLevel, type DiffRequest, type ScanJob, type ScanRequest, type Snapshot, type TreeDiffNode, type TreeLevel, type TreeNode, type TreeSource, type TreeSourceCapabilities, TreeTooLargeError, nodeName };
+export { type ChildrenRequest, type DiffLevel, type DiffRequest, type ScanJob, type ScanRequest, type Snapshot, SnapshotNotFoundError, type TreeDiffNode, type TreeLevel, type TreeNode, type TreeSource, type TreeSourceCapabilities, TreeTooLargeError, diffLevels, diffNode, diffStatus, nodeName };

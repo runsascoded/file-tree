@@ -70,8 +70,8 @@ var DEFAULTS = {
   ink: "#f4f4f5",
   muted: "#9aa0aa"
 };
-var MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-var SANS = "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif";
+var MONO_STACK = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+var SANS_STACK = "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif";
 function esc(s) {
   return s.replace(/[<>&"']/g, (c) => c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === "&" ? "&amp;" : c === '"' ? "&quot;" : "&#39;");
 }
@@ -86,7 +86,10 @@ function renderOgCard(data, opts = {}) {
   const palette = opts.palette ?? DEFAULT_PALETTE;
   const W = OG_WIDTH, H = OG_HEIGHT;
   const pad = 60;
-  const header = [data.storeLabel, ...data.crumbs].filter(Boolean).join(" / ");
+  const SANS = opts.sansFont ? `'${esc(opts.sansFont)}', ${SANS_STACK}` : SANS_STACK;
+  const MONO = opts.monoFont ? `'${esc(opts.monoFont)}', ${MONO_STACK}` : MONO_STACK;
+  const atRoot = data.crumbs.length === 0 && data.name === data.storeLabel;
+  const header = atRoot ? "" : [data.storeLabel, ...data.crumbs].filter(Boolean).join(" / ");
   const title = clipMiddle(data.name || "root", 34);
   const sizeStr = data.size == null ? "" : fmtSize(data.size);
   const meta = [sizeStr, data.badge].filter(Boolean).join("  \xB7  ");
@@ -106,17 +109,26 @@ function renderOgCard(data, opts = {}) {
   const bodyH = H - bodyY - 92;
   const bodyW = W - pad * 2;
   if (data.kind === "dir" && data.treemap && data.treemap.length > 0) {
-    parts.push(renderTreemapBody(data.treemap, pad, bodyY, bodyW, bodyH, palette, o.ink));
+    parts.push(renderTreemapBody(data.treemap, pad, bodyY, bodyW, bodyH, palette, o.ink, MONO));
   } else {
-    const glyph = data.kind === "dir" ? "\u{1F4C1}" : `.${data.badge || "file"}`;
     parts.push(`<rect x="${pad}" y="${bodyY}" width="${bodyW}" height="${bodyH}" rx="16" fill="#ffffff" fill-opacity="0.04"/>`);
-    parts.push(`<text x="${W / 2}" y="${bodyY + bodyH / 2 + 24}" text-anchor="middle" font-family="${MONO}" font-size="72" fill="${o.muted}">${esc(clipMiddle(String(glyph), 28))}</text>`);
+    if (data.kind === "dir") {
+      parts.push(folderMark(W / 2, bodyY + bodyH / 2, o.muted));
+    } else {
+      const glyph = `.${data.badge || "file"}`;
+      parts.push(`<text x="${W / 2}" y="${bodyY + bodyH / 2 + 24}" text-anchor="middle" font-family="${MONO}" font-size="72" fill="${o.muted}">${esc(clipMiddle(glyph, 28))}</text>`);
+    }
   }
   parts.push(`<text x="${W - pad}" y="${H - 40}" text-anchor="end" font-family="${MONO}" font-size="28" fill="${o.muted}">${esc(o.brand)}</text>`);
   parts.push(`</svg>`);
   return parts.join("");
 }
-function renderTreemapBody(children, x, y, w, h, palette, ink) {
+function folderMark(cx, cy, fill) {
+  const x = cx - 70, y = cy - 55;
+  const d = `M${x} ${y + 12}q0-12 12-12h40l14 16h62q12 0 12 12v70q0 12-12 12h-116q-12 0-12-12z`;
+  return `<path d="${d}" fill="${fill}" fill-opacity="0.6"/>`;
+}
+function renderTreemapBody(children, x, y, w, h, palette, ink, mono) {
   const rects = squarifyRemainder([...children], x, y, w, h, (c) => c.size, 48, 0.24);
   const out = [];
   rects.forEach((r, i) => {
@@ -125,9 +137,9 @@ function renderTreemapBody(children, x, y, w, h, palette, ink) {
     if (r.w > 96 && r.h > 40) {
       const lx = r.x + 12;
       const ly = r.y + 34;
-      out.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-family="${MONO}" font-size="24" font-weight="600" fill="${ink}">${esc(clipMiddle(r.it.name, Math.max(4, Math.floor(r.w / 13))))}</text>`);
+      out.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-family="${mono}" font-size="24" font-weight="600" fill="${ink}">${esc(clipMiddle(r.it.name, Math.max(4, Math.floor((r.w - 16) / 14.5))))}</text>`);
       if (r.h > 70) {
-        out.push(`<text x="${lx.toFixed(1)}" y="${(ly + 30).toFixed(1)}" font-family="${MONO}" font-size="22" fill="${ink}" fill-opacity="0.85">${esc(fmtSize(r.it.size))}</text>`);
+        out.push(`<text x="${lx.toFixed(1)}" y="${(ly + 30).toFixed(1)}" font-family="${mono}" font-size="22" fill="${ink}" fill-opacity="0.85">${esc(fmtSize(r.it.size))}</text>`);
       }
     }
   });

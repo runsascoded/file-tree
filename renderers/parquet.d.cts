@@ -2,12 +2,13 @@ import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode } from 'react';
 import { Compressors } from 'hyparquet';
 import { Store } from '../index.cjs';
-import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-CTP38SZW.cjs';
-export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as defaultCompressors, j as formatTemporal, k as inferColumnFormats, l as inferTemporalFormat, r as readParquetRows, t as toMillis, u as useAllRows, m as useParquetMeta, n as useRowGroup, w as withDefaultCompressors } from '../parquetData-CTP38SZW.cjs';
+import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-D5hfOzCZ.cjs';
+export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as formatTemporal, j as inferColumnFormats, k as inferTemporalFormat, r as readParquetRows, t as toMillis, u as useAllRows, l as useParquetMeta, m as useRowGroup } from '../parquetData-D5hfOzCZ.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
 import { b as TableCellCtx, c as TableCellRenderer, e as TableColumnProps, f as TableHeaderCtx, T as TableViewerOptions } from '../columnResize-BtIe50BE.cjs';
 export { a as TableColumn, g as TableHeaderRenderer, d as chainCellRenderers, r as repeatsAbove } from '../columnResize-BtIe50BE.cjs';
 export { dittoMark, dittoRenderer } from './ditto.cjs';
+export { defaultCompressors, withDefaultCompressors } from './parquetCompressors.cjs';
 
 type ParquetCellCtx = TableCellCtx<ParquetColumn>;
 type ParquetCellRenderer = TableCellRenderer<ParquetColumn>;

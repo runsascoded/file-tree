@@ -1,6 +1,7 @@
 import 'hyparquet';
 import '../index.js';
-export { N as NUMERIC_TYPES, P as ParquetColumn, a as ParquetColumnStats, b as ParquetMeta, o as Predicate, R as RG_CACHE_SIZE, c as RowGroupInfo, S as SortingColumn, h as coarseKind, p as constantColumns, i as defaultCompressors, q as isSortedBy, s as parsePredicate, v as pruneRowGroups, r as readParquetRows, x as rowGroupMatches, u as useAllRows, m as useParquetMeta, n as useRowGroup, w as withDefaultCompressors } from '../parquetData-Dn5hOlIU.js';
+export { defaultCompressors, withDefaultCompressors } from './parquetCompressors.js';
+export { N as NUMERIC_TYPES, P as ParquetColumn, a as ParquetColumnStats, b as ParquetMeta, n as Predicate, R as RG_CACHE_SIZE, c as RowGroupInfo, S as SortingColumn, h as coarseKind, o as constantColumns, p as isSortedBy, q as parsePredicate, s as pruneRowGroups, r as readParquetRows, v as rowGroupMatches, u as useAllRows, l as useParquetMeta, m as useRowGroup } from '../parquetData-D7HPq455.js';
 import '../columnResize-Ci0IcSHV.js';
 import 'react/jsx-runtime';
 import 'react';

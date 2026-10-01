@@ -1,5 +1,6 @@
 import { Compressors } from 'hyparquet';
 import { Store } from './index.js';
+import './renderers/parquetCompressors.js';
 import { a as TableColumn } from './columnResize-Ci0IcSHV.js';
 
 /** Temporal inference + formatting for tabular cells.
@@ -137,15 +138,6 @@ declare function useParquetMeta(store: Store, path: string): {
     meta: ParquetMeta | null;
     error: string | null;
 };
-/** Decompressors used when a caller passes none. hyparquet decodes only
- *  Snappy (and uncompressed) natively; this adds ZSTD via `fzstd` (pure JS,
- *  no wasm, safe in Workers/SSR). Exported for consumers doing their own
- *  hyparquet reads. */
-declare const defaultCompressors: Compressors;
-/** `defaultCompressors` with a consumer's set merged over it, so passing e.g.
- *  `hyparquet-compressors`' full set (brotli, gzip, lz4) adds codecs, and a
- *  custom `ZSTD` replaces the built-in one. */
-declare function withDefaultCompressors(compressors?: Compressors): Compressors;
 /** Decode rows `[rowStart, rowEnd)` (default: the whole file) as objects.
  *  `compressors` is passed to hyparquet *as-is* — callers wanting the
  *  built-in ZSTD go through {@link withDefaultCompressors} (the hooks do). */
@@ -224,4 +216,4 @@ declare function isSortedBy(meta: ParquetMeta, column: string): boolean;
  *  (`BYTE_ARRAY` → string), so a text column folds by its readable value. */
 declare function constantColumns(meta: ParquetMeta): Map<string, unknown>;
 
-export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type SortingColumn as S, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, defaultCompressors as i, formatTemporal as j, inferColumnFormats as k, inferTemporalFormat as l, useParquetMeta as m, useRowGroup as n, type Predicate as o, constantColumns as p, isSortedBy as q, readParquetRows as r, parsePredicate as s, toMillis as t, useAllRows as u, pruneRowGroups as v, withDefaultCompressors as w, rowGroupMatches as x };
+export { NUMERIC_TYPES as N, type ParquetColumn as P, RG_CACHE_SIZE as R, type SortingColumn as S, type TemporalColumn as T, type ParquetColumnStats as a, type ParquetMeta as b, type RowGroupInfo as c, type TemporalFormat as d, type TemporalPrecision as e, type TemporalSource as f, type TemporalUnit as g, coarseKind as h, formatTemporal as i, inferColumnFormats as j, inferTemporalFormat as k, useParquetMeta as l, useRowGroup as m, type Predicate as n, constantColumns as o, isSortedBy as p, parsePredicate as q, readParquetRows as r, pruneRowGroups as s, toMillis as t, useAllRows as u, rowGroupMatches as v };
