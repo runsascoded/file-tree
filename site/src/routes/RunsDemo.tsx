@@ -161,11 +161,13 @@ export function RunsDemo() {
     else next.set(c, m)
     setRawOverrides(fmtOverrides(next))
   }
-  // A path tree needs the page sorted by path, so picking it sorts (the
-  // column's "sort for tree" chip does the same from the header).
+  // Grouping needs the page sorted by the grouped column (a path tree by
+  // path; runs of a column by that column, as SQL's `GROUP BY` would), so
+  // picking a grouping sorts. The path column's "sort for tree" chip does
+  // the same from its header.
   const setGroupBy = (g: GroupBy) => {
     setRawGroup(GROUP_CH[g])
-    if (g === 'path') setSort('path')
+    if (g !== 'none') setSort(g)
   }
 
   const agoKey = (v: unknown) => ago(v as number)

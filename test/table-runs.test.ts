@@ -235,11 +235,11 @@ describe('TableRows', () => {
     expect(body(log, { ditto: { note: { mode: 'arrow', every: 1 } } })[0][1].aria).toEqual(['run arrow'])
   })
 
-  it('`tree` adds nested group rows; a run starts at its first data row', () => {
+  it('`tree` adds nested group rows; a run extends up over the headers above it', () => {
     expect(body(log, { ditto: { who: 'sticky' }, paths: { path: 'tree' } })).toEqual([
-      [{ text: '' }, { text: '' }, { text: '▾gs://b/', aria: ['collapse'] }],
-      [{ text: '' }, { text: '' }, { text: '▾gs://b/ck/', aria: ['collapse'] }],
-      [{ text: 'ann', rowSpan: 3 }, { text: 'batch 1' }, { text: '├ gs://b/ck/run-1' }],
+      [{ text: 'ann', rowSpan: 5 }, { text: '' }, { text: '▾gs://b/ · 4', aria: ['collapse'] }],
+      [{ text: '' }, { text: '▾gs://b/ck/ · 3', aria: ['collapse'] }],
+      [{ text: 'batch 1' }, { text: '├ gs://b/ck/run-1' }],
       [{ text: 'batch 1' }, { text: '├ gs://b/ck/run-2' }],
       [{ text: 'batch 1' }, { text: '└ gs://b/ck/run-3' }],
       [{ text: 'bo' }, { text: 'one-off' }, { text: '└ gs://b/raw/x' }],
@@ -249,23 +249,24 @@ describe('TableRows', () => {
   it('a run crossing a group header spans it', () => {
     const rows = ['a/x/1', 'a/x/2', 'a/y/1', 'a/y/2'].map(path => ({ who: 'ann', path }))
     expect(body(rows, { ditto: { who: 'sticky' }, paths: { path: 'tree' } }).map(r => r.map(c => c.rowSpan ? `${c.text}×${c.rowSpan}` : c.text))).toEqual([
-      ['', '▾a/'],
+      ['ann×7', '▾a/ · 4'],
       // Headers keep the parent's part of the prefix as (invisible) text.
-      ['', '▾a/x/'],
-      ['ann×5', '├ a/x/1'],
+      ['▾a/x/ · 2'],
+      ['├ a/x/1'],
       ['└ a/x/2'],
-      ['▾a/y/'],
+      ['▾a/y/ · 2'],
       ['├ a/y/1'],
       ['└ a/y/2'],
     ])
   })
 
-  it('`runGroups` heads each run with its value', () => {
-    expect(body(log, { groups: runGroups('who') }).map(r => r.map(c => c.text))).toEqual([
-      ['▾ann', '', ''],
-      ['ann', 'batch 1', 'gs://b/ck/run-1'],
-      ['ann', 'batch 1', 'gs://b/ck/run-2'],
-      ['ann', 'batch 1', 'gs://b/ck/run-3'],
+  it('`runGroups` heads each run with its value; rows under it leave that cell blank, and form no run', () => {
+    expect(body(log, { groups: runGroups('who'), ditto: { who: 'sticky', note: 'sticky' } }).map(r => r.map(c => (c.rowSpan ? `${c.text}×${c.rowSpan}` : c.text)))).toEqual([
+      // `note`'s run extends up over the header; `who`'s is stated by it.
+      ['▾ann · 3', 'batch 1×4', ''],
+      ['', 'gs://b/ck/run-1'],
+      ['', 'gs://b/ck/run-2'],
+      ['', 'gs://b/ck/run-3'],
       ['bo', 'one-off', 'gs://b/raw/x'],
     ])
   })

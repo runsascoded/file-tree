@@ -39,7 +39,7 @@ test.describe('runs demo', () => {
     await chip.click()
     await expect(page).toHaveURL(/[?&]s=p(&|$)/)
     await expect(chip).toHaveCount(0)
-    await expect(table(page).locator('tr[data-group]').first()).toHaveText('▾gs://marin-eu-west4/')
+    await expect(table(page).locator('tr[data-group]').first().locator('td:has(> button)')).toHaveText(/^▾gs:\/\/marin-eu-west4\/ · \d+$/)
   })
 
   test('groups nest and collapse; the fold deep-links', async ({ page }) => {
@@ -67,8 +67,21 @@ test.describe('runs demo', () => {
     await expect(page).toHaveURL(/[?&]c=naol(&|$)/)
   })
 
-  test('runGroups heads each run of a column', async ({ page }) => {
-    await page.goto('/runs?g=w')
-    await expect(table(page).locator('tr[data-group]').first()).toHaveText('▾david@oa.dev')
+  test('grouping by a column sorts by it, and heads each run with its value and count', async ({ page }) => {
+    await page.goto('/runs')
+    await page.getByRole('button', { name: 'who', exact: true }).click()
+    await expect(page).toHaveURL(/[?&]g=w/)
+    await expect(page).toHaveURL(/[?&]s=w/)
+    const headers = table(page).locator('tr[data-group]')
+    await expect(headers.first().locator('td:has(> button)')).toHaveText(/^▾ahmed@oa\.dev · \d+$/)
+    // Rows under a `who` group leave `who` blank: the header states it.
+    const firstRow = headers.first().locator('xpath=following-sibling::tr[1]')
+    await expect(firstRow.locator('td').first()).toHaveText('')
+  })
+
+  test('ancestor crumbs float in the tree column as it scrolls', async ({ page }) => {
+    await page.goto('/runs?g=p&s=p')
+    await table(page).locator('table').locator('..').evaluate(el => { el.scrollTop = 700 })
+    await expect(page.locator('[data-crumbs] > div').first()).toHaveText(/^▾gs:\/\/marin-eu-west4\/ · \d+$/)
   })
 })

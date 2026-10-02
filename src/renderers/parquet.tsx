@@ -43,7 +43,7 @@ import {
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
   type TableHeaderCtx, type TablePageCtx, type TableViewerOptions,
 } from './table'
-import { PathNote, TableRows } from './tableBody'
+import { PathNote, ROW_STYLE, TableRows } from './tableBody'
 import { pathModes } from './tableRuns'
 
 // Re-exported so a consumer writing one `renderCell` for a mixed tree
@@ -121,7 +121,6 @@ export interface ParquetViewerOptions extends TableViewerOptions<ParquetColumn> 
  *  want dense scan can just next-page rapidly. */
 const ROWS_PER_PAGE = 100
 
-const ROW_STYLE: CSSProperties = { borderTop: '1px solid rgba(127,127,127,0.15)' }
 
 /** LRU cache size for decoded RG rows. Keyed by RG index within the
  *  current `(store, path)`; on revisit of a recently-viewed RG (e.g.

@@ -91,3 +91,13 @@ groups?: GroupRows   // viewer option
 - **Folds**: `usePersistedState('fold')`, FNV-1a → 4 base-36 chars, concatenated. Runs are computed over the visible rows; a run spans group headers between its rows.
 - **Demo** (`/runs`): golfed URL — `?r=` page-wide run mode (`o m s l a`), `?c=` per-column overrides as column/mode char pairs (`w t o s n` × modes, e.g. `c=naol`), `?k=r` raw key, `?p=o` paths off, `?g=` group by (`p` path tree, `w`/`o`/`s` runs of who/owner/status), and the table's own keys remapped through a `PersistedState` wrapper: `?s=` sort (column char, `-` for descending), `?n=` page, `?q=` filter, `?f=` folds, `?h=` hidden columns (column chars). Fixture paths nest `bucket/kind/run/step-N/shard-K`. The option snippet moved into the "?" FAB.
 - **Tests**: `test/table-runs.test.ts` (`pathGroups` nesting/compaction/`min`/unsorted, `runGroups`, fold hashes, layout with folds and runs over visible rows, merged-cell DOM incl. a run spanning a group header); `e2e/runs-demo.spec.ts` (value floats in all four modes; tree chip; nest + collapse + deep-linked fold; `?c=` from ⚙️; `runGroups`); `e2e/elide-demo.spec.ts` ditto test updated for merged runs.
+
+## Review round 2
+
+- **Runs extend up over group headers** directly above their first row (not their own column's), so a short group's values start and float from its header row. Runs also break at headers of a group on their own column (they'd cover its label).
+- **Ancestor crumbs**: the groups enclosing the row under the header, whose header rows have scrolled away, render in a bar portalled into the group column's `<th>` (absolutely positioned below it, so it rides the sticky header). Click scrolls to that group; the toggle folds it.
+- **`RowGroup.uniform`** (set by `runGroups`): rows inside leave that column blank and form no run there.
+- **Group headers** always show their row count (`· N`; `· N rows` when folded).
+- **Row lines in every column**: merged cells draw `ROW_LINE` per slot (a repeating gradient); `ROW_LINE`/`ROW_STYLE` are shared by the viewers, alpha 0.15 → 0.24.
+- **Row hover**: `TableRows` tracks the hovered display row (inside a merged cell, by pointer y), tints that row's unmerged cells via a per-table `<style>` rule, and sets `--ft-hover` on the `<tbody>`, from which each merged cell positions a hover band.
+- **Demo**: picking a Group-by column also sorts by it.

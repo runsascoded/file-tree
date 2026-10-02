@@ -18,7 +18,7 @@ import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from '
 // plumbing now lives in `./csvData` and is importable on its own.
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
 import { resolveColStyles, resolveElide, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
-import { PathNote, TableRows } from './tableBody'
+import { PathNote, ROW_STYLE, TableRows } from './tableBody'
 import { pathModes } from './tableRuns'
 import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import type { PersistedState } from '../react/persistedState'
@@ -29,7 +29,6 @@ export { dittoMark, dittoRenderer, runRenderer } from './ditto'
 export { pathGroups, runGroups } from './tableRuns'
 export type { DittoOption, GroupRows, PathMode, PathsOption, RowGroup, RunMode, RunSpec, TableRun } from './tableRuns'
 
-const ROW_STYLE: CSSProperties = { borderTop: '1px solid rgba(127,127,127,0.15)' }
 /** A CSV value is a string, drawn as itself. */
 const csvCell = (value: unknown): ReactNode => value as string
 

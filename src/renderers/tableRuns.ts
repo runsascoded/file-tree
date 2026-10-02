@@ -202,6 +202,9 @@ export interface RowGroup {
   /** For a path group, the full prefix its rows share: rows in the group
    *  show `column`'s value after it (their tail), indented. */
   prefix?: string
+  /** Every row in the group has the same `column` value (the label), so
+   *  rows inside leave that cell blank rather than repeat the header. */
+  uniform?: boolean
   children?: RowGroup[]
 }
 
@@ -273,7 +276,7 @@ export function runGroups(column: string, opts: Pick<RunSpec, 'key' | 'min'> = {
       const k = String(runKey(opts, rows[i][column], rows[i]))
       const n = (seen.get(k) ?? 0) + 1
       seen.set(k, n)
-      out.push({ key: `${column}=${k}#${n}`, start: i, end: i + r.length, column, label: k, title: k })
+      out.push({ key: `${column}=${k}#${n}`, start: i, end: i + r.length, column, label: k, title: k, uniform: true })
     })
     return out
   }
@@ -296,10 +299,10 @@ export function parseFolds(raw: string): Set<string> {
 
 /** One row of the rendered body: a data row (`i` indexes the page), or a
  *  group's header row. `depth` is the number of groups enclosing it;
- *  `group` the innermost. */
+ *  `ancestors` those groups, outermost first (`group` the innermost). */
 export type BodyItem =
-  | { kind: 'row'; i: number; depth: number; group?: RowGroup }
-  | { kind: 'group'; group: RowGroup; depth: number; collapsed: boolean; size: number }
+  | { kind: 'row'; i: number; depth: number; group?: RowGroup; ancestors: RowGroup[] }
+  | { kind: 'group'; group: RowGroup; depth: number; collapsed: boolean; size: number; ancestors: RowGroup[] }
 
 /** The page as the body draws it. */
 export interface TableLayout {
@@ -363,25 +366,42 @@ export function tableLayout(
   const folded = opts.folded ?? new Set<string>()
 
   const items: BodyItem[] = []
-  const walk = (gs: readonly RowGroup[], lo: number, hi: number, depth: number, parent?: RowGroup) => {
+  const walk = (gs: readonly RowGroup[], lo: number, hi: number, ancestors: RowGroup[]) => {
+    const depth = ancestors.length
+    const parent = ancestors[depth - 1]
+    const row = (i: number): BodyItem => ({ kind: 'row', i, depth, ...(parent ? { group: parent } : {}), ancestors })
     let i = lo
     for (const g of gs) {
-      for (; i < g.start; i++) items.push({ kind: 'row', i, depth, ...(parent ? { group: parent } : {}) })
+      for (; i < g.start; i++) items.push(row(i))
       const collapsed = folded.has(groupHash(g.key))
-      items.push({ kind: 'group', group: g, depth, collapsed, size: g.end - g.start })
-      if (!collapsed) walk(g.children ?? [], g.start, g.end, depth + 1, g)
+      items.push({ kind: 'group', group: g, depth, collapsed, size: g.end - g.start, ancestors })
+      if (!collapsed) walk(g.children ?? [], g.start, g.end, [...ancestors, g])
       i = g.end
     }
-    for (; i < hi; i++) items.push({ kind: 'row', i, depth, ...(parent ? { group: parent } : {}) })
+    for (; i < hi; i++) items.push(row(i))
   }
-  walk(groups, 0, rows.length, 0)
+  walk(groups, 0, rows.length, [])
 
-  const visible = items.flatMap(it => (it.kind === 'row' ? [it.i] : []))
-  const visRows = visible.map(i => rows[i])
-  const runs = new Map([...specs].map(([c, s]) => {
-    const vr = computeRuns(visRows, c, s)
+  // Runs over the visible rows, broken at headers of groups on the run's own
+  // column (a run of `status` can't continue past a `status` group header —
+  // it would cover the header's label).
+  const runs = new Map([...specs].map(([c, spec]) => {
     const out: (TableRun | undefined)[] = new Array(rows.length).fill(undefined)
-    visible.forEach((i, k) => { out[i] = vr[k] })
+    let seg: number[] = []
+    const flush = () => {
+      const vr = computeRuns(seg.map(i => rows[i]), c, spec)
+      seg.forEach((i, k) => { out[i] = vr[k] })
+      seg = []
+    }
+    for (const it of items) {
+      // Rows under a group that states this column's value (`uniform`) show
+      // nothing there, so form no run.
+      if (it.kind === 'row') {
+        if (it.ancestors.some(g => g.uniform && g.column === c)) flush()
+        else seg.push(it.i)
+      } else if (it.group.column === c) flush()
+    }
+    flush()
     return [c, out]
   }))
   return { items, runs, specs, ...pm }
