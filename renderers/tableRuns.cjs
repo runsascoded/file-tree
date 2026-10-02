@@ -22,10 +22,14 @@ var tableRuns_exports = {};
 __export(tableRuns_exports, {
   TREE_FALLBACK_NOTE: () => TREE_FALLBACK_NOTE,
   computeRuns: () => computeRuns,
+  groupHash: () => groupHash,
   isSortedBy: () => isSortedBy,
   normalizeDitto: () => normalizeDitto,
   normalizePaths: () => normalizePaths,
+  parseFolds: () => parseFolds,
+  pathGroups: () => pathGroups,
   pathModes: () => pathModes,
+  runGroups: () => runGroups,
   runKey: () => runKey,
   schemeLength: () => schemeLength,
   sharedPathPrefix: () => sharedPathPrefix,
@@ -59,12 +63,19 @@ function normalizeDitto(ditto) {
   const out = /* @__PURE__ */ new Map();
   if (!ditto) return out;
   if (isList(ditto)) {
-    for (const c of ditto) out.set(c, { mode: "mark", min: 2 });
+    for (const c of ditto) out.set(c, { mode: "mark", min: 2, float: true, every: 5 });
     return out;
   }
   for (const [c, s] of Object.entries(ditto)) {
     const spec = typeof s === "string" ? { mode: s } : s;
-    out.set(c, { mode: spec.mode, min: spec.min ?? 2, ...spec.key ? { key: spec.key } : {} });
+    out.set(c, {
+      mode: spec.mode ?? "sticky",
+      min: spec.min ?? 2,
+      float: spec.float ?? true,
+      every: spec.every ?? 5,
+      ...spec.key ? { key: spec.key } : {},
+      ...spec.render ? { render: spec.render } : {}
+    });
   }
   return out;
 }
@@ -126,6 +137,81 @@ function isSortedBy(rows, column) {
   }
   return asc || desc;
 }
+function nextSegment(value, base) {
+  const rem = value.slice(base.length);
+  const from = base === "" ? schemeLength(rem) : 0;
+  const cut = rem.indexOf("/", from);
+  return cut === -1 || cut === rem.length - 1 ? null : rem.slice(0, cut + 1);
+}
+function pathGroups(column, opts = {}) {
+  const min = Math.max(2, opts.min ?? 2);
+  return (rows) => {
+    if (!isSortedBy(rows, column)) return [];
+    const vals = rows.map((r) => typeof r[column] === "string" ? r[column] : "");
+    const build = (lo, hi, base) => {
+      const out = [];
+      let i = lo;
+      while (i < hi) {
+        const seg = vals[i].startsWith(base) ? nextSegment(vals[i], base) : null;
+        if (seg === null) {
+          i++;
+          continue;
+        }
+        let j = i + 1;
+        while (j < hi && vals[j].startsWith(base + seg) && nextSegment(vals[j], base) === seg) j++;
+        if (j - i >= min) {
+          let prefix = base + seg;
+          for (; ; ) {
+            const next = nextSegment(vals[i], prefix);
+            if (next === null) break;
+            let all = true;
+            for (let k = i + 1; k < j && all; k++) all = nextSegment(vals[k], prefix) === next;
+            if (!all) break;
+            prefix += next;
+          }
+          out.push({
+            key: `${column}:${prefix}`,
+            start: i,
+            end: j,
+            column,
+            label: prefix.slice(base.length),
+            title: prefix,
+            prefix,
+            children: build(i, j, prefix)
+          });
+        }
+        i = j;
+      }
+      return out;
+    };
+    return build(0, rows.length, "");
+  };
+}
+function runGroups(column, opts = {}) {
+  return (rows) => {
+    const runs = computeRuns(rows, column, opts);
+    const seen = /* @__PURE__ */ new Map();
+    const out = [];
+    runs.forEach((r, i) => {
+      if (!r?.start) return;
+      const k = String(runKey(opts, rows[i][column], rows[i]));
+      const n = (seen.get(k) ?? 0) + 1;
+      seen.set(k, n);
+      out.push({ key: `${column}=${k}#${n}`, start: i, end: i + r.length, column, label: k, title: k });
+    });
+    return out;
+  };
+}
+function groupHash(key) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 36 ** 4).toString(36).padStart(4, "0");
+}
+function parseFolds(raw) {
+  const out = /* @__PURE__ */ new Set();
+  for (let i = 0; i + 4 <= raw.length; i += 4) out.add(raw.slice(i, i + 4));
+  return out;
+}
 var TREE_FALLBACK_NOTE = "Paths group into a tree only when sorted by this column; showing shared prefixes dimmed.";
 function pathModes(rows, columns, paths) {
   const shown = new Set(columns.map((c) => c.name));
@@ -147,39 +233,47 @@ function pathModes(rows, columns, paths) {
 function tableLayout(rows, columns, opts) {
   const shown = new Set(columns.map((c) => c.name));
   const specs = new Map([...normalizeDitto(opts.ditto)].filter(([c]) => shown.has(c)));
-  const runs = new Map([...specs].map(([c, s]) => [c, computeRuns(rows, c, s)]));
   const pm = pathModes(rows, columns, opts.paths);
-  const items = pm.tree === void 0 ? rows.map((_, i) => ({ kind: "row", i })) : treeItems(rows, pm.tree);
-  return { items, runs, specs, ...pm };
-}
-function treeItems(rows, column) {
-  const parents = rows.map((r) => {
-    const v = r[column];
-    return typeof v === "string" ? splitParent(v)[0] : "";
-  });
+  const groupFn = opts.groups ?? (pm.tree !== void 0 ? pathGroups(pm.tree) : void 0);
+  const groups = groupFn ? groupFn(rows) : [];
+  const folded = opts.folded ?? /* @__PURE__ */ new Set();
   const items = [];
-  let i = 0;
-  while (i < rows.length) {
-    let j = i + 1;
-    while (j < rows.length && parents[j] === parents[i]) j++;
-    if (parents[i] !== "" && j - i >= 2) {
-      items.push({ kind: "parent", column, prefix: parents[i], first: i });
-      for (let k = i; k < j; k++) items.push({ kind: "row", i: k, tree: { last: k === j - 1 } });
-    } else {
-      for (let k = i; k < j; k++) items.push({ kind: "row", i: k });
+  const walk = (gs, lo, hi, depth, parent) => {
+    let i = lo;
+    for (const g of gs) {
+      for (; i < g.start; i++) items.push({ kind: "row", i, depth, ...parent ? { group: parent } : {} });
+      const collapsed = folded.has(groupHash(g.key));
+      items.push({ kind: "group", group: g, depth, collapsed, size: g.end - g.start });
+      if (!collapsed) walk(g.children ?? [], g.start, g.end, depth + 1, g);
+      i = g.end;
     }
-    i = j;
-  }
-  return items;
+    for (; i < hi; i++) items.push({ kind: "row", i, depth, ...parent ? { group: parent } : {} });
+  };
+  walk(groups, 0, rows.length, 0);
+  const visible = items.flatMap((it) => it.kind === "row" ? [it.i] : []);
+  const visRows = visible.map((i) => rows[i]);
+  const runs = new Map([...specs].map(([c, s]) => {
+    const vr = computeRuns(visRows, c, s);
+    const out = new Array(rows.length).fill(void 0);
+    visible.forEach((i, k) => {
+      out[i] = vr[k];
+    });
+    return [c, out];
+  }));
+  return { items, runs, specs, ...pm };
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   TREE_FALLBACK_NOTE,
   computeRuns,
+  groupHash,
   isSortedBy,
   normalizeDitto,
   normalizePaths,
+  parseFolds,
+  pathGroups,
   pathModes,
+  runGroups,
   runKey,
   schemeLength,
   sharedPathPrefix,

@@ -483,12 +483,19 @@ function normalizeDitto(ditto) {
   const out = /* @__PURE__ */ new Map();
   if (!ditto) return out;
   if (isList(ditto)) {
-    for (const c of ditto) out.set(c, { mode: "mark", min: 2 });
+    for (const c of ditto) out.set(c, { mode: "mark", min: 2, float: true, every: 5 });
     return out;
   }
   for (const [c, s] of Object.entries(ditto)) {
     const spec = typeof s === "string" ? { mode: s } : s;
-    out.set(c, { mode: spec.mode, min: spec.min ?? 2, ...spec.key ? { key: spec.key } : {} });
+    out.set(c, {
+      mode: spec.mode ?? "sticky",
+      min: spec.min ?? 2,
+      float: spec.float ?? true,
+      every: spec.every ?? 5,
+      ...spec.key ? { key: spec.key } : {},
+      ...spec.render ? { render: spec.render } : {}
+    });
   }
   return out;
 }
@@ -534,12 +541,6 @@ function sharedPathPrefix(a, b) {
   const cut = a.lastIndexOf("/", l - 1);
   return cut >= schemeLength(a) ? cut + 1 : 0;
 }
-function splitParent(p) {
-  const body = p.endsWith("/") ? p.slice(0, -1) : p;
-  const cut = body.lastIndexOf("/");
-  if (cut < schemeLength(p)) return ["", p];
-  return [p.slice(0, cut + 1), p.slice(cut + 1)];
-}
 function isSortedBy(rows, column) {
   let asc = true;
   let desc = true;
@@ -549,6 +550,81 @@ function isSortedBy(rows, column) {
     if (c < 0) desc = false;
   }
   return asc || desc;
+}
+function nextSegment(value, base) {
+  const rem = value.slice(base.length);
+  const from = base === "" ? schemeLength(rem) : 0;
+  const cut = rem.indexOf("/", from);
+  return cut === -1 || cut === rem.length - 1 ? null : rem.slice(0, cut + 1);
+}
+function pathGroups(column, opts = {}) {
+  const min = Math.max(2, opts.min ?? 2);
+  return (rows) => {
+    if (!isSortedBy(rows, column)) return [];
+    const vals = rows.map((r) => typeof r[column] === "string" ? r[column] : "");
+    const build = (lo, hi, base) => {
+      const out = [];
+      let i = lo;
+      while (i < hi) {
+        const seg = vals[i].startsWith(base) ? nextSegment(vals[i], base) : null;
+        if (seg === null) {
+          i++;
+          continue;
+        }
+        let j = i + 1;
+        while (j < hi && vals[j].startsWith(base + seg) && nextSegment(vals[j], base) === seg) j++;
+        if (j - i >= min) {
+          let prefix = base + seg;
+          for (; ; ) {
+            const next = nextSegment(vals[i], prefix);
+            if (next === null) break;
+            let all = true;
+            for (let k = i + 1; k < j && all; k++) all = nextSegment(vals[k], prefix) === next;
+            if (!all) break;
+            prefix += next;
+          }
+          out.push({
+            key: `${column}:${prefix}`,
+            start: i,
+            end: j,
+            column,
+            label: prefix.slice(base.length),
+            title: prefix,
+            prefix,
+            children: build(i, j, prefix)
+          });
+        }
+        i = j;
+      }
+      return out;
+    };
+    return build(0, rows.length, "");
+  };
+}
+function runGroups(column, opts = {}) {
+  return (rows) => {
+    const runs = computeRuns(rows, column, opts);
+    const seen = /* @__PURE__ */ new Map();
+    const out = [];
+    runs.forEach((r, i) => {
+      if (!r?.start) return;
+      const k = String(runKey(opts, rows[i][column], rows[i]));
+      const n = (seen.get(k) ?? 0) + 1;
+      seen.set(k, n);
+      out.push({ key: `${column}=${k}#${n}`, start: i, end: i + r.length, column, label: k, title: k });
+    });
+    return out;
+  };
+}
+function groupHash(key) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 36 ** 4).toString(36).padStart(4, "0");
+}
+function parseFolds(raw) {
+  const out = /* @__PURE__ */ new Set();
+  for (let i = 0; i + 4 <= raw.length; i += 4) out.add(raw.slice(i, i + 4));
+  return out;
 }
 var TREE_FALLBACK_NOTE = "Paths group into a tree only when sorted by this column; showing shared prefixes dimmed.";
 function pathModes(rows, columns, paths) {
@@ -571,30 +647,34 @@ function pathModes(rows, columns, paths) {
 function tableLayout(rows, columns, opts) {
   const shown = new Set(columns.map((c) => c.name));
   const specs = new Map([...normalizeDitto(opts.ditto)].filter(([c]) => shown.has(c)));
-  const runs = new Map([...specs].map(([c, s]) => [c, computeRuns(rows, c, s)]));
   const pm = pathModes(rows, columns, opts.paths);
-  const items = pm.tree === void 0 ? rows.map((_, i) => ({ kind: "row", i })) : treeItems(rows, pm.tree);
-  return { items, runs, specs, ...pm };
-}
-function treeItems(rows, column) {
-  const parents = rows.map((r) => {
-    const v = r[column];
-    return typeof v === "string" ? splitParent(v)[0] : "";
-  });
+  const groupFn = opts.groups ?? (pm.tree !== void 0 ? pathGroups(pm.tree) : void 0);
+  const groups = groupFn ? groupFn(rows) : [];
+  const folded = opts.folded ?? /* @__PURE__ */ new Set();
   const items = [];
-  let i = 0;
-  while (i < rows.length) {
-    let j = i + 1;
-    while (j < rows.length && parents[j] === parents[i]) j++;
-    if (parents[i] !== "" && j - i >= 2) {
-      items.push({ kind: "parent", column, prefix: parents[i], first: i });
-      for (let k = i; k < j; k++) items.push({ kind: "row", i: k, tree: { last: k === j - 1 } });
-    } else {
-      for (let k = i; k < j; k++) items.push({ kind: "row", i: k });
+  const walk = (gs, lo, hi, depth, parent) => {
+    let i = lo;
+    for (const g of gs) {
+      for (; i < g.start; i++) items.push({ kind: "row", i, depth, ...parent ? { group: parent } : {} });
+      const collapsed = folded.has(groupHash(g.key));
+      items.push({ kind: "group", group: g, depth, collapsed, size: g.end - g.start });
+      if (!collapsed) walk(g.children ?? [], g.start, g.end, depth + 1, g);
+      i = g.end;
     }
-    i = j;
-  }
-  return items;
+    for (; i < hi; i++) items.push({ kind: "row", i, depth, ...parent ? { group: parent } : {} });
+  };
+  walk(groups, 0, rows.length, 0);
+  const visible = items.flatMap((it) => it.kind === "row" ? [it.i] : []);
+  const visRows = visible.map((i) => rows[i]);
+  const runs = new Map([...specs].map(([c, s]) => {
+    const vr = computeRuns(visRows, c, s);
+    const out = new Array(rows.length).fill(void 0);
+    visible.forEach((i, k) => {
+      out[i] = vr[k];
+    });
+    return [c, out];
+  }));
+  return { items, runs, specs, ...pm };
 }
 
 // src/renderers/ditto.tsx
@@ -668,9 +748,83 @@ function treeChildNode(parent, tail, last) {
     tail
   ] });
 }
+var RULE_X = "0.9em";
+var pct = (x, span) => `${x / span * 100}%`;
+function arrowhead(top, key) {
+  return /* @__PURE__ */ jsx3(
+    "span",
+    {
+      style: {
+        position: "absolute",
+        top,
+        left: `calc(${RULE_X} - 0.3em + 0.5px)`,
+        opacity: 0.5,
+        borderLeft: "0.3em solid transparent",
+        borderRight: "0.3em solid transparent",
+        borderTop: "0.45em solid currentColor"
+      }
+    },
+    key
+  );
+}
+function runRenderer(mode, opts = {}) {
+  const { float = true, every = 5 } = opts;
+  return ({ span, offsets, defaultNode, stickyTop }) => {
+    const last = offsets[offsets.length - 1];
+    const deco = [];
+    if (mode === "mark") {
+      for (const o of offsets.slice(1)) {
+        deco.push(
+          /* @__PURE__ */ jsx3("span", { "aria-label": "ditto", style: {
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: pct(o, span),
+            height: pct(1, span),
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: 0.3
+          }, children: "\u3003" }, o)
+        );
+      }
+    } else if ((mode === "line" || mode === "arrow") && offsets.length > 1) {
+      const top = pct(offsets[0] + 1, span);
+      const bottom = pct(span - last - 0.5, span);
+      deco.push(
+        /* @__PURE__ */ jsx3("span", { "aria-label": mode === "line" ? "run line" : "run arrow", style: {
+          position: "absolute",
+          left: RULE_X,
+          top,
+          bottom,
+          opacity: 0.35,
+          borderLeft: RULE,
+          ...mode === "line" ? { width: "0.6em", borderBottom: RULE } : {}
+        } }, "rule")
+      );
+      if (mode === "arrow") {
+        offsets.forEach((o, k) => {
+          if (k > 0 && k < offsets.length - 1 && every > 0 && k % every === 0) deco.push(arrowhead(`calc(${pct(o + 0.5, span)} - 0.3em)`, k));
+        });
+        deco.push(arrowhead(`calc(${pct(last + 0.5, span)} - 0.2em)`, "end"));
+      }
+    }
+    return /* @__PURE__ */ jsxs3(Fragment, { children: [
+      /* @__PURE__ */ jsx3("span", { "aria-hidden": true, style: { position: "absolute", inset: 0, pointerEvents: "none" }, children: deco }),
+      /* @__PURE__ */ jsx3("div", { style: {
+        position: float ? "sticky" : "relative",
+        ...float ? { top: stickyTop } : {},
+        background: "var(--ft-run-bg, Canvas)",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }, children: defaultNode })
+    ] });
+  };
+}
 
 // src/renderers/tableBody.tsx
-import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
+import { Fragment as Fragment2, jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 function useHeadHeight(tbody, on) {
   const [h, setH] = useState4(0);
   useLayoutEffect(() => {
@@ -685,6 +839,16 @@ function useHeadHeight(tbody, on) {
   }, [tbody, on]);
   return h;
 }
+var INDENT_EM = 1.1;
+var FOLD_BTN = {
+  border: "none",
+  background: "transparent",
+  color: "inherit",
+  font: "inherit",
+  cursor: "pointer",
+  padding: "0 0.3em 0 0",
+  opacity: 0.6
+};
 function TableRows({
   rows,
   columns,
@@ -694,6 +858,7 @@ function TableRows({
   el,
   ditto,
   paths,
+  groups,
   renderCell,
   defaultNode,
   raw,
@@ -701,46 +866,69 @@ function TableRows({
   rowKey = (i) => i,
   rowStyle,
   onCellHover,
+  usePersistedState,
   children
 }) {
-  const layout = useMemo3(() => tableLayout(rows, columns, { ditto, paths }), [rows, columns, ditto, paths]);
-  const cellRenderer = useMemo3(
-    () => chainCellRenderers(ditto ? dittoRenderer(ditto) : void 0, renderCell),
-    [ditto, renderCell]
+  const use = usePersistedState ?? defaultUseState;
+  const [foldRaw, setFoldRaw] = use("fold", "");
+  const folded = useMemo3(() => parseFolds(foldRaw), [foldRaw]);
+  const toggleFold = (key) => {
+    const h = groupHash(key);
+    const next = new Set(folded);
+    if (next.has(h)) next.delete(h);
+    else next.add(h);
+    setFoldRaw([...next].join(""));
+  };
+  const layout = useMemo3(
+    () => tableLayout(rows, columns, { ditto, paths, ...groups ? { groups } : {}, folded }),
+    [rows, columns, ditto, paths, groups, folded]
   );
   const notifyHover = useStableCallback(onCellHover);
   const tbody = useRef2(null);
-  const anySticky = [...layout.specs.values()].some((s) => s.mode === "sticky");
-  const headH = useHeadHeight(tbody, anySticky);
+  const anyMerged = [...layout.specs.values()].some((s) => s.mode !== "none");
+  const headH = useHeadHeight(tbody, anyMerged);
+  const renderers = useMemo3(() => new Map([...layout.specs].map(([c, s]) => [
+    c,
+    s.mode === "none" ? void 0 : s.render ?? runRenderer(s.mode, { float: s.float, every: s.every })
+  ])), [layout.specs]);
   const displayOf = [];
+  const order = [];
   layout.items.forEach((it, d) => {
-    if (it.kind === "row") displayOf[it.i] = d;
+    if (it.kind === "row") {
+      displayOf[it.i] = d;
+      order.push(it.i);
+    }
+  });
+  const posOf = [];
+  order.forEach((i, k) => {
+    posOf[i] = k;
   });
   const coveredTo = /* @__PURE__ */ new Map();
   const covered = (c, d) => (coveredTo.get(c) ?? -1) >= d;
   const width = (c) => widthStyle?.(c) ?? {};
   const trs = layout.items.map((it, d) => {
-    if (it.kind === "parent") {
-      const next = rows[it.first];
-      const prev = rows[it.first - 1];
-      return /* @__PURE__ */ jsx4("tr", { "data-parent": "", style: rowStyle, children: columns.map((c) => {
+    if (it.kind === "group") {
+      const { group: g, depth: depth2, collapsed, size } = it;
+      const label = typeof g.label === "string" && g.prefix ? /* @__PURE__ */ jsxs4(Fragment2, { children: [
+        /* @__PURE__ */ jsx4("span", { style: { fontSize: 0 }, children: g.prefix.slice(0, g.prefix.length - g.label.length) }),
+        g.label
+      ] }) : g.label;
+      return /* @__PURE__ */ jsx4("tr", { "data-group": g.key, "data-depth": depth2, style: rowStyle, children: columns.map((c) => {
         if (covered(c.name, d)) return null;
         const st = colStyles.get(c.name);
         const style = { ...st?.cell ?? TD_STYLE, ...width(c.name) };
-        let node = null;
-        let title;
-        if (c.name === it.column) {
-          node = ellipsisWrap(st?.ellipsis ?? "end", dimPathNode(it.prefix, prev?.[c.name]), void 0);
-          title = it.prefix;
-        } else {
-          const run = layout.runs.get(c.name)?.[it.first];
-          const mode = layout.specs.get(c.name)?.mode;
-          if ((mode === "line" || mode === "arrow") && run && !run.start) node = runLine(next[c.name], false);
-        }
-        return /* @__PURE__ */ jsx4("td", { style, className: st?.cellClass, ...title ? { title } : {}, children: node }, c.name);
-      }) }, `parent:${rowKey(it.first)}`);
+        if (c.name !== g.column) return /* @__PURE__ */ jsx4("td", { style, className: st?.cellClass }, c.name);
+        return (
+          // `ltr`: a header is toggle + label, not a value to clip from the start.
+          /* @__PURE__ */ jsxs4("td", { style: { ...style, direction: "ltr", paddingLeft: `calc(${style.paddingLeft ?? "0.6em"} + ${depth2 * INDENT_EM}em)` }, className: st?.cellClass, ...g.title ? { title: g.title } : {}, children: [
+            /* @__PURE__ */ jsx4("button", { type: "button", "aria-expanded": !collapsed, "aria-label": collapsed ? "expand" : "collapse", onClick: () => toggleFold(g.key), style: FOLD_BTN, children: collapsed ? "\u25B8" : "\u25BE" }),
+            label,
+            collapsed && /* @__PURE__ */ jsx4("span", { style: { opacity: 0.5 }, children: ` \xB7 ${size.toLocaleString()} row${size === 1 ? "" : "s"}` })
+          ] }, c.name)
+        );
+      }) }, `group:${g.key}`);
     }
-    const { i } = it;
+    const { i, depth, group } = it;
     const row = rows[i];
     return /* @__PURE__ */ jsx4("tr", { style: rowStyle, children: columns.map((c) => {
       if (covered(c.name, d)) return null;
@@ -750,14 +938,16 @@ function TableRows({
       const run = layout.runs.get(c.name)?.[i];
       const base = defaultNode(value, c);
       let start = base;
+      let indent = 0;
       const pathMode = layout.paths.get(c.name);
       const isPath = pathMode !== void 0 && typeof value === "string";
       if (isPath) {
-        if (pathMode === "tree" && it.tree) {
-          const [parent, tail] = splitParent(value);
-          start = treeChildNode(parent, tail, it.tree.last);
+        if (group?.prefix !== void 0 && group.column === c.name && value.startsWith(group.prefix)) {
+          start = treeChildNode(group.prefix, value.slice(group.prefix.length), i === group.end - 1);
+          indent = depth;
         } else {
-          start = dimPathNode(value, rows[i - 1]?.[c.name]);
+          const above = order[posOf[i] - 1];
+          start = dimPathNode(value, above === void 0 ? void 0 : rows[above][c.name]);
         }
       }
       const ctx = tableCellCtx({
@@ -770,15 +960,19 @@ function TableRows({
         defaultNode: start,
         ...run ? { run } : {}
       });
-      const rendered = cellRenderer ? cellRenderer(ctx) : start;
+      const rendered = renderCell ? renderCell(ctx) : start;
       const custom = rendered !== base;
       const wrapped = ellipsisWrap(ellipsis, rendered, !custom && typeof value === "string" ? value : void 0);
       const elided = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row, path, raw: raw?.(value, c), ellipsis });
       const { node } = elided;
       let { title, onMouseEnter: measure } = elided;
-      if (isPath && rendered === start && el.tooltip === "native") {
-        title = value;
-        measure = void 0;
+      const runRender = renderers.get(c.name);
+      if (isPath && rendered === start && el.tooltip === "native" || run?.start && runRender && el.tooltip === "native" && !custom) {
+        const t = cellTitle(value);
+        if (t !== void 0) {
+          title = t;
+          measure = void 0;
+        }
       }
       const hoverEnter = onCellHover ? () => notifyHover(ctx) : void 0;
       const handlers = {
@@ -789,19 +983,39 @@ function TableRows({
         ...onCellHover ? { onMouseLeave: () => notifyHover(null) } : {}
       };
       const tips = title != null ? { title } : {};
-      const style = { ...st?.cell ?? TD_STYLE, ...width(c.name) };
-      if (run?.start && layout.specs.get(c.name)?.mode === "sticky") {
-        const rowSpan = displayOf[i + run.length - 1] - d + 1;
-        coveredTo.set(c.name, d + rowSpan - 1);
-        return /* @__PURE__ */ jsx4("td", { rowSpan, "data-run": run.length, className: st?.cellClass, style: { ...style, overflow: "visible", verticalAlign: "top" }, children: /* @__PURE__ */ jsx4(
-          "div",
+      const style = {
+        ...st?.cell ?? TD_STYLE,
+        ...width(c.name),
+        ...indent ? { paddingLeft: `calc(${(st?.cell ?? TD_STYLE).paddingLeft ?? "0.6em"} + ${indent * INDENT_EM}em)` } : {}
+      };
+      if (run?.start && runRender) {
+        const runRows = order.slice(posOf[i], posOf[i] + run.length);
+        const spanEnd = displayOf[runRows[runRows.length - 1]];
+        const span = spanEnd - d + 1;
+        coveredTo.set(c.name, spanEnd);
+        const content = runRender({
+          value,
+          column: c,
+          rows: runRows.map((k) => rows[k]),
+          span,
+          offsets: runRows.map((k) => displayOf[k] - d),
+          defaultNode: node,
+          stickyTop: headH,
+          path
+        });
+        return /* @__PURE__ */ jsx4(
+          "td",
           {
+            rowSpan: span,
+            "data-run": run.length,
+            className: st?.cellClass,
+            style: { ...style, overflow: "visible", verticalAlign: "top", position: "relative" },
             ...tips,
             ...handlers,
-            style: { position: "sticky", top: headH, maxWidth: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-            children: node
-          }
-        ) }, c.name);
+            children: content
+          },
+          c.name
+        );
       }
       return /* @__PURE__ */ jsx4("td", { style, className: st?.cellClass, ...tips, ...handlers, children: node }, c.name);
     }) }, rowKey(i));
@@ -998,7 +1212,7 @@ function ColumnResizeHandle({ col, widths }) {
 }
 
 // src/renderers/csv.tsx
-import { Fragment as Fragment2, jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
+import { Fragment as Fragment3, jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
 var ROW_STYLE = { borderTop: "1px solid rgba(127,127,127,0.15)" };
 var csvCell = (value) => value;
 function makeCsvViewer(opts = {}) {
@@ -1006,7 +1220,7 @@ function makeCsvViewer(opts = {}) {
     return /* @__PURE__ */ jsx6(CsvViewer, { ...props, ...opts });
   };
 }
-function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, ditto, paths, onPage, onCellHover, elide, resizableColumns = false }) {
+function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, ditto, paths, groups, onPage, onCellHover, elide, resizableColumns = false }) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter);
   const [page, setPage] = useState6(0);
   const smallTable = total !== null && total <= fullLoadMaxBytes;
@@ -1066,11 +1280,11 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
   const pathNotes = paths ? pathModes(rowObjs, columns, paths).notes : void 0;
   const offsetStart = page * PAGE_BYTES;
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES);
-  return /* @__PURE__ */ jsxs5(Fragment2, { children: [
+  return /* @__PURE__ */ jsxs5(Fragment3, { children: [
     /* @__PURE__ */ jsxs5("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em", position: "relative", zIndex: 2 }, children: [
       /* @__PURE__ */ jsx6("b", { children: allColumns.length }),
       " columns",
-      smallTable && rows ? /* @__PURE__ */ jsxs5(Fragment2, { children: [
+      smallTable && rows ? /* @__PURE__ */ jsxs5(Fragment3, { children: [
         " \xB7 ",
         /* @__PURE__ */ jsx6("b", { children: rows.length.toLocaleString() }),
         " rows"
@@ -1078,7 +1292,7 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
       " ",
       "\xB7 ",
       fmtSize(total),
-      columnPicker && /* @__PURE__ */ jsxs5(Fragment2, { children: [
+      columnPicker && /* @__PURE__ */ jsxs5(Fragment3, { children: [
         " \xB7 ",
         /* @__PURE__ */ jsx6(ColumnPicker, { columns: allColumns, vis: { visible, ...vis } })
       ] })
@@ -1154,6 +1368,8 @@ function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, rend
           el,
           ...ditto ? { ditto } : {},
           ...paths ? { paths } : {},
+          ...groups ? { groups } : {},
+          ...usePersistedState ? { usePersistedState } : {},
           ...renderCell ? { renderCell } : {},
           defaultNode: csvCell,
           rowIndex: (i) => i,
@@ -1176,7 +1392,10 @@ export {
   dittoRenderer,
   makeCsvViewer,
   parseLine,
+  pathGroups,
   repeatsAbove,
+  runGroups,
+  runRenderer,
   useCsvHeader,
   useCsvPage
 };

@@ -25,6 +25,7 @@ __export(ditto_exports, {
   dittoMark: () => dittoMark,
   dittoRenderer: () => dittoRenderer,
   runLine: () => runLine,
+  runRenderer: () => runRenderer,
   treeChildNode: () => treeChildNode
 });
 module.exports = __toCommonJS(ditto_exports);
@@ -59,12 +60,19 @@ function normalizeDitto(ditto) {
   const out = /* @__PURE__ */ new Map();
   if (!ditto) return out;
   if (isList(ditto)) {
-    for (const c of ditto) out.set(c, { mode: "mark", min: 2 });
+    for (const c of ditto) out.set(c, { mode: "mark", min: 2, float: true, every: 5 });
     return out;
   }
   for (const [c, s] of Object.entries(ditto)) {
     const spec = typeof s === "string" ? { mode: s } : s;
-    out.set(c, { mode: spec.mode, min: spec.min ?? 2, ...spec.key ? { key: spec.key } : {} });
+    out.set(c, {
+      mode: spec.mode ?? "sticky",
+      min: spec.min ?? 2,
+      float: spec.float ?? true,
+      every: spec.every ?? 5,
+      ...spec.key ? { key: spec.key } : {},
+      ...spec.render ? { render: spec.render } : {}
+    });
   }
   return out;
 }
@@ -161,6 +169,80 @@ function treeChildNode(parent, tail, last) {
     tail
   ] });
 }
+var RULE_X = "0.9em";
+var pct = (x, span) => `${x / span * 100}%`;
+function arrowhead(top, key) {
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    "span",
+    {
+      style: {
+        position: "absolute",
+        top,
+        left: `calc(${RULE_X} - 0.3em + 0.5px)`,
+        opacity: 0.5,
+        borderLeft: "0.3em solid transparent",
+        borderRight: "0.3em solid transparent",
+        borderTop: "0.45em solid currentColor"
+      }
+    },
+    key
+  );
+}
+function runRenderer(mode, opts = {}) {
+  const { float = true, every = 5 } = opts;
+  return ({ span, offsets, defaultNode, stickyTop }) => {
+    const last = offsets[offsets.length - 1];
+    const deco = [];
+    if (mode === "mark") {
+      for (const o of offsets.slice(1)) {
+        deco.push(
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { "aria-label": "ditto", style: {
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: pct(o, span),
+            height: pct(1, span),
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: 0.3
+          }, children: "\u3003" }, o)
+        );
+      }
+    } else if ((mode === "line" || mode === "arrow") && offsets.length > 1) {
+      const top = pct(offsets[0] + 1, span);
+      const bottom = pct(span - last - 0.5, span);
+      deco.push(
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { "aria-label": mode === "line" ? "run line" : "run arrow", style: {
+          position: "absolute",
+          left: RULE_X,
+          top,
+          bottom,
+          opacity: 0.35,
+          borderLeft: RULE,
+          ...mode === "line" ? { width: "0.6em", borderBottom: RULE } : {}
+        } }, "rule")
+      );
+      if (mode === "arrow") {
+        offsets.forEach((o, k) => {
+          if (k > 0 && k < offsets.length - 1 && every > 0 && k % every === 0) deco.push(arrowhead(`calc(${pct(o + 0.5, span)} - 0.3em)`, k));
+        });
+        deco.push(arrowhead(`calc(${pct(last + 0.5, span)} - 0.2em)`, "end"));
+      }
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { "aria-hidden": true, style: { position: "absolute", inset: 0, pointerEvents: "none" }, children: deco }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: {
+        position: float ? "sticky" : "relative",
+        ...float ? { top: stickyTop } : {},
+        background: "var(--ft-run-bg, Canvas)",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }, children: defaultNode })
+    ] });
+  };
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   dimPathNode,
@@ -168,6 +250,7 @@ function treeChildNode(parent, tail, last) {
   dittoMark,
   dittoRenderer,
   runLine,
+  runRenderer,
   treeChildNode
 });
 //# sourceMappingURL=ditto.cjs.map

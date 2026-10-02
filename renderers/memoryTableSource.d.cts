@@ -1,4 +1,4 @@
-import { a as TableColumn, S as SortComparators } from '../columnResize-B7qeVwqU.cjs';
+import { a as TableColumn, S as SortComparators } from '../columnResize-BMt80okS.cjs';
 import { TableSource, TableCatalog } from './tableSource.cjs';
 import 'react/jsx-runtime';
 import 'react';

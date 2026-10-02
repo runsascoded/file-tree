@@ -7,7 +7,7 @@ import { StoreVFSOptions } from '../sqlite/vfs.cjs';
 import { TableBrowserOptions } from './tableBrowser.cjs';
 export { DEFAULT_PAGE_SIZE } from './tableBrowser.cjs';
 import './tableSource.cjs';
-import '../columnResize-B7qeVwqU.cjs';
+import '../columnResize-BMt80okS.cjs';
 import 'react';
 
 interface SqliteViewerOptions extends TableBrowserOptions, SqliteTableSourceOptions {

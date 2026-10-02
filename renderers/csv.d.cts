@@ -1,10 +1,10 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { Store } from '../index.cjs';
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.cjs';
-import { T as TableViewerOptions, a as TableColumn } from '../columnResize-B7qeVwqU.cjs';
-export { D as DittoOption, P as PathMode, b as PathsOption, R as RunMode, c as RunSpec, d as TableCellCtx, e as TableCellRenderer, f as TableRun, g as chainCellRenderers, r as repeatsAbove } from '../columnResize-B7qeVwqU.cjs';
+import { T as TableViewerOptions, a as TableColumn } from '../columnResize-BMt80okS.cjs';
+export { D as DittoOption, G as GroupRows, P as PathMode, b as PathsOption, R as RowGroup, c as RunMode, d as RunSpec, e as TableCellCtx, f as TableCellRenderer, g as TableRun, h as chainCellRenderers, p as pathGroups, r as repeatsAbove, i as runGroups } from '../columnResize-BMt80okS.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
-export { dittoMark, dittoRenderer } from './ditto.cjs';
+export { dittoMark, dittoRenderer, runRenderer } from './ditto.cjs';
 import 'react';
 
 /** Note `rowIndex` in `renderCell` is **page-relative** here: pages are
@@ -26,7 +26,7 @@ declare function makeCsvViewer(opts?: CsvViewerOptions): (props: {
     delimiter: string;
     usePersistedState?: PersistedState;
 }) => react_jsx_runtime.JSX.Element;
-declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, ditto, paths, onPage, onCellHover, elide, resizableColumns }: {
+declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, ditto, paths, groups, onPage, onCellHover, elide, resizableColumns }: {
     store: Store;
     path: string;
     delimiter: string;

@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { a as TableColumn, D as DittoOption, e as TableCellRenderer } from '../columnResize-B7qeVwqU.cjs';
+import { a as TableColumn, D as DittoOption, f as TableCellRenderer, c as RunMode, m as RunRenderer } from '../columnResize-BMt80okS.cjs';
 import 'react/jsx-runtime';
 import '../persistedState-CB_wfbcb.cjs';
 
@@ -34,5 +34,20 @@ declare function dimPathNode(path: string, above: unknown): ReactNode;
  *  the group's last row), then the tail. The parent is kept in the text,
  *  visually hidden, so a copy yields the full path. */
 declare function treeChildNode(parent: string, tail: string, last: boolean): ReactNode;
+/** A built-in {@link RunRenderer}: the run's value (floating under the
+ *  sticky header while any of the run is in view, unless `float: false`),
+ *  and below it, positioned by `offsets / span`:
+ *  - `'sticky'`: nothing.
+ *  - `'mark'`: `〃` on each row after the first.
+ *  - `'line'`: a rule from the second row to the last, ending in `└`.
+ *  - `'arrow'`: a rule with an arrowhead every `every` rows and at the end.
+ *
+ *  The value sits on an opaque box (`--ft-run-bg`, default `Canvas`), so a
+ *  floating value occludes the rule behind it. Uses only {@link RunCellCtx}:
+ *  a template for your own. */
+declare function runRenderer<C extends TableColumn = TableColumn>(mode: Exclude<RunMode, 'none'>, opts?: {
+    float?: boolean;
+    every?: number;
+}): RunRenderer<C>;
 
-export { dimPathNode, dimmedPath, dittoMark, dittoRenderer, runLine, treeChildNode };
+export { dimPathNode, dimmedPath, dittoMark, dittoRenderer, runLine, runRenderer, treeChildNode };

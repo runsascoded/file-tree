@@ -43,6 +43,18 @@ declare function useSortedRows<R extends Record<string, unknown>>(rows: R[] | nu
  *  visible before you've used it. */
 declare function sortGlyph(column: string, sort: Pick<SortState, 'column' | 'dir'>): string;
 
+/** Runs and path elision for the table viewers: the pure half.
+ *
+ *  A table of actions or staged prefixes comes in long runs — one batch
+ *  shares an actor, a timestamp, an owner, a note — and consecutive paths
+ *  share most of their prefix. This module finds those runs and shared
+ *  prefixes on a rendered page; `tableBody.tsx` draws them.
+ *
+ *  Everything here is computed per page, on display order (after
+ *  sort/filter), and is pure, so it can be tested as plain data.
+ *
+ *  See `specs/done/table-runs-and-path-elision.md`. */
+
 /** How a run of equal values in a column is drawn:
  *  - `'mark'`: every cell after the first renders `〃` (value on its title).
  *  - `'sticky'`: the run's cells merge into one, whose value floats at the
@@ -54,7 +66,16 @@ declare function sortGlyph(column: string, sort: Pick<SortState, 'column' | 'dir
  *    `renderCell` draws its own treatment. */
 type RunMode = 'mark' | 'sticky' | 'line' | 'arrow' | 'none';
 interface RunSpec {
-    mode: RunMode;
+    /** A built-in renderer. Default `'sticky'` (ignored with `render`). */
+    mode?: RunMode;
+    /** Draw the run's merged cell yourself, instead of a built-in `mode`. */
+    render?: RunRenderer;
+    /** Built-ins: the value floats at the top of the run's visible part as the
+     *  table scrolls. Default `true`. */
+    float?: boolean;
+    /** `'arrow'`: an arrowhead every this many rows, besides the last. Default
+     *  5; `0` for the last only. */
+    every?: number;
     /** Key a run on this instead of the raw value: e.g. a relative-time
      *  bucket ("5w ago"), so rows a second apart don't break the run. A
      *  `null`/`undefined` key, like an empty value, is never part of a run. */
@@ -67,6 +88,9 @@ interface RunSpec {
 type DittoOption = readonly string[] | Readonly<Record<string, RunMode | RunSpec>>;
 interface ResolvedRunSpec {
     mode: RunMode;
+    render?: RunRenderer;
+    float: boolean;
+    every: number;
     key?: (value: unknown, row: Record<string, unknown>) => unknown;
     min: number;
 }
@@ -98,7 +122,7 @@ declare function runKey(spec: Pick<ResolvedRunSpec, 'key'>, value: unknown, row:
 /** Runs of equal keys in `column`, one entry per row: `undefined` for a row
  *  in no run (its own value, an empty value, or a run shorter than `min`).
  *  Keys compare with `Object.is`. */
-declare function computeRuns(rows: readonly Record<string, unknown>[], column: string, spec: Pick<ResolvedRunSpec, 'key' | 'min'>): (TableRun | undefined)[];
+declare function computeRuns(rows: readonly Record<string, unknown>[], column: string, spec: Pick<RunSpec, 'key' | 'min'>): (TableRun | undefined)[];
 /** Length of the leading `scheme://` of a path, or 0. A scheme counts as
  *  part of the path's first segment, so `gs://` alone is never "shared". */
 declare function schemeLength(p: string): number;
@@ -113,24 +137,65 @@ declare function splitParent(p: string): [string, string];
  *  `compareValues`) by `column` — a page sorted by it, by the viewer or by
  *  nature. */
 declare function isSortedBy(rows: readonly Record<string, unknown>[], column: string): boolean;
+/** A group of consecutive page rows, drawn as a header row (collapsible)
+ *  above its rows. Groups nest via `children`. See {@link pathGroups},
+ *  {@link runGroups}, or build your own: a viewer's `groups` option is any
+ *  {@link GroupRows}. */
+interface RowGroup {
+    /** Stable id: collapse state persists by it (hashed, see {@link groupHash}). */
+    key: string;
+    /** Page rows `[start, end)`. */
+    start: number;
+    end: number;
+    /** The column whose cell holds the header's label. */
+    column: string;
+    /** Header content. */
+    label: ReactNode;
+    /** The header's tooltip. */
+    title?: string;
+    /** For a path group, the full prefix its rows share: rows in the group
+     *  show `column`'s value after it (their tail), indented. */
+    prefix?: string;
+    children?: RowGroup[];
+}
+/** Groups over a page (display order). */
+type GroupRows = (rows: readonly Record<string, unknown>[]) => RowGroup[];
+/** A multi-level tree over `column`'s `/`-segments: consecutive rows that
+ *  share a segment (at least `min`, default 2) form a group, nested per
+ *  segment. A chain of single-child levels compacts into one group
+ *  (`gs://bkt/checkpoints/`, not three). Needs the page sorted by `column`
+ *  (see {@link isSortedBy}); returns no groups otherwise. */
+declare function pathGroups(column: string, opts?: {
+    min?: number;
+}): GroupRows;
+/** Runs of equal values (or `key`s) in `column` as groups, labelled with the
+ *  value; collapsed, a run is one row. */
+declare function runGroups(column: string, opts?: Pick<RunSpec, 'key' | 'min'>): GroupRows;
+/** A group key's persisted form: 4 base-36 chars (FNV-1a), so a list of
+ *  collapsed groups is just their hashes concatenated. */
+declare function groupHash(key: string): string;
+/** Parse a concatenated {@link groupHash} list. */
+declare function parseFolds(raw: string): Set<string>;
 /** One row of the rendered body: a data row (`i` indexes the page), or a
- *  synthetic parent row that `'tree'` path mode inserts above a group. */
+ *  group's header row. `depth` is the number of groups enclosing it;
+ *  `group` the innermost. */
 type BodyItem = {
     kind: 'row';
     i: number;
-    tree?: {
-        last: boolean;
-    };
+    depth: number;
+    group?: RowGroup;
 } | {
-    kind: 'parent';
-    column: string;
-    prefix: string;
-    first: number;
+    kind: 'group';
+    group: RowGroup;
+    depth: number;
+    collapsed: boolean;
+    size: number;
 };
 /** The page as the body draws it. */
 interface TableLayout {
     items: BodyItem[];
-    /** Per run column, one entry per page row (see {@link computeRuns}). */
+    /** Per run column, one entry per page row (see {@link computeRuns}),
+     *  computed over the *visible* rows (a collapsed group's are skipped). */
     runs: Map<string, (TableRun | undefined)[]>;
     specs: Map<string, ResolvedRunSpec>;
     /** Per path column, the mode in effect on this page (`'tree'` falls back
@@ -139,7 +204,7 @@ interface TableLayout {
     /** The column grouping rows into a tree, if any. */
     tree?: string;
     /** A note per column whose requested mode isn't in effect, for its
-     *  header's tooltip. */
+     *  header. */
     notes: Map<string, string>;
 }
 declare const TREE_FALLBACK_NOTE = "Paths group into a tree only when sorted by this column; showing shared prefixes dimmed.";
@@ -149,12 +214,14 @@ declare const TREE_FALLBACK_NOTE = "Paths group into a tree only when sorted by 
  *  `'dim'`. Cheap (one pass per `'tree'` column), so a viewer can call it
  *  for header notes without memoizing. */
 declare function pathModes(rows: readonly Record<string, unknown>[], columns: readonly Pick<TableColumn, 'name'>[], paths: PathsOption | undefined): Pick<TableLayout, 'paths' | 'tree' | 'notes'>;
-/** Lay out a page: runs for the `ditto` columns, the path mode in effect
- *  per `paths` column (see {@link pathModes}), and — with a `'tree'`
- *  column — the parent rows to insert. */
+/** Lay out a page: groups (the `groups` option, or `pathGroups` for a
+ *  `'tree'` path column) with their header rows, collapsed groups' rows
+ *  dropped; then runs for the `ditto` columns over the rows that remain. */
 declare function tableLayout(rows: readonly Record<string, unknown>[], columns: readonly Pick<TableColumn, 'name'>[], opts: {
     ditto?: DittoOption;
     paths?: PathsOption;
+    groups?: GroupRows;
+    folded?: ReadonlySet<string>;
 }): TableLayout;
 
 /** Format-neutral hooks for the table-shaped viewers.
@@ -223,6 +290,31 @@ interface TableCellCtx<C extends TableColumn = TableColumn> {
  *  library hands back the node it would have rendered and gets out of
  *  the way. */
 type TableCellRenderer<C extends TableColumn = TableColumn> = (ctx: TableCellCtx<C>) => ReactNode;
+/** A run in a `ditto` column, as its merged cell sees it: the viewer draws
+ *  each run (mode ≠ `'none'`) as one cell spanning its rows, and a
+ *  {@link RunRenderer} fills it. The built-ins (`runRenderer`) use nothing
+ *  but this, so a consumer's own renderer is on equal footing. */
+interface RunCellCtx<C extends TableColumn = TableColumn> {
+    /** The run's first value. */
+    value: unknown;
+    column: C;
+    /** The run's rows, in display order. */
+    rows: Record<string, unknown>[];
+    /** Display rows the cell spans: the run's rows plus any group header rows
+     *  inside it. */
+    span: number;
+    /** Each run row's display offset within the span, from 0 — so row `k`
+     *  occupies `[offsets[k], offsets[k] + 1) / span` of the cell's height. */
+    offsets: number[];
+    /** The first row's cell as the viewer would draw it (after `renderCell`
+     *  and elision). */
+    defaultNode: ReactNode;
+    /** `top` for a `position: sticky` value, so it floats just under the
+     *  table's sticky header. */
+    stickyTop: number;
+    path: string;
+}
+type RunRenderer<C extends TableColumn = TableColumn> = (ctx: RunCellCtx<C>) => ReactNode;
 /** Build a {@link TableCellCtx}, with `prevRow` as a lazy getter over `at`. */
 declare function tableCellCtx<C extends TableColumn>(ctx: Omit<TableCellCtx<C>, 'prevRow'>): TableCellCtx<C>;
 /** Compose cell renderers left to right: each receives the previous one's
@@ -318,18 +410,20 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
      *  100. */
     pageSize?: number;
     /** Columns whose runs of equal values collapse, so the eye lands where
-     *  a column changes. A list of names draws each run with a ditto mark
-     *  (`〃`, value on its title); a record picks a mode per column — `'mark'`,
-     *  `'sticky'` (one merged cell whose value floats at the top of the run's
-     *  visible part), `'line'` (a rule down the run), or `'none'` (computed
-     *  for `ctx.run`, not drawn) — optionally with a `key` (run on a derived
-     *  value, e.g. a relative-time bucket) and a `min` length. See
-     *  {@link RunSpec}.
+     *  a column changes. Each run renders as one cell spanning its rows, its
+     *  value floating at the top of the run's visible part as the table
+     *  scrolls; the mode picks what's drawn below it: nothing (`'sticky'`,
+     *  the default), `〃` per row (`'mark'`, what a list of names means), a
+     *  rule ending in `└` (`'line'`), or a rule with arrowheads (`'arrow'`).
+     *  `'none'` computes runs (`ctx.run`) without merging. Per column:
+     *  a `key` (run on a derived value, e.g. a relative-time bucket), `min`
+     *  length, `float: false`, or your own `render` ({@link RunRenderer}).
+     *  See {@link RunSpec}.
      *
-     *  Runs are computed on the rendered page in display order, so a run
-     *  spanning a page boundary restarts. Empty values never join a run.
-     *  `'mark'`/`'line'` chain ahead of `renderCell` (which receives the mark
-     *  as `defaultNode`); a `'sticky'` run renders its first cell only. */
+     *  Runs are computed on the rendered page in display order (over visible
+     *  rows, when groups collapse), so a run spanning a page boundary
+     *  restarts. Empty values never join a run. `renderCell` is called for a
+     *  run's first cell only; its output is the run renderer's `defaultNode`. */
     ditto?: DittoOption;
     /** Columns holding `/`-separated paths, drawn so the part that changes
      *  stands out. A list of names dims, in each row, the whole segments it
@@ -340,6 +434,12 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
      *  full path, and copying it yields the full path. A `scheme://` counts as
      *  part of the first segment. See {@link PathMode}. */
     paths?: PathsOption;
+    /** Row groups: each group a collapsible header row above its rows, nested
+     *  via `children`. `pathGroups(col)` (a multi-level path tree; what
+     *  `paths: { col: 'tree' }` uses) and `runGroups(col)` are built in; any
+     *  {@link GroupRows} works. Collapse state persists via `usePersistedState`
+     *  (`?fold=`). */
+    groups?: GroupRows;
     /** How long cell values that outgrow their column are rendered — the
      *  clip and the way the full value comes back. `true`/absent is the
      *  batteries-included default (clip at 30em, native `title` = the full
@@ -600,4 +700,4 @@ declare function ColumnResizeHandle({ col, widths }: {
     widths: ColumnWidths;
 }): react_jsx_runtime.JSX.Element;
 
-export { elideCellStyle as $, runKey as A, type BodyItem as B, schemeLength as C, type DittoOption as D, sharedPathPrefix as E, splitParent as F, tableLayout as G, type ColStyle as H, type ColumnResizeConfig as I, ELIDE_DEFAULTS as J, type ElideCell as K, type ElideConfig as L, type ElideCtx as M, type EllipsisMode as N, MIDDLE_TAIL as O, type PathMode as P, NUMERIC_ALIGN as Q, type RunMode as R, type SortComparators as S, type TableViewerOptions as T, type ResolvedElide as U, TD_STYLE as V, TH_STYLE as W, type TablePageCtx as X, applyElide as Y, cellClipped as Z, cellTitle as _, type TableColumn as a, resolveColStyles as a0, resolveElide as a1, tableCellCtx as a2, ColumnResizeHandle as a3, type ColumnWidths as a4, type ResizeScope as a5, type UseColumnWidthsArgs as a6, columnFingerprint as a7, parseWidths as a8, scopeKey as a9, serializeWidths as aa, useColumnWidths as ab, type PathsOption as b, type RunSpec as c, type TableCellCtx as d, type TableCellRenderer as e, type TableRun as f, chainCellRenderers as g, type TableColumnProps as h, type TableHeaderCtx as i, type TableHeaderRenderer as j, DEFAULT_FULL_LOAD_MAX_BYTES as k, type SortDir as l, type SortState as m, compareValues as n, useSortedRows as o, type ResolvedRunSpec as p, TREE_FALLBACK_NOTE as q, repeatsAbove as r, sortGlyph as s, type TableLayout as t, useSort as u, computeRuns as v, isSortedBy as w, normalizeDitto as x, normalizePaths as y, pathModes as z };
+export { type ResolvedElide as $, groupHash as A, type BodyItem as B, isSortedBy as C, type DittoOption as D, normalizeDitto as E, normalizePaths as F, type GroupRows as G, parseFolds as H, pathModes as I, runKey as J, schemeLength as K, sharedPathPrefix as L, splitParent as M, tableLayout as N, type ColStyle as O, type PathMode as P, type ColumnResizeConfig as Q, type RowGroup as R, type SortComparators as S, type TableViewerOptions as T, ELIDE_DEFAULTS as U, type ElideCell as V, type ElideConfig as W, type ElideCtx as X, type EllipsisMode as Y, MIDDLE_TAIL as Z, NUMERIC_ALIGN as _, type TableColumn as a, type RunCellCtx as a0, TD_STYLE as a1, TH_STYLE as a2, type TablePageCtx as a3, applyElide as a4, cellClipped as a5, cellTitle as a6, elideCellStyle as a7, resolveColStyles as a8, resolveElide as a9, tableCellCtx as aa, ColumnResizeHandle as ab, type ColumnWidths as ac, type ResizeScope as ad, type UseColumnWidthsArgs as ae, columnFingerprint as af, parseWidths as ag, scopeKey as ah, serializeWidths as ai, useColumnWidths as aj, type PathsOption as b, type RunMode as c, type RunSpec as d, type TableCellCtx as e, type TableCellRenderer as f, type TableRun as g, chainCellRenderers as h, runGroups as i, type TableColumnProps as j, type TableHeaderCtx as k, type TableHeaderRenderer as l, type RunRenderer as m, DEFAULT_FULL_LOAD_MAX_BYTES as n, type SortDir as o, pathGroups as p, type SortState as q, repeatsAbove as r, compareValues as s, sortGlyph as t, useSort as u, useSortedRows as v, type ResolvedRunSpec as w, TREE_FALLBACK_NOTE as x, type TableLayout as y, computeRuns as z };
