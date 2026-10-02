@@ -2,11 +2,11 @@ import * as react_jsx_runtime from 'react/jsx-runtime';
 import { ReactNode } from 'react';
 import { Compressors } from 'hyparquet';
 import { Store } from '../index.js';
-import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-D7HPq455.js';
-export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as formatTemporal, j as inferColumnFormats, k as inferTemporalFormat, r as readParquetRows, t as toMillis, u as useAllRows, l as useParquetMeta, m as useRowGroup } from '../parquetData-D7HPq455.js';
+import { P as ParquetColumn, a as ParquetColumnStats } from '../parquetData-BT0BUj5s.js';
+export { N as NUMERIC_TYPES, b as ParquetMeta, R as RG_CACHE_SIZE, c as RowGroupInfo, T as TemporalColumn, d as TemporalFormat, e as TemporalPrecision, f as TemporalSource, g as TemporalUnit, h as coarseKind, i as formatTemporal, j as inferColumnFormats, k as inferTemporalFormat, r as readParquetRows, t as toMillis, u as useAllRows, l as useParquetMeta, m as useRowGroup } from '../parquetData-BT0BUj5s.js';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
-import { b as TableCellCtx, c as TableCellRenderer, e as TableColumnProps, f as TableHeaderCtx, T as TableViewerOptions } from '../columnResize-Ci0IcSHV.js';
-export { a as TableColumn, g as TableHeaderRenderer, d as chainCellRenderers, r as repeatsAbove } from '../columnResize-Ci0IcSHV.js';
+import { d as TableCellCtx, e as TableCellRenderer, h as TableColumnProps, i as TableHeaderCtx, T as TableViewerOptions } from '../columnResize-D0JjwQTC.js';
+export { D as DittoOption, P as PathMode, b as PathsOption, R as RunMode, c as RunSpec, a as TableColumn, j as TableHeaderRenderer, f as TableRun, g as chainCellRenderers, r as repeatsAbove } from '../columnResize-D0JjwQTC.js';
 export { dittoMark, dittoRenderer } from './ditto.js';
 export { defaultCompressors, withDefaultCompressors } from './parquetCompressors.js';
 
@@ -70,7 +70,7 @@ declare function makeParquetViewer(opts?: ParquetViewerOptions): (props: {
     path: string;
     usePersistedState?: PersistedState;
 } & ParquetViewerOptions) => react_jsx_runtime.JSX.Element;
-declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, pageSize, ditto, foldConstantColumns, compressors, onPage, onCellHover, elide, resizableColumns }: {
+declare function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps, alignNumeric, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, pageSize, ditto, paths, foldConstantColumns, compressors, onPage, onCellHover, elide, resizableColumns }: {
     store: Store;
     path: string;
     usePersistedState?: PersistedState;

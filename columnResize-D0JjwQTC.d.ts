@@ -43,6 +43,120 @@ declare function useSortedRows<R extends Record<string, unknown>>(rows: R[] | nu
  *  visible before you've used it. */
 declare function sortGlyph(column: string, sort: Pick<SortState, 'column' | 'dir'>): string;
 
+/** How a run of equal values in a column is drawn:
+ *  - `'mark'`: every cell after the first renders `〃` (value on its title).
+ *  - `'sticky'`: the run's cells merge into one, whose value floats at the
+ *    top of the run's visible part as the table scrolls.
+ *  - `'line'`: the first cell shows the value; a thin rule runs down through
+ *    the rest and ends with a tick on the run's last row.
+ *  - `'arrow'`: `'line'`, ending in an arrowhead instead of a tick.
+ *  - `'none'`: runs are computed (see `TableCellCtx.run`) but not drawn — a
+ *    `renderCell` draws its own treatment. */
+type RunMode = 'mark' | 'sticky' | 'line' | 'arrow' | 'none';
+interface RunSpec {
+    mode: RunMode;
+    /** Key a run on this instead of the raw value: e.g. a relative-time
+     *  bucket ("5w ago"), so rows a second apart don't break the run. A
+     *  `null`/`undefined` key, like an empty value, is never part of a run. */
+    key?: (value: unknown, row: Record<string, unknown>) => unknown;
+    /** Shortest run to collapse. Default 2. */
+    min?: number;
+}
+/** The viewers' `ditto` option: a list of columns (each `'mark'`), or a
+ *  mode / {@link RunSpec} per column. */
+type DittoOption = readonly string[] | Readonly<Record<string, RunMode | RunSpec>>;
+interface ResolvedRunSpec {
+    mode: RunMode;
+    key?: (value: unknown, row: Record<string, unknown>) => unknown;
+    min: number;
+}
+/** A cell's place in a run of equal values, on the current page. */
+interface TableRun {
+    /** First cell of the run. */
+    start: boolean;
+    /** Last cell of the run. */
+    end: boolean;
+    /** Cells in the run. */
+    length: number;
+    /** This cell's position in the run, from 0. */
+    index: number;
+}
+/** How a column of `/`-separated paths is drawn:
+ *  - `'dim'`: the whole segments shared with the row above render dimmed.
+ *  - `'tree'`: consecutive rows with the same parent are grouped under a
+ *    parent row showing that parent once; the rows show only their tail.
+ *    Only when the page is sorted by the column; otherwise `'dim'`. */
+type PathMode = 'dim' | 'tree';
+/** The viewers' `paths` option: a list of columns (each `'dim'`), or a mode
+ *  per column. */
+type PathsOption = readonly string[] | Readonly<Record<string, PathMode>>;
+declare function normalizeDitto(ditto: DittoOption | undefined): Map<string, ResolvedRunSpec>;
+declare function normalizePaths(paths: PathsOption | undefined): Map<string, PathMode>;
+/** The value a run is keyed on, or `undefined` when the cell can't be part
+ *  of one (an empty value, or a key that maps to `null`/`undefined`). */
+declare function runKey(spec: Pick<ResolvedRunSpec, 'key'>, value: unknown, row: Record<string, unknown>): unknown;
+/** Runs of equal keys in `column`, one entry per row: `undefined` for a row
+ *  in no run (its own value, an empty value, or a run shorter than `min`).
+ *  Keys compare with `Object.is`. */
+declare function computeRuns(rows: readonly Record<string, unknown>[], column: string, spec: Pick<ResolvedRunSpec, 'key' | 'min'>): (TableRun | undefined)[];
+/** Length of the leading `scheme://` of a path, or 0. A scheme counts as
+ *  part of the path's first segment, so `gs://` alone is never "shared". */
+declare function schemeLength(p: string): number;
+/** Length of the prefix `a` shares with `b` in whole `/`-segments: up to
+ *  and including the last `/` both have in common, past any scheme. */
+declare function sharedPathPrefix(a: string, b: string): number;
+/** Split a path into its parent (through the last `/`) and its tail. A
+ *  trailing `/` (a directory) stays on the tail: `a/b/` → `['a/', 'b/']`.
+ *  A path with no parent past its scheme has parent `''`. */
+declare function splitParent(p: string): [string, string];
+/** Whether `rows` are in order (ascending or descending, per
+ *  `compareValues`) by `column` — a page sorted by it, by the viewer or by
+ *  nature. */
+declare function isSortedBy(rows: readonly Record<string, unknown>[], column: string): boolean;
+/** One row of the rendered body: a data row (`i` indexes the page), or a
+ *  synthetic parent row that `'tree'` path mode inserts above a group. */
+type BodyItem = {
+    kind: 'row';
+    i: number;
+    tree?: {
+        last: boolean;
+    };
+} | {
+    kind: 'parent';
+    column: string;
+    prefix: string;
+    first: number;
+};
+/** The page as the body draws it. */
+interface TableLayout {
+    items: BodyItem[];
+    /** Per run column, one entry per page row (see {@link computeRuns}). */
+    runs: Map<string, (TableRun | undefined)[]>;
+    specs: Map<string, ResolvedRunSpec>;
+    /** Per path column, the mode in effect on this page (`'tree'` falls back
+     *  to `'dim'` on an unsorted page). */
+    paths: Map<string, PathMode>;
+    /** The column grouping rows into a tree, if any. */
+    tree?: string;
+    /** A note per column whose requested mode isn't in effect, for its
+     *  header's tooltip. */
+    notes: Map<string, string>;
+}
+declare const TREE_FALLBACK_NOTE = "Paths group into a tree only when sorted by this column; showing shared prefixes dimmed.";
+/** The path mode in effect per `paths` column on a page: `'tree'` needs
+ *  the page sorted by its column (else `'dim'`, with a note for the header),
+ *  and only one column can group rows — a second `'tree'` column gets
+ *  `'dim'`. Cheap (one pass per `'tree'` column), so a viewer can call it
+ *  for header notes without memoizing. */
+declare function pathModes(rows: readonly Record<string, unknown>[], columns: readonly Pick<TableColumn, 'name'>[], paths: PathsOption | undefined): Pick<TableLayout, 'paths' | 'tree' | 'notes'>;
+/** Lay out a page: runs for the `ditto` columns, the path mode in effect
+ *  per `paths` column (see {@link pathModes}), and — with a `'tree'`
+ *  column — the parent rows to insert. */
+declare function tableLayout(rows: readonly Record<string, unknown>[], columns: readonly Pick<TableColumn, 'name'>[], opts: {
+    ditto?: DittoOption;
+    paths?: PathsOption;
+}): TableLayout;
+
 /** Format-neutral hooks for the table-shaped viewers.
  *
  *  These started life on the parquet viewer, but nothing about them is
@@ -97,6 +211,11 @@ interface TableCellCtx<C extends TableColumn = TableColumn> {
     path: string;
     /** What the viewer would have rendered for this cell. */
     defaultNode: ReactNode;
+    /** This cell's place in a run of equal values on the page, for a column
+     *  listed in the viewer's `ditto` option; `undefined` otherwise, or when
+     *  the cell is in no run. A `ditto` mode of `'none'` computes runs without
+     *  drawing them, so a `renderCell` can draw its own. */
+    run?: TableRun;
 }
 /** Per-cell render hook: called for every cell, decorate the ones you
  *  care about and return `ctx.defaultNode` for the rest. Mirrors
@@ -198,19 +317,29 @@ interface TableViewerOptions<C extends TableColumn = TableColumn> {
      *  (CSV reads fixed byte ranges, so it has no rows-per-page). Default
      *  100. */
     pageSize?: number;
-    /** Columns whose repeated values collapse to a ditto mark: in a run of
-     *  equal values, every row after the first (on the page) renders `〃`
-     *  instead of the value, so the eye lands where the column changes. The
-     *  repeated value stays on the `<td>`'s `title` for recovery.
+    /** Columns whose runs of equal values collapse, so the eye lands where
+     *  a column changes. A list of names draws each run with a ditto mark
+     *  (`〃`, value on its title); a record picks a mode per column — `'mark'`,
+     *  `'sticky'` (one merged cell whose value floats at the top of the run's
+     *  visible part), `'line'` (a rule down the run), or `'none'` (computed
+     *  for `ctx.run`, not drawn) — optionally with a `key` (run on a derived
+     *  value, e.g. a relative-time bucket) and a `min` length. See
+     *  {@link RunSpec}.
      *
-     *  Per-column opt-in by name — a ditto on an unsorted or numeric column
-     *  is noise. Sugar for chaining `dittoRenderer(ditto)` ahead of
-     *  `renderCell` (see {@link chainCellRenderers}): a `renderCell` receives
-     *  the mark as `defaultNode` on a repeated cell, and can override it (test
-     *  {@link repeatsAbove}). Runs are detected within the rendered page, so a
-     *  run spanning a page boundary restarts — the first row of a page always
-     *  shows its value. */
-    ditto?: readonly string[];
+     *  Runs are computed on the rendered page in display order, so a run
+     *  spanning a page boundary restarts. Empty values never join a run.
+     *  `'mark'`/`'line'` chain ahead of `renderCell` (which receives the mark
+     *  as `defaultNode`); a `'sticky'` run renders its first cell only. */
+    ditto?: DittoOption;
+    /** Columns holding `/`-separated paths, drawn so the part that changes
+     *  stands out. A list of names dims, in each row, the whole segments it
+     *  shares with the row above; a record picks `'dim'` or `'tree'` per column
+     *  (`'tree'`: rows with a common parent are grouped under one parent row,
+     *  and show only their tail — when the page is sorted by that column, else
+     *  `'dim'`, noted in the header's tooltip). The cell's title is always the
+     *  full path, and copying it yields the full path. A `scheme://` counts as
+     *  part of the first segment. See {@link PathMode}. */
+    paths?: PathsOption;
     /** How long cell values that outgrow their column are rendered — the
      *  clip and the way the full value comes back. `true`/absent is the
      *  batteries-included default (clip at 30em, native `title` = the full
@@ -471,4 +600,4 @@ declare function ColumnResizeHandle({ col, widths }: {
     widths: ColumnWidths;
 }): react_jsx_runtime.JSX.Element;
 
-export { resolveColStyles as A, resolveElide as B, type ColStyle as C, DEFAULT_FULL_LOAD_MAX_BYTES as D, ELIDE_DEFAULTS as E, tableCellCtx as F, ColumnResizeHandle as G, type ColumnWidths as H, type ResizeScope as I, columnFingerprint as J, parseWidths as K, scopeKey as L, MIDDLE_TAIL as M, NUMERIC_ALIGN as N, serializeWidths as O, useColumnWidths as P, type ResolvedElide as R, type SortComparators as S, type TableViewerOptions as T, type UseColumnWidthsArgs as U, type TableColumn as a, type TableCellCtx as b, type TableCellRenderer as c, chainCellRenderers as d, type TableColumnProps as e, type TableHeaderCtx as f, type TableHeaderRenderer as g, type SortDir as h, type SortState as i, compareValues as j, useSortedRows as k, type ColumnResizeConfig as l, type ElideCell as m, type ElideConfig as n, type ElideCtx as o, type EllipsisMode as p, TD_STYLE as q, repeatsAbove as r, sortGlyph as s, TH_STYLE as t, useSort as u, type TablePageCtx as v, applyElide as w, cellClipped as x, cellTitle as y, elideCellStyle as z };
+export { elideCellStyle as $, runKey as A, type BodyItem as B, schemeLength as C, type DittoOption as D, sharedPathPrefix as E, splitParent as F, tableLayout as G, type ColStyle as H, type ColumnResizeConfig as I, ELIDE_DEFAULTS as J, type ElideCell as K, type ElideConfig as L, type ElideCtx as M, type EllipsisMode as N, MIDDLE_TAIL as O, type PathMode as P, NUMERIC_ALIGN as Q, type RunMode as R, type SortComparators as S, type TableViewerOptions as T, type ResolvedElide as U, TD_STYLE as V, TH_STYLE as W, type TablePageCtx as X, applyElide as Y, cellClipped as Z, cellTitle as _, type TableColumn as a, resolveColStyles as a0, resolveElide as a1, tableCellCtx as a2, ColumnResizeHandle as a3, type ColumnWidths as a4, type ResizeScope as a5, type UseColumnWidthsArgs as a6, columnFingerprint as a7, parseWidths as a8, scopeKey as a9, serializeWidths as aa, useColumnWidths as ab, type PathsOption as b, type RunSpec as c, type TableCellCtx as d, type TableCellRenderer as e, type TableRun as f, chainCellRenderers as g, type TableColumnProps as h, type TableHeaderCtx as i, type TableHeaderRenderer as j, DEFAULT_FULL_LOAD_MAX_BYTES as k, type SortDir as l, type SortState as m, compareValues as n, useSortedRows as o, type ResolvedRunSpec as p, TREE_FALLBACK_NOTE as q, repeatsAbove as r, sortGlyph as s, type TableLayout as t, useSort as u, computeRuns as v, isSortedBy as w, normalizeDitto as x, normalizePaths as y, pathModes as z };

@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { a as TableColumn, c as TableCellRenderer } from '../columnResize-Ci0IcSHV.js';
+import { a as TableColumn, D as DittoOption, e as TableCellRenderer } from '../columnResize-D0JjwQTC.js';
 import 'react/jsx-runtime';
 import '../persistedState-CB_wfbcb.js';
 
@@ -9,12 +9,30 @@ import '../persistedState-CB_wfbcb.js';
  *  above" even mid-column. `value` goes on the mark's `title`, so the
  *  repeated value stays recoverable on hover. */
 declare function dittoMark(value?: unknown): ReactNode;
-/** A cell renderer collapsing repeated values in `columns` to {@link dittoMark}
- *  (see {@link repeatsAbove}); other cells pass `defaultNode` through. Empty
- *  values (`null`/`undefined`/`''`) never collapse — a run of blanks already
- *  reads as one, and a mark over nothing is noise. Chain it
- *  ahead of your own renderer with `chainCellRenderers`, or pass the viewer's
- *  `ditto` option, which does exactly that. */
-declare function dittoRenderer<C extends TableColumn = TableColumn>(columns: readonly string[]): TableCellRenderer<C>;
+/** A `'line'`/`'arrow'`-mode cell after a run's first: a thin rule down
+ *  the cell's full height (bleeding into the cell's vertical padding, so
+ *  rules in consecutive rows join), ending on the run's last row in a tick
+ *  (`└`) or an arrowhead. Assumes the default cell padding (`0.2em`
+ *  vertical). `value` goes on the rule's `title`. */
+declare function runLine(value: unknown, end: boolean, head?: 'tick' | 'arrow'): ReactNode;
+/** A cell renderer drawing runs in the `ditto` columns: `'mark'` replaces
+ *  each cell after a run's first with {@link dittoMark}, `'line'` and
+ *  `'arrow'` with {@link runLine}. Other cells (and `'sticky'`/`'none'` columns, which the
+ *  viewer lays out itself) pass `defaultNode` through. Empty values never
+ *  join a run. Chain it ahead of your own renderer with
+ *  `chainCellRenderers`, or pass the viewer's `ditto` option, which does
+ *  exactly that. */
+declare function dittoRenderer<C extends TableColumn = TableColumn>(ditto: DittoOption): TableCellRenderer<C>;
+/** A path with its first `shared` characters dimmed — the whole segments it
+ *  shares with the row above (see `sharedPathPrefix`). Both parts stay in
+ *  the text, so a copy yields the full path. */
+declare function dimmedPath(path: string, shared: number): ReactNode;
+/** A path cell in `'dim'` mode: dimmed against `above` (the row above's
+ *  value). */
+declare function dimPathNode(path: string, above: unknown): ReactNode;
+/** A row's tail under a `'tree'` parent row: a branch glyph (`├`, or `└` on
+ *  the group's last row), then the tail. The parent is kept in the text,
+ *  visually hidden, so a copy yields the full path. */
+declare function treeChildNode(parent: string, tail: string, last: boolean): ReactNode;
 
-export { dittoMark, dittoRenderer };
+export { dimPathNode, dimmedPath, dittoMark, dittoRenderer, runLine, treeChildNode };

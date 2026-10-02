@@ -1,8 +1,8 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { Store } from '../index.cjs';
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.cjs';
-import { T as TableViewerOptions, a as TableColumn } from '../columnResize-BtIe50BE.cjs';
-export { b as TableCellCtx, c as TableCellRenderer, d as chainCellRenderers, r as repeatsAbove } from '../columnResize-BtIe50BE.cjs';
+import { T as TableViewerOptions, a as TableColumn } from '../columnResize-B7qeVwqU.cjs';
+export { D as DittoOption, P as PathMode, b as PathsOption, R as RunMode, c as RunSpec, d as TableCellCtx, e as TableCellRenderer, f as TableRun, g as chainCellRenderers, r as repeatsAbove } from '../columnResize-B7qeVwqU.cjs';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.cjs';
 export { dittoMark, dittoRenderer } from './ditto.cjs';
 import 'react';
@@ -26,7 +26,7 @@ declare function makeCsvViewer(opts?: CsvViewerOptions): (props: {
     delimiter: string;
     usePersistedState?: PersistedState;
 }) => react_jsx_runtime.JSX.Element;
-declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, ditto, onPage, onCellHover, elide, resizableColumns }: {
+declare function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker, hiddenColumns, fullLoadMaxBytes, sortComparators, ditto, paths, onPage, onCellHover, elide, resizableColumns }: {
     store: Store;
     path: string;
     delimiter: string;

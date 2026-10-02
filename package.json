@@ -1,6 +1,6 @@
 {
   "name": "@rdub/file-tree",
-  "version": "0.0.1-dist.91c09df",
+  "version": "0.0.1-dist.765c09e",
   "description": "Storage-agnostic file/directory tree browser. React UI + Store abstraction (R2, HTTP, …).",
   "type": "module",
   "exports": {
@@ -98,6 +98,21 @@
       "types": "./renderers/tableBrowser.d.ts",
       "import": "./renderers/tableBrowser.js",
       "require": "./renderers/tableBrowser.cjs"
+    },
+    "./renderers/tableRuns": {
+      "types": "./renderers/tableRuns.d.ts",
+      "import": "./renderers/tableRuns.js",
+      "require": "./renderers/tableRuns.cjs"
+    },
+    "./renderers/memoryTableSource": {
+      "types": "./renderers/memoryTableSource.d.ts",
+      "import": "./renderers/memoryTableSource.js",
+      "require": "./renderers/memoryTableSource.cjs"
+    },
+    "./renderers/rowsTable": {
+      "types": "./renderers/rowsTable.d.ts",
+      "import": "./renderers/rowsTable.js",
+      "require": "./renderers/rowsTable.cjs"
     },
     "./renderers/remoteTable": {
       "types": "./renderers/remoteTable.d.ts",

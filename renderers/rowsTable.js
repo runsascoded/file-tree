@@ -1,477 +1,17 @@
-"use strict";
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// src/renderers/sqlite.tsx
-var sqlite_exports = {};
-__export(sqlite_exports, {
-  DEFAULT_PAGE_SIZE: () => DEFAULT_PAGE_SIZE,
-  SqliteViewer: () => SqliteViewer,
-  default: () => sqlite_default
-});
-module.exports = __toCommonJS(sqlite_exports);
-var import_react7 = require("react");
-
-// src/sqlite/db.ts
-var SQLite = __toESM(require("wa-sqlite"), 1);
-var import_wa_sqlite_async = __toESM(require("wa-sqlite/dist/wa-sqlite-async.mjs"), 1);
-
-// src/sqlite/vfs.ts
-var VFS = __toESM(require("wa-sqlite/src/VFS.js"), 1);
-
-// src/react/asyncBuffer.ts
-async function asyncBufferFromStore(store, path) {
-  let byteLength;
-  if (typeof store.getUrl === "function") {
-    try {
-      const r = await fetch(store.getUrl(path), { method: "HEAD" });
-      if (r.ok) {
-        const cl = parseInt(r.headers.get("Content-Length") ?? "", 10);
-        if (Number.isFinite(cl) && cl > 0) byteLength = cl;
-      }
-    } catch {
-    }
-  }
-  if (byteLength === void 0) {
-    const head = await store.get(path, { offset: 0, length: 1 });
-    byteLength = head.totalSize ?? head.bytes.byteLength;
-  }
-  return {
-    byteLength,
-    async slice(start, end) {
-      const e = end ?? byteLength;
-      const length = e - start;
-      if (length <= 0) return new ArrayBuffer(0);
-      const r = await store.get(path, { offset: start, length });
-      return r.bytes.buffer.slice(
-        r.bytes.byteOffset,
-        r.bytes.byteOffset + r.bytes.byteLength
-      );
-    }
-  };
-}
-
-// src/sqlite/vfs.ts
-async function rangeReaderFromStore(store, path) {
-  const buf = await asyncBufferFromStore(store, path);
-  return {
-    size: buf.byteLength,
-    async read(offset, length) {
-      const r = await store.get(path, { offset, length });
-      return r.bytes;
-    }
-  };
-}
-var DEFAULTS = {
-  minBlockBytes: 8 * 1024,
-  maxBlockBytes: 256 * 1024,
-  maxCacheBytes: 64 * 1024 * 1024
-};
-var HEADER_PAGE_SIZE_OFFSET = 16;
-var SQLITE_FILENAME = "db";
-var VFSBase = VFS.Base;
-var StoreVFS = class extends VFSBase {
-  name = "store";
-  stats = { reads: 0, bytes: 0, hits: 0, misses: 0, evictions: 0 };
-  reader;
-  minBlock;
-  maxBlock;
-  maxCache;
-  /** Block index → its bytes. Every block is `minBlock` long (short only
-   *  at EOF), so lookup is one aligned `Map` hit rather than a search.
-   *
-   *  Insertion-ordered, so the first key is the least recently used — a
-   *  `Map` is already an LRU if you re-insert on hit. */
-  blocks = /* @__PURE__ */ new Map();
-  cacheBytes = 0;
-  /** Readahead state. Blocks stay a fixed size; what grows is how many
-   *  of them one request fetches. A miss at the block right after the
-   *  last fetch is a scan, and doubling turns 900 requests into 15.
-   *
-   *  Growing the *block* size instead would be the obvious move and is
-   *  wrong: re-aligning to a larger size rounds the offset *down*, so
-   *  each grown read re-fetches bytes already cached. */
-  nextBlock = -1;
-  readahead = 1;
-  maxReadahead;
-  sectorSize = 4096;
-  openFiles = /* @__PURE__ */ new Set();
-  constructor(reader, opts = {}) {
-    super();
-    this.reader = reader;
-    this.minBlock = opts.minBlockBytes ?? DEFAULTS.minBlockBytes;
-    this.maxBlock = opts.maxBlockBytes ?? DEFAULTS.maxBlockBytes;
-    this.maxCache = opts.maxCacheBytes ?? DEFAULTS.maxCacheBytes;
-    this.maxReadahead = Math.max(1, Math.floor(this.maxBlock / this.minBlock));
-  }
-  /** Drop every cached block. */
-  clearCache() {
-    this.blocks.clear();
-    this.cacheBytes = 0;
-    this.nextBlock = -1;
-    this.readahead = 1;
-  }
-  // --- VFS surface -------------------------------------------------
-  xOpen(name, fileId, flags, pOutFlags) {
-    if (name === null) return VFS.SQLITE_CANTOPEN;
-    this.openFiles.add(fileId);
-    pOutFlags.setInt32(0, flags | VFS.SQLITE_OPEN_READONLY, true);
-    return VFS.SQLITE_OK;
-  }
-  xClose(fileId) {
-    this.openFiles.delete(fileId);
-    return VFS.SQLITE_OK;
-  }
-  /** Nothing but the database exists — in particular no `-journal` and
-   *  no `-wal`, which SQLite probes for on open. */
-  xAccess(_name, _flags, pResOut) {
-    pResOut.setInt32(0, 0, true);
-    return VFS.SQLITE_OK;
-  }
-  xDelete(_name, _syncDir) {
-    return VFS.SQLITE_OK;
-  }
-  xFileSize(_fileId, pSize64) {
-    pSize64.setBigInt64(0, BigInt(this.reader.size), true);
-    return VFS.SQLITE_OK;
-  }
-  xRead(_fileId, pData, iOffset) {
-    return this.handleAsync(async () => {
-      const n = pData.byteLength;
-      if (iOffset >= this.reader.size) {
-        pData.fill(0);
-        return VFS.SQLITE_IOERR_SHORT_READ;
-      }
-      let written = 0;
-      while (written < n) {
-        const pos = iOffset + written;
-        if (pos >= this.reader.size) break;
-        const index = Math.floor(pos / this.minBlock);
-        const bytes = await this.blockFor(index);
-        const inBlock = pos - index * this.minBlock;
-        const take = Math.min(n - written, bytes.byteLength - inBlock);
-        if (take <= 0) break;
-        pData.set(bytes.subarray(inBlock, inBlock + take), written);
-        written += take;
-      }
-      if (written < n) {
-        pData.fill(0, written);
-        return VFS.SQLITE_IOERR_SHORT_READ;
-      }
-      if (iOffset === 0 && n >= HEADER_PAGE_SIZE_OFFSET + 2) {
-        const raw = new DataView(pData.buffer, pData.byteOffset).getUint16(HEADER_PAGE_SIZE_OFFSET);
-        this.sectorSize = raw === 1 ? 65536 : raw;
-      }
-      return VFS.SQLITE_OK;
-    });
-  }
-  xWrite() {
-    return VFS.SQLITE_READONLY;
-  }
-  xTruncate() {
-    return VFS.SQLITE_READONLY;
-  }
-  xSync() {
-    return VFS.SQLITE_OK;
-  }
-  xSectorSize() {
-    return this.sectorSize;
-  }
-  /** The bytes never change under us, which lets SQLite skip work it
-   *  would otherwise do to guard against concurrent writers. */
-  xDeviceCharacteristics() {
-    return VFS.SQLITE_IOCAP_IMMUTABLE;
-  }
-  xLock() {
-    return VFS.SQLITE_OK;
-  }
-  xUnlock() {
-    return VFS.SQLITE_OK;
-  }
-  xCheckReservedLock(_fileId, pResOut) {
-    pResOut.setInt32(0, 0, true);
-    return VFS.SQLITE_OK;
-  }
-  // --- block cache -------------------------------------------------
-  /** Block `index`, fetching it — and its readahead run — if absent. */
-  async blockFor(index) {
-    const cached = this.blocks.get(index);
-    if (cached) {
-      this.stats.hits++;
-      this.blocks.delete(index);
-      this.blocks.set(index, cached);
-      return cached;
-    }
-    this.stats.misses++;
-    this.readahead = index === this.nextBlock ? Math.min(this.readahead * 2, this.maxReadahead) : 1;
-    const offset = index * this.minBlock;
-    const length = Math.min(this.readahead * this.minBlock, this.reader.size - offset);
-    const bytes = await this.reader.read(offset, length);
-    this.stats.reads++;
-    this.stats.bytes += bytes.byteLength;
-    for (let i = 0; i * this.minBlock < bytes.byteLength; i++) {
-      const block = bytes.subarray(i * this.minBlock, (i + 1) * this.minBlock);
-      this.blocks.set(index + i, block);
-      this.cacheBytes += block.byteLength;
-    }
-    this.nextBlock = index + Math.ceil(bytes.byteLength / this.minBlock);
-    this.evict();
-    return this.blocks.get(index);
-  }
-  evict() {
-    while (this.cacheBytes > this.maxCache && this.blocks.size > 1) {
-      const oldest = this.blocks.keys().next().value;
-      const block = this.blocks.get(oldest);
-      this.blocks.delete(oldest);
-      this.cacheBytes -= block.byteLength;
-      this.stats.evictions++;
-    }
-  }
-};
-
-// src/sqlite/db.ts
-async function createSqliteModule(source) {
-  const config = {};
-  if (source.wasmModule) {
-    config.locateFile = (name) => name;
-    config.instantiateWasm = (imports, receiveInstance) => {
-      const instance = new WebAssembly.Instance(source.wasmModule, imports);
-      return receiveInstance(instance);
-    };
-  } else if (source.wasmBinary) {
-    config.wasmBinary = source.wasmBinary;
-  } else if (source.wasmUrl) {
-    config.locateFile = () => source.wasmUrl;
-  } else {
-    throw new Error("createSqliteModule: one of wasmUrl, wasmBinary or wasmModule is required");
-  }
-  return SQLite.Factory(await (0, import_wa_sqlite_async.default)(config));
-}
-function quoteIdent(name) {
-  return `"${name.replace(/"/g, '""')}"`;
-}
-var uniqueVfsName = 0;
-var SqliteDb = class _SqliteDb {
-  sqlite3;
-  vfs;
-  db;
-  closed = false;
-  /** A SQLite connection is not reentrant: two `sqlite3_step` loops
-   *  interleaved on one handle is misuse, and SQLite says so
-   *  (`SQLITE_MISUSE`, "bad parameter or other API misuse"). Every
-   *  `await` in `select` is a chance for that to happen — a filter
-   *  keystroke landing mid-page-load is enough, and React's
-   *  double-invoked effects in development guarantee it. So work is
-   *  chained rather than run concurrently. */
-  queue = Promise.resolve();
-  constructor(sqlite3, vfs, db) {
-    this.sqlite3 = sqlite3;
-    this.vfs = vfs;
-    this.db = db;
-  }
-  static async open(reader, source, opts = {}) {
-    const { runtime, ...vfsOpts } = opts;
-    const sqlite3 = runtime ?? await createSqliteModule(source);
-    const vfs = new StoreVFS(reader, vfsOpts);
-    vfs.name = `file-tree-${uniqueVfsName++}`;
-    sqlite3.vfs_register(vfs, false);
-    const db = await sqlite3.open_v2(SQLITE_FILENAME, SQLite.SQLITE_OPEN_READONLY, vfs.name);
-    return new _SqliteDb(sqlite3, vfs, db);
-  }
-  /** Ranged reads and cache hits so far — the number a UI can show to
-   *  explain why something was fast or slow. */
-  get stats() {
-    return this.vfs.stats;
-  }
-  /** Run `work` after everything already queued on this connection. */
-  serialize(work) {
-    const next = this.queue.then(work, work);
-    this.queue = next.catch(() => {
-    });
-    return next;
-  }
-  async close() {
-    if (this.closed) return;
-    this.closed = true;
-    await this.serialize(async () => {
-      await this.sqlite3.close(this.db);
-    });
-  }
-  /** Run `sql`, binding `params` positionally. */
-  async select(sql, params = []) {
-    return this.serialize(async () => {
-      if (this.closed) throw new Error("SqliteDb: connection is closed");
-      const rows = [];
-      let columns = [];
-      for await (const stmt of this.sqlite3.statements(this.db, sql)) {
-        if (params.length) this.sqlite3.bind_collection(stmt, params);
-        columns = this.sqlite3.column_names(stmt);
-        while (await this.sqlite3.step(stmt) === SQLite.SQLITE_ROW) {
-          const values = this.sqlite3.row(stmt);
-          rows.push(Object.fromEntries(columns.map((c, i) => [c, values[i] ?? null])));
-        }
-      }
-      return { columns, rows };
-    });
-  }
-  /** Tables and views, in name order.
-   *
-   *  Excludes SQLite's own `sqlite_%` bookkeeping, which is never what
-   *  someone opening a `.db` came to look at. */
-  async objects() {
-    const { rows } = await this.select(
-      `select name, type, sql from sqlite_master
-       where type in ('table','view') and name not like 'sqlite_%'
-       order by type, name`
-    );
-    return rows.map((r) => ({
-      name: String(r.name),
-      type: r.type === "view" ? "view" : "table",
-      sql: r.sql === null ? null : String(r.sql)
-    }));
-  }
-  /** Columns of one table or view, in declaration order. */
-  async columns(table) {
-    const { rows } = await this.select(
-      'select name, type, "notnull", pk from pragma_table_info(?)',
-      [table]
-    );
-    return rows.map((r) => ({
-      name: String(r.name),
-      declaredType: String(r.type ?? ""),
-      notNull: Number(r.notnull) === 1,
-      primaryKey: Number(r.pk) > 0
-    }));
-  }
-  /** `select count(*)`, which SQLite answers from the smallest covering
-   *  index rather than the table. Still a scan of *something*, so it's
-   *  separate from `page` — a caller that doesn't need a total shouldn't
-   *  pay for one. */
-  async count(table, where) {
-    const { rows } = await this.select(
-      `select count(*) as n from ${quoteIdent(table)}${where ? ` where ${where.sql}` : ""}`,
-      where?.params ?? []
-    );
-    return Number(rows[0]?.n ?? 0);
-  }
-};
-
-// src/renderers/tableSource.ts
-function kindOfDeclaredType(declared) {
-  const t = declared.toUpperCase();
-  if (t.includes("INT")) return "number";
-  if (t.includes("CHAR") || t.includes("CLOB") || t.includes("TEXT")) return "string";
-  if (t.includes("BLOB") || t === "") return "binary";
-  if (t.includes("REAL") || t.includes("FLOA") || t.includes("DOUB")) return "number";
-  if (t.includes("DATE") || t.includes("TIME")) return "temporal";
-  if (t.includes("BOOL")) return "boolean";
-  if (t.includes("DEC") || t.includes("NUM")) return "number";
-  return "string";
-}
-
-// src/sqlite/tableSource.ts
-var CAPABILITIES = {
-  sort: true,
-  filter: true,
-  total: true,
-  randomAccess: true
-};
-function sqliteTableSource(db, table, opts = {}) {
-  const countRows = opts.countRows ?? true;
-  const quoted = quoteIdent(table);
-  let columnsPromise = null;
-  const totals = /* @__PURE__ */ new Map();
-  async function columns() {
-    columnsPromise ??= db.columns(table).then((cols) => cols.map((c) => ({
-      name: c.name,
-      kind: kindOfDeclaredType(c.declaredType)
-    })));
-    return columnsPromise;
-  }
-  async function whereFor(filter) {
-    const needle = filter?.trim() ?? "";
-    if (!needle) return null;
-    const cols = await columns();
-    if (!cols.length) return null;
-    const escaped = needle.replace(/[\\%_]/g, (m) => `\\${m}`);
-    return {
-      sql: cols.map((c) => `cast(${quoteIdent(c.name)} as text) like ? escape '\\'`).join(" or "),
-      params: cols.map(() => `%${escaped}%`)
-    };
-  }
-  async function page(req) {
-    const cols = await columns();
-    const where = await whereFor(req.filter);
-    const sortCol = req.sort && cols.some((c) => c.name === req.sort.column) ? req.sort : void 0;
-    const sql = [
-      `select * from ${quoted}`,
-      where ? `where ${where.sql}` : "",
-      sortCol ? `order by ${quoteIdent(sortCol.column)} ${sortCol.dir === "desc" ? "desc" : "asc"}` : "",
-      "limit ? offset ?"
-    ].filter(Boolean).join(" ");
-    const { rows } = await db.select(sql, [...where?.params ?? [], req.limit, req.offset]);
-    let total = null;
-    if (countRows) {
-      const key = where?.sql ? JSON.stringify(where.params) : "";
-      total = totals.get(key) ?? await db.count(table, where ?? void 0).then((n) => {
-        totals.set(key, n);
-        return n;
-      });
-    }
-    return { rows, columns: cols, total, offset: req.offset };
-  }
-  return {
-    columns,
-    page,
-    capabilities: countRows ? CAPABILITIES : { ...CAPABILITIES, total: false }
-  };
-}
-function sqliteCatalog(db, opts = {}) {
-  const sources = /* @__PURE__ */ new Map();
-  return {
-    objects: () => db.objects(),
-    source(name) {
-      let source = sources.get(name);
-      if (!source) {
-        source = sqliteTableSource(db, name, opts);
-        sources.set(name, source);
-      }
-      return source;
-    }
-  };
-}
+// src/renderers/rowsTable.tsx
+import { useMemo as useMemo6 } from "react";
 
 // src/renderers/tableBrowser.tsx
-var import_react6 = require("react");
+import {
+  useEffect as useEffect3,
+  useMemo as useMemo5,
+  useRef as useRef4,
+  useState as useState5
+} from "react";
 
 // src/react/persistedState.ts
-var import_react = require("react");
-var defaultUseState = (_key, defaultValue) => (0, import_react.useState)(defaultValue);
+import { useState } from "react";
+var defaultUseState = (_key, defaultValue) => useState(defaultValue);
 
 // src/renderers/table.ts
 function tableCellCtx(ctx) {
@@ -581,23 +121,28 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
 }
 
 // src/renderers/tableBody.tsx
-var import_react4 = require("react");
+import {
+  useLayoutEffect,
+  useMemo as useMemo3,
+  useRef as useRef2,
+  useState as useState3
+} from "react";
 
 // src/renderers/elideNode.tsx
-var import_jsx_runtime = require("react/jsx-runtime");
+import { jsx, jsxs } from "react/jsx-runtime";
 function splitMiddle(text, tail = MIDDLE_TAIL) {
   if (text === void 0 || text.length <= tail + 1) return null;
   return [text.slice(0, text.length - tail), text.slice(text.length - tail)];
 }
 function ellipsisWrap(mode, node, text, tail = MIDDLE_TAIL) {
-  if (mode === "start") return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("bdi", { children: node });
+  if (mode === "start") return /* @__PURE__ */ jsx("bdi", { children: node });
   if (mode === "middle") {
     const split = splitMiddle(text, tail);
     if (split) {
       const [head, end] = split;
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { display: "flex", minWidth: 0, maxWidth: "100%" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }, children: head }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { whiteSpace: "nowrap", flexShrink: 0 }, children: end })
+      return /* @__PURE__ */ jsxs("span", { style: { display: "flex", minWidth: 0, maxWidth: "100%" }, children: [
+        /* @__PURE__ */ jsx("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }, children: head }),
+        /* @__PURE__ */ jsx("span", { style: { whiteSpace: "nowrap", flexShrink: 0 }, children: end })
       ] });
     }
   }
@@ -605,14 +150,14 @@ function ellipsisWrap(mode, node, text, tail = MIDDLE_TAIL) {
 }
 
 // src/renderers/tableSort.ts
-var import_react2 = require("react");
+import { useCallback, useMemo } from "react";
 var DEFAULT_FULL_LOAD_MAX_BYTES = 5 * 1024 * 1024;
 function useSort(usePersistedState) {
   const use = usePersistedState ?? defaultUseState;
   const [raw, setRaw] = use("sort", "");
   const column = raw ? raw.replace(/^-/, "") : null;
   const dir = raw.startsWith("-") ? "desc" : "asc";
-  const toggle = (0, import_react2.useCallback)((name) => {
+  const toggle = useCallback((name) => {
     setRaw(raw === name ? `-${name}` : raw === `-${name}` ? "" : name);
   }, [raw, setRaw]);
   return { column, dir, toggle };
@@ -753,16 +298,16 @@ function treeItems(rows, column) {
 }
 
 // src/renderers/ditto.tsx
-var import_jsx_runtime2 = require("react/jsx-runtime");
+import { Fragment, jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
 function dittoMark(value) {
   const title = cellTitle(value);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { "aria-label": "ditto", ...title != null ? { title } : {}, style: { opacity: 0.3, display: "block", textAlign: "center" }, children: "\u3003" });
+  return /* @__PURE__ */ jsx2("span", { "aria-label": "ditto", ...title != null ? { title } : {}, style: { opacity: 0.3, display: "block", textAlign: "center" }, children: "\u3003" });
 }
 var RULE = "1px solid currentColor";
 function runLine(value, end, head = "tick") {
   const title = cellTitle(value);
   const rule = !end ? { top: "-0.2em", bottom: "-0.2em", borderLeft: RULE } : head === "tick" ? { top: "-0.2em", height: "calc(0.2em + 0.5lh)", width: "0.6em", borderLeft: RULE, borderBottom: RULE } : { top: "-0.2em", height: "calc(0.2em + 0.4lh)", borderLeft: RULE };
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+  return /* @__PURE__ */ jsxs2(
     "span",
     {
       "aria-label": end ? "run end" : "run",
@@ -770,9 +315,9 @@ function runLine(value, end, head = "tick") {
       style: { display: "block", position: "relative" },
       children: [
         "\xA0",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { position: "absolute", left: "0.3em", opacity: 0.35, ...rule } }),
+        /* @__PURE__ */ jsx2("span", { style: { position: "absolute", left: "0.3em", opacity: 0.35, ...rule } }),
         end && head === "arrow" && // A CSS triangle centered on the rule, picking up where it ends.
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: {
+        /* @__PURE__ */ jsx2("span", { style: {
           position: "absolute",
           left: "0.5px",
           top: "0.4lh",
@@ -808,8 +353,8 @@ function dittoRenderer(ditto) {
 var DIM = 0.4;
 function dimmedPath(path, shared) {
   if (shared <= 0) return path;
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { opacity: DIM }, children: path.slice(0, shared) }),
+  return /* @__PURE__ */ jsxs2(Fragment, { children: [
+    /* @__PURE__ */ jsx2("span", { style: { opacity: DIM }, children: path.slice(0, shared) }),
     path.slice(shared)
   ] });
 }
@@ -817,16 +362,16 @@ function dimPathNode(path, above) {
   return dimmedPath(path, typeof above === "string" ? sharedPathPrefix(path, above) : 0);
 }
 function treeChildNode(parent, tail, last) {
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { "aria-hidden": true, style: { opacity: DIM, whiteSpace: "pre" }, children: last ? "\u2514 " : "\u251C " }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { fontSize: 0 }, children: parent }),
+  return /* @__PURE__ */ jsxs2(Fragment, { children: [
+    /* @__PURE__ */ jsx2("span", { "aria-hidden": true, style: { opacity: DIM, whiteSpace: "pre" }, children: last ? "\u2514 " : "\u251C " }),
+    /* @__PURE__ */ jsx2("span", { style: { fontSize: 0 }, children: parent }),
     tail
   ] });
 }
 
 // src/renderers/tableControls.tsx
-var import_react3 = require("react");
-var import_jsx_runtime3 = require("react/jsx-runtime");
+import { useCallback as useCallback2, useEffect, useMemo as useMemo2, useRef, useState as useState2 } from "react";
+import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 var BTN = {
   font: "inherit",
   fontSize: "0.85em",
@@ -841,24 +386,24 @@ var BTN = {
 function useColumnVisibility(columns, usePersistedState, initialHidden = []) {
   const use = usePersistedState ?? defaultUseState;
   const [raw, setRaw] = use("hide", initialHidden.join(","));
-  const hidden = (0, import_react3.useMemo)(
+  const hidden = useMemo2(
     () => new Set(raw.split(",").map((s) => s.trim()).filter(Boolean)),
     [raw]
   );
-  const toggle = (0, import_react3.useCallback)((name) => {
+  const toggle = useCallback2((name) => {
     const next = new Set(hidden);
     next.delete(name) || next.add(name);
     setRaw([...next].join(","));
   }, [hidden, setRaw]);
-  const showAll = (0, import_react3.useCallback)(() => setRaw(""), [setRaw]);
-  const visible = (0, import_react3.useMemo)(
+  const showAll = useCallback2(() => setRaw(""), [setRaw]);
+  const visible = useMemo2(
     () => columns.map((c) => c.name).filter((n) => !hidden.has(n)),
     [columns, hidden]
   );
   return { visible, toggle, showAll, hidden };
 }
 function ColumnPicker({ columns, vis }) {
-  const [open, setOpen] = (0, import_react3.useState)(false);
+  const [open, setOpen] = useState2(false);
   const { visible, toggle, showAll, hidden } = vis;
   return (
     // Note the *host* has to be positioned with a z-index for the panel
@@ -866,8 +411,8 @@ function ColumnPicker({ columns, vis }) {
     // `csv.tsx`. A z-index here can't do it alone: this span is a flex
     // item of that line, so it paints in the line's place in the root
     // stacking order, which is before the table.
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { position: "relative", display: "inline-block" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+    /* @__PURE__ */ jsxs3("span", { style: { position: "relative", display: "inline-block" }, children: [
+      /* @__PURE__ */ jsxs3(
         "button",
         {
           type: "button",
@@ -883,7 +428,7 @@ function ColumnPicker({ columns, vis }) {
           ]
         }
       ),
-      open && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+      open && /* @__PURE__ */ jsxs3(
         "span",
         {
           role: "group",
@@ -903,8 +448,8 @@ function ColumnPicker({ columns, vis }) {
             display: "block"
           },
           children: [
-            columns.map((c) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            columns.map((c) => /* @__PURE__ */ jsxs3("label", { style: { display: "block", cursor: "pointer", fontSize: "0.9em" }, children: [
+              /* @__PURE__ */ jsx3(
                 "input",
                 {
                   type: "checkbox",
@@ -915,7 +460,7 @@ function ColumnPicker({ columns, vis }) {
               " ",
               c.name
             ] }, c.name)),
-            hidden.size > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
+            hidden.size > 0 && /* @__PURE__ */ jsx3("button", { type: "button", onClick: showAll, style: { ...BTN, marginTop: "0.4em" }, children: "show all" })
           ]
         }
       )
@@ -926,9 +471,17 @@ function useFilter(usePersistedState) {
   const use = usePersistedState ?? defaultUseState;
   return use("q", "");
 }
+function filterRows(rows, q, columns) {
+  const needle = q.trim().toLowerCase();
+  if (!rows || !needle) return rows;
+  return rows.filter((r) => columns.some((c) => {
+    const v = r[c];
+    return v !== null && v !== void 0 && String(v).toLowerCase().includes(needle);
+  }));
+}
 function FilterInput({ value, onChange, count, placeholder = "filter" }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+  return /* @__PURE__ */ jsxs3("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.4em" }, children: [
+    /* @__PURE__ */ jsx3(
       "input",
       {
         type: "search",
@@ -948,7 +501,7 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
         }
       }
     ),
-    value.trim() !== "" && count && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: { opacity: 0.7 }, children: [
+    value.trim() !== "" && count && /* @__PURE__ */ jsxs3("span", { style: { opacity: 0.7 }, children: [
       count.shown.toLocaleString(),
       " / ",
       count.total.toLocaleString()
@@ -956,22 +509,22 @@ function FilterInput({ value, onChange, count, placeholder = "filter" }) {
   ] });
 }
 function useStableCallback(fn) {
-  const ref = (0, import_react3.useRef)(fn);
+  const ref = useRef(fn);
   ref.current = fn;
-  return (0, import_react3.useCallback)((...args) => ref.current?.(...args), []);
+  return useCallback2((...args) => ref.current?.(...args), []);
 }
 function usePageNotify(onPage, ctxRef, deps) {
   const notify = useStableCallback(onPage);
-  (0, import_react3.useEffect)(() => {
+  useEffect(() => {
     notify(ctxRef.current);
   }, deps);
 }
 
 // src/renderers/tableBody.tsx
-var import_jsx_runtime4 = require("react/jsx-runtime");
+import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 function useHeadHeight(tbody, on) {
-  const [h, setH] = (0, import_react4.useState)(0);
-  (0, import_react4.useLayoutEffect)(() => {
+  const [h, setH] = useState3(0);
+  useLayoutEffect(() => {
     const head = tbody.current?.parentElement?.querySelector(":scope > thead");
     if (!on || !head) return;
     const update = () => setH(head.getBoundingClientRect().height);
@@ -1001,13 +554,13 @@ function TableRows({
   onCellHover,
   children
 }) {
-  const layout = (0, import_react4.useMemo)(() => tableLayout(rows, columns, { ditto, paths }), [rows, columns, ditto, paths]);
-  const cellRenderer = (0, import_react4.useMemo)(
+  const layout = useMemo3(() => tableLayout(rows, columns, { ditto, paths }), [rows, columns, ditto, paths]);
+  const cellRenderer = useMemo3(
     () => chainCellRenderers(ditto ? dittoRenderer(ditto) : void 0, renderCell),
     [ditto, renderCell]
   );
   const notifyHover = useStableCallback(onCellHover);
-  const tbody = (0, import_react4.useRef)(null);
+  const tbody = useRef2(null);
   const anySticky = [...layout.specs.values()].some((s) => s.mode === "sticky");
   const headH = useHeadHeight(tbody, anySticky);
   const displayOf = [];
@@ -1021,7 +574,7 @@ function TableRows({
     if (it.kind === "parent") {
       const next = rows[it.first];
       const prev = rows[it.first - 1];
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("tr", { "data-parent": "", style: rowStyle, children: columns.map((c) => {
+      return /* @__PURE__ */ jsx4("tr", { "data-parent": "", style: rowStyle, children: columns.map((c) => {
         if (covered(c.name, d)) return null;
         const st = colStyles.get(c.name);
         const style = { ...st?.cell ?? TD_STYLE, ...width(c.name) };
@@ -1035,12 +588,12 @@ function TableRows({
           const mode = layout.specs.get(c.name)?.mode;
           if ((mode === "line" || mode === "arrow") && run && !run.start) node = runLine(next[c.name], false);
         }
-        return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("td", { style, className: st?.cellClass, ...title ? { title } : {}, children: node }, c.name);
+        return /* @__PURE__ */ jsx4("td", { style, className: st?.cellClass, ...title ? { title } : {}, children: node }, c.name);
       }) }, `parent:${rowKey(it.first)}`);
     }
     const { i } = it;
     const row = rows[i];
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("tr", { style: rowStyle, children: columns.map((c) => {
+    return /* @__PURE__ */ jsx4("tr", { style: rowStyle, children: columns.map((c) => {
       if (covered(c.name, d)) return null;
       const st = colStyles.get(c.name);
       const ellipsis = st?.ellipsis ?? "end";
@@ -1091,7 +644,7 @@ function TableRows({
       if (run?.start && layout.specs.get(c.name)?.mode === "sticky") {
         const rowSpan = displayOf[i + run.length - 1] - d + 1;
         coveredTo.set(c.name, d + rowSpan - 1);
-        return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("td", { rowSpan, "data-run": run.length, className: st?.cellClass, style: { ...style, overflow: "visible", verticalAlign: "top" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        return /* @__PURE__ */ jsx4("td", { rowSpan, "data-run": run.length, className: st?.cellClass, style: { ...style, overflow: "visible", verticalAlign: "top" }, children: /* @__PURE__ */ jsx4(
           "div",
           {
             ...tips,
@@ -1101,10 +654,10 @@ function TableRows({
           }
         ) }, c.name);
       }
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("td", { style, className: st?.cellClass, ...tips, ...handlers, children: node }, c.name);
+      return /* @__PURE__ */ jsx4("td", { style, className: st?.cellClass, ...tips, ...handlers, children: node }, c.name);
     }) }, rowKey(i));
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("tbody", { ref: tbody, children: [
+  return /* @__PURE__ */ jsxs4("tbody", { ref: tbody, children: [
     trs,
     children
   ] });
@@ -1123,15 +676,15 @@ function PathNote({ note, onSort }) {
     color: "inherit",
     font: "inherit"
   };
-  return onSort ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", title: note, onClick: (e) => {
+  return onSort ? /* @__PURE__ */ jsx4("button", { type: "button", title: note, onClick: (e) => {
     e.stopPropagation();
     onSort();
-  }, style: { ...style, cursor: "pointer" }, children: "sort for tree" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { title: note, style, children: "tree needs sort" });
+  }, style: { ...style, cursor: "pointer" }, children: "sort for tree" }) : /* @__PURE__ */ jsx4("span", { title: note, style, children: "tree needs sort" });
 }
 
 // src/renderers/columnResize.tsx
-var import_react5 = require("react");
-var import_jsx_runtime5 = require("react/jsx-runtime");
+import { useCallback as useCallback3, useEffect as useEffect2, useMemo as useMemo4, useRef as useRef3, useState as useState4 } from "react";
+import { jsx as jsx5 } from "react/jsx-runtime";
 var MIN_WIDTH = 40;
 var FIT_SLACK = 2;
 var DRAG_THRESHOLD = 3;
@@ -1177,11 +730,11 @@ function writeLS(key, value) {
   }
 }
 function useLocalStorageString(key, initial) {
-  const [value, setValue] = (0, import_react5.useState)(() => readLS(key) ?? initial);
-  (0, import_react5.useEffect)(() => {
+  const [value, setValue] = useState4(() => readLS(key) ?? initial);
+  useEffect2(() => {
     setValue(readLS(key) ?? initial);
   }, [key, initial]);
-  (0, import_react5.useEffect)(() => {
+  useEffect2(() => {
     if (typeof window === "undefined") return;
     const onStorage = (e) => {
       if (e.key === key) setValue(e.newValue ?? initial);
@@ -1189,7 +742,7 @@ function useLocalStorageString(key, initial) {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [key, initial]);
-  const set = (0, import_react5.useCallback)((v) => {
+  const set = useCallback3((v) => {
     writeLS(key, v);
     setValue(v);
   }, [key]);
@@ -1198,21 +751,21 @@ function useLocalStorageString(key, initial) {
 function useColumnWidths({ on, scope, columns, path, usePersistedState }) {
   const use = usePersistedState ?? defaultUseState;
   const [urlRaw, setUrlRaw] = use("cw", "");
-  const lsKey = (0, import_react5.useMemo)(() => `ft-colw:${scopeKey(scope, columns, path)}`, [scope, columns, path]);
+  const lsKey = useMemo4(() => `ft-colw:${scopeKey(scope, columns, path)}`, [scope, columns, path]);
   const [lsRaw, setLsRaw] = useLocalStorageString(lsKey, "");
   const onPath = scope === "path";
   const raw = onPath ? urlRaw : lsRaw;
   const setRaw = onPath ? setUrlRaw : setLsRaw;
-  const persisted = (0, import_react5.useMemo)(() => parseWidths(raw), [raw]);
-  const persistedRef = (0, import_react5.useRef)(persisted);
+  const persisted = useMemo4(() => parseWidths(raw), [raw]);
+  const persistedRef = useRef3(persisted);
   persistedRef.current = persisted;
-  const [drag, setDrag] = (0, import_react5.useState)(null);
-  const commit = (0, import_react5.useCallback)((col, w) => {
+  const [drag, setDrag] = useState4(null);
+  const commit = useCallback3((col, w) => {
     const m = new Map(persistedRef.current);
     m.set(col, Math.max(MIN_WIDTH, w));
     setRaw(serializeWidths(m));
   }, [setRaw]);
-  const startResize = (0, import_react5.useCallback)((col, e) => {
+  const startResize = useCallback3((col, e) => {
     if (!on) return;
     const th = e.target.closest("th");
     if (!th) return;
@@ -1244,7 +797,7 @@ function useColumnWidths({ on, scope, columns, path, usePersistedState }) {
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
   }, [on, commit]);
-  const autoFit = (0, import_react5.useCallback)((col, e) => {
+  const autoFit = useCallback3((col, e) => {
     if (!on) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1259,16 +812,16 @@ function useColumnWidths({ on, scope, columns, path, usePersistedState }) {
     }
     commit(col, Math.ceil(max) + FIT_SLACK);
   }, [on, commit]);
-  const styleFor = (0, import_react5.useCallback)((col) => {
+  const styleFor = useCallback3((col) => {
     if (!on) return NO_STYLE;
     const w = drag && drag.col === col ? drag.w : persisted.get(col);
     return w == null ? NO_STYLE : { width: w, minWidth: w, maxWidth: w };
   }, [on, drag, persisted]);
-  return (0, import_react5.useMemo)(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit]);
+  return useMemo4(() => ({ styleFor, startResize, autoFit }), [styleFor, startResize, autoFit]);
 }
 function ColumnResizeHandle({ col, widths }) {
-  const [hot, setHot] = (0, import_react5.useState)(false);
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+  const [hot, setHot] = useState4(false);
+  return /* @__PURE__ */ jsx5(
     "span",
     {
       role: "separator",
@@ -1296,7 +849,7 @@ function ColumnResizeHandle({ col, widths }) {
 }
 
 // src/renderers/tableBrowser.tsx
-var import_jsx_runtime6 = require("react/jsx-runtime");
+import { jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
 var DEFAULT_PAGE_SIZE = 100;
 var BTN2 = {
   font: "inherit",
@@ -1314,10 +867,10 @@ var NUMERIC_KINDS = /* @__PURE__ */ new Set(["number"]);
 var plural = (n, noun) => `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 function defaultTableCell(value) {
   if (value === null || value === void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { opacity: 0.4 }, children: "null" });
+    return /* @__PURE__ */ jsx6("span", { style: { opacity: 0.4 }, children: "null" });
   }
   if (value instanceof Uint8Array) {
-    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { opacity: 0.6 }, children: `<${value.byteLength} bytes>` });
+    return /* @__PURE__ */ jsx6("span", { style: { opacity: 0.6 }, children: `<${value.byteLength} bytes>` });
   }
   return String(value);
 }
@@ -1346,21 +899,21 @@ function TableBrowser({
   const [page, setPage] = use("page", 0);
   const [filter, setFilter] = useFilter(usePersistedState);
   const sort = useSort(usePersistedState);
-  const [result, setResult] = (0, import_react6.useState)(null);
-  const [error, setError] = (0, import_react6.useState)(null);
-  const [loading, setLoading] = (0, import_react6.useState)(false);
-  const active = (0, import_react6.useMemo)(
+  const [result, setResult] = useState5(null);
+  const [error, setError] = useState5(null);
+  const [loading, setLoading] = useState5(false);
+  const active = useMemo5(
     () => objects.find((o) => o.name === table) ?? objects[0] ?? null,
     [objects, table]
   );
-  const source = (0, import_react6.useMemo)(
+  const source = useMemo5(
     () => active ? catalog.source(active.name) : null,
     [catalog, active]
   );
   const can = source?.capabilities;
   const columns = result?.columns ?? [];
   const { visible, ...vis } = useColumnVisibility(columns, usePersistedState, hiddenColumns);
-  (0, import_react6.useEffect)(() => {
+  useEffect3(() => {
     if (!source) return;
     let live = true;
     setLoading(true);
@@ -1384,18 +937,18 @@ function TableBrowser({
     };
   }, [source, page, pageSize, filter, sort.column, sort.dir, can?.filter, can?.sort]);
   const queryKey = `${active?.name ?? ""}\0${filter}\0${sort.column ?? ""}${sort.dir}`;
-  const lastQueryKey = (0, import_react6.useRef)(null);
-  (0, import_react6.useEffect)(() => {
+  const lastQueryKey = useRef4(null);
+  useEffect3(() => {
     if (lastQueryKey.current !== null && lastQueryKey.current !== queryKey) setPage(0);
     lastQueryKey.current = queryKey;
   }, [queryKey, setPage]);
   const rows = result?.rows ?? [];
   const total = result?.total ?? null;
   const pageStart = result?.offset ?? 0;
-  const unfilteredTotals = (0, import_react6.useRef)(/* @__PURE__ */ new Map());
+  const unfilteredTotals = useRef4(/* @__PURE__ */ new Map());
   if (active && !filter.trim() && total !== null) unfilteredTotals.current.set(active.name, total);
   const unfilteredTotal = active ? unfilteredTotals.current.get(active.name) : void 0;
-  const el = (0, import_react6.useMemo)(() => resolveElide(elide), [elide]);
+  const el = useMemo5(() => resolveElide(elide), [elide]);
   const cw = useColumnWidths({
     on: !!resizableColumns,
     scope: typeof resizableColumns === "object" ? resizableColumns.scope ?? "path" : "path",
@@ -1403,11 +956,11 @@ function TableBrowser({
     path,
     usePersistedState
   });
-  const colStyles = (0, import_react6.useMemo)(
+  const colStyles = useMemo5(
     () => resolveColStyles(columns, path, { cellProps, headerProps }, (c) => NUMERIC_KINDS.has(c.kind), el),
     [columns, path, cellProps, headerProps, el]
   );
-  const pageCtxRef = (0, import_react6.useRef)({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
+  const pageCtxRef = useRef4({ rows: [], columns: [], path, pageStart: 0, totalRows: null });
   pageCtxRef.current = {
     rows,
     columns: columns.filter((c) => visible.includes(c.name)),
@@ -1416,12 +969,12 @@ function TableBrowser({
     totalRows: total
   };
   usePageNotify(onPage, pageCtxRef, [rows, visible, path, pageStart, total]);
-  if (!objects.length) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { opacity: 0.6 }, children: "no tables or views in this file" });
+  if (!objects.length) return /* @__PURE__ */ jsx6("div", { style: { opacity: 0.6 }, children: "no tables or views in this file" });
   const lastPage = total === null ? null : Math.max(0, Math.ceil(total / pageSize) - 1);
   const shown = columns.filter((c) => visible.includes(c.name));
   const pathNotes = paths ? pathModes(rows, shown, paths).notes : void 0;
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { style: {
+  return /* @__PURE__ */ jsxs5("div", { children: [
+    /* @__PURE__ */ jsxs5("p", { style: {
       opacity: 0.85,
       fontSize: "0.95em",
       display: "flex",
@@ -1431,24 +984,24 @@ function TableBrowser({
       position: "relative",
       zIndex: 2
     }, children: [
-      objects.length > 1 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      objects.length > 1 && /* @__PURE__ */ jsx6(
         "select",
         {
           value: active?.name ?? "",
           onChange: (e) => setTable(e.target.value),
           "aria-label": "Table",
           style: { ...BTN2, cursor: "pointer" },
-          children: objects.map((o) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("option", { value: o.name, children: [
+          children: objects.map((o) => /* @__PURE__ */ jsxs5("option", { value: o.name, children: [
             o.name,
             o.type === "view" ? " (view)" : ""
           ] }, o.name))
         }
       ),
-      result && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { style: { opacity: 0.7 }, children: [
+      result && /* @__PURE__ */ jsxs5("span", { style: { opacity: 0.7 }, children: [
         plural(total ?? rows.length, "row"),
         total !== null && total > 0 && ` \xB7 ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}`
       ] }),
-      can?.filter && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      can?.filter && /* @__PURE__ */ jsx6(
         FilterInput,
         {
           value: filter,
@@ -1457,20 +1010,20 @@ function TableBrowser({
           ...total !== null && unfilteredTotal !== void 0 ? { count: { shown: total, total: unfilteredTotal } } : {}
         }
       ),
-      columnPicker && columns.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ColumnPicker, { columns, vis: { visible, ...vis } }),
-      loading && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { opacity: 0.5 }, children: "\u2026" }),
+      columnPicker && columns.length > 0 && /* @__PURE__ */ jsx6(ColumnPicker, { columns, vis: { visible, ...vis } }),
+      loading && /* @__PURE__ */ jsx6("span", { style: { opacity: 0.5 }, children: "\u2026" }),
       status
     ] }),
-    error && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { style: { color: "crimson", fontSize: "0.9em" }, children: error.message }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tr", { style: {
+    error && /* @__PURE__ */ jsx6("p", { style: { color: "crimson", fontSize: "0.9em" }, children: error.message }),
+    /* @__PURE__ */ jsx6("div", { style: { overflowX: "auto", maxHeight: "70vh", overflowY: "auto" }, children: /* @__PURE__ */ jsxs5("table", { style: { borderCollapse: "collapse", fontSize: "0.82em", fontFamily: "ui-monospace, monospace" }, children: [
+      /* @__PURE__ */ jsx6("thead", { children: /* @__PURE__ */ jsx6("tr", { style: {
         position: "sticky",
         top: 0,
         zIndex: 1,
         background: "linear-gradient(rgba(127,127,127,0.15), rgba(127,127,127,0.15)), Canvas"
       }, children: shown.map((c) => {
         const styles = colStyles.get(c.name);
-        const label = can?.sort ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+        const label = can?.sort ? /* @__PURE__ */ jsxs5(
           "span",
           {
             onClick: () => sort.toggle(c.name),
@@ -1479,25 +1032,25 @@ function TableBrowser({
             children: [
               c.name,
               " ",
-              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { opacity: sort.column === c.name ? 0.9 : 0.3 }, children: sortGlyph(c.name, sort) })
+              /* @__PURE__ */ jsx6("span", { style: { opacity: sort.column === c.name ? 0.9 : 0.3 }, children: sortGlyph(c.name, sort) })
             ]
           }
-        ) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: c.name });
-        return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+        ) : /* @__PURE__ */ jsx6("span", { children: c.name });
+        return /* @__PURE__ */ jsxs5(
           "th",
           {
             style: { ...styles?.header ?? TH_STYLE, ...resizableColumns ? { position: "relative" } : {}, ...cw.styleFor(c.name) },
             ...styles?.headerClass ? { className: styles.headerClass } : {},
             children: [
               renderHeader ? renderHeader({ column: c, path, defaultNode: label }) : label,
-              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(PathNote, { note: pathNotes?.get(c.name), onSort: can?.sort ? () => sort.toggle(c.name) : void 0 }),
-              resizableColumns && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ColumnResizeHandle, { col: c.name, widths: cw })
+              /* @__PURE__ */ jsx6(PathNote, { note: pathNotes?.get(c.name), onSort: can?.sort ? () => sort.toggle(c.name) : void 0 }),
+              resizableColumns && /* @__PURE__ */ jsx6(ColumnResizeHandle, { col: c.name, widths: cw })
             ]
           },
           c.name
         );
       }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      /* @__PURE__ */ jsx6(
         TableRows,
         {
           rows,
@@ -1514,14 +1067,14 @@ function TableBrowser({
           rowKey: (i) => pageStart + i,
           rowStyle: ROW_STYLE,
           ...onCellHover ? { onCellHover } : {},
-          children: result && rows.length === 0 && !loading && !error && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { colSpan: Math.max(1, shown.length), style: { ...TD_STYLE, opacity: 0.6 }, children: filter.trim() ? "no rows match" : "no rows" }) })
+          children: result && rows.length === 0 && !loading && !error && /* @__PURE__ */ jsx6("tr", { children: /* @__PURE__ */ jsx6("td", { colSpan: Math.max(1, shown.length), style: { ...TD_STYLE, opacity: 0.6 }, children: filter.trim() ? "no rows match" : "no rows" }) })
         }
       )
     ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginTop: "0.6em" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", style: BTN2, disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039 prev" }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: can?.randomAccess === false ? `rows ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}` : `page ${(page + 1).toLocaleString()}${lastPage !== null ? ` / ${(lastPage + 1).toLocaleString()}` : ""}` }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+    /* @__PURE__ */ jsxs5("p", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginTop: "0.6em" }, children: [
+      /* @__PURE__ */ jsx6("button", { type: "button", style: BTN2, disabled: page === 0, onClick: () => setPage(page - 1), children: "\u2039 prev" }),
+      /* @__PURE__ */ jsx6("span", { style: { opacity: 0.7, fontSize: "0.85em" }, children: can?.randomAccess === false ? `rows ${(pageStart + 1).toLocaleString()}\u2013${(pageStart + rows.length).toLocaleString()}` : `page ${(page + 1).toLocaleString()}${lastPage !== null ? ` / ${(lastPage + 1).toLocaleString()}` : ""}` }),
+      /* @__PURE__ */ jsx6(
         "button",
         {
           type: "button",
@@ -1535,80 +1088,95 @@ function TableBrowser({
   ] });
 }
 
-// src/renderers/sqlite.tsx
-var import_jsx_runtime7 = require("react/jsx-runtime");
-function SqliteViewer({
-  store,
-  path,
+// src/renderers/memoryTableSource.ts
+var CAPABILITIES = { sort: true, filter: true, total: true, randomAccess: true };
+function inferKind(value) {
+  switch (typeof value) {
+    case "number":
+    case "bigint":
+      return "number";
+    case "boolean":
+      return "boolean";
+    case "object":
+      if (value instanceof Date) return "temporal";
+      if (value instanceof Uint8Array) return "binary";
+      return void 0;
+    default:
+      return "string";
+  }
+}
+function inferColumns(rows) {
+  const kinds = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    for (const [k, v] of Object.entries(r)) {
+      if (kinds.get(k) !== void 0) continue;
+      kinds.set(k, v === null || v === void 0 || v === "" ? void 0 : inferKind(v));
+    }
+  }
+  return [...kinds].map(([name, kind]) => kind ? { name, kind } : { name });
+}
+function memoryTableSource(rows, opts = {}) {
+  const columns = opts.columns ?? inferColumns(rows);
+  const names = columns.map((c) => c.name);
+  return {
+    capabilities: CAPABILITIES,
+    columns: async () => columns,
+    async page(req) {
+      let out = filterRows([...rows], req.filter ?? "", names) ?? [];
+      if (req.sort) {
+        const { column, dir } = req.sort;
+        const col = columns.find((c) => c.name === column);
+        const cmp = (col && opts.sortComparators?.(col)) ?? compareValues;
+        const sign = dir === "desc" ? -1 : 1;
+        out = out.sort((x, y) => sign * cmp(x[column], y[column]));
+      }
+      return { rows: out.slice(req.offset, req.offset + req.limit), columns, total: out.length, offset: req.offset };
+    }
+  };
+}
+function singleTableCatalog(name, source) {
+  return {
+    objects: async () => [{ name, type: "table" }],
+    source: () => source
+  };
+}
+
+// src/renderers/rowsTable.tsx
+import { jsx as jsx7 } from "react/jsx-runtime";
+var OBJECTS = [{ name: "rows", type: "table" }];
+function RowsTable({
+  rows,
+  columns,
+  sortComparators,
+  path = "rows",
   usePersistedState,
-  wasm,
-  runtime,
-  vfs,
-  showStats = false,
-  countRows,
   ...browser
 }) {
-  const [db, setDb] = (0, import_react7.useState)(null);
-  const [objects, setObjects] = (0, import_react7.useState)(null);
-  const [error, setError] = (0, import_react7.useState)(null);
-  (0, import_react7.useEffect)(() => {
-    let live = true;
-    let opened = null;
-    setDb(null);
-    setObjects(null);
-    setError(null);
-    (async () => {
-      try {
-        const reader = await rangeReaderFromStore(store, path);
-        opened = await SqliteDb.open(reader, wasm, { ...vfs, ...runtime ? { runtime } : {} });
-        const found = await opened.objects();
-        if (!live) return;
-        setDb(opened);
-        setObjects(found);
-      } catch (e) {
-        if (live) setError(e instanceof Error ? e : new Error(String(e)));
-      }
-    })();
-    return () => {
-      live = false;
-      void opened?.close();
-    };
-  }, [store, path]);
-  const catalog = (0, import_react7.useMemo)(
-    () => db ? sqliteCatalog(db, countRows === void 0 ? {} : { countRows }) : null,
-    [db, countRows]
+  const catalog = useMemo6(
+    () => singleTableCatalog("rows", memoryTableSource(rows, {
+      ...columns ? { columns } : {},
+      ...sortComparators ? { sortComparators } : {}
+    })),
+    [rows, columns, sortComparators]
   );
-  if (error) {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { color: "crimson", fontSize: "0.9em" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: "SQLite:" }),
-      " ",
-      error.message
-    ] });
-  }
-  if (!catalog || !objects) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { opacity: 0.6 }, children: "opening database\u2026" });
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+  return /* @__PURE__ */ jsx7(
     TableBrowser,
     {
       ...browser,
       catalog,
-      objects,
+      objects: OBJECTS,
       path,
-      ...usePersistedState ? { usePersistedState } : {},
-      ...showStats && db ? {
-        status: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { style: { opacity: 0.5, fontSize: "0.9em" }, title: "ranged reads / cache hits", children: [
-          db.stats.reads,
-          " reads \xB7 ",
-          db.stats.hits,
-          " cached"
-        ] })
-      } : {}
+      ...usePersistedState ? { usePersistedState } : {}
     }
   );
 }
-var sqlite_default = SqliteViewer;
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  DEFAULT_PAGE_SIZE,
-  SqliteViewer
-});
-//# sourceMappingURL=sqlite.cjs.map
+var rowsTable_default = RowsTable;
+export {
+  RowsTable,
+  rowsTable_default as default,
+  inferColumns,
+  inferKind,
+  memoryTableSource,
+  singleTableCatalog
+};
+//# sourceMappingURL=rowsTable.js.map
