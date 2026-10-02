@@ -173,6 +173,9 @@ describe('TableRows', () => {
       [{ text: '', aria: ['run end'] }, { text: 'gs://b/ck/run-3' }],
       [{ text: 'bo' }, { text: 'one-off' }, { text: 'gs://b/raw/x' }],
     ])
+    expect(body(log, { ditto: { note: 'arrow' } }).map(r => r[1])).toEqual([
+      { text: 'batch 1' }, { text: '', aria: ['run'] }, { text: '', aria: ['run end'] }, { text: 'one-off' },
+    ])
     expect(body(log, { ditto: ['who'] }).map(r => r[0])).toEqual([
       { text: 'ann' }, { text: '〃', aria: ['ditto'] }, { text: '〃', aria: ['ditto'] }, { text: 'bo' },
     ])

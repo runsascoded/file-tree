@@ -18,7 +18,7 @@ import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from '
 // plumbing now lives in `./csvData` and is importable on its own.
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
 import { resolveColStyles, resolveElide, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
-import { TableRows } from './tableBody'
+import { PathNote, TableRows } from './tableBody'
 import { pathModes } from './tableRuns'
 import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import type { PersistedState } from '../react/persistedState'
@@ -190,8 +190,9 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                   )
                   : c.name
                 return (
-                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), whiteSpace: 'nowrap', ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass} title={pathNotes?.get(c.name)}>
+                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), whiteSpace: 'nowrap', ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass}>
                     {renderHeader ? renderHeader({ column: c, path, defaultNode }) : defaultNode}
+                    <PathNote note={pathNotes?.get(c.name)} onSort={smallTable ? () => sort.toggle(c.name) : undefined} />
                     {resizableColumns && <ColumnResizeHandle col={c.name} widths={cw} />}
                   </th>
                 )

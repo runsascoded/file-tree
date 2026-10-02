@@ -564,7 +564,7 @@ The `ditto: ['owner']` viewer option is sugar for exactly that: it chains `ditto
   rows={log}
   ditto={{
     who: 'sticky',                                  // one merged cell; its value floats at the top of the run's visible part
-    note: 'line',                                   // value once, a rule down the run, a tick on its last row
+    note: 'line',                                   // value once, a rule down the run, a tick on its last row (`'arrow'`: an arrowhead)
     owner: 'mark',                                  // `〃` (what a plain list means)
     when: { mode: 'sticky', key: v => ago(v) },     // run on the rendered bucket ("5w ago"), not the raw timestamp
   }}
@@ -573,7 +573,7 @@ The `ditto: ['owner']` viewer option is sugar for exactly that: it chains `ditto
 ```
 
 - Runs are computed per page in display order; empty values never join one; `min` (default 2) sets the shortest run collapsed. A `'none'` mode computes runs without drawing them. Every cell in a `ditto` column gets `ctx.run` (`{ start, end, length, index }`), so a `renderCell` can draw its own treatment.
-- `paths`: `'dim'` dims the whole `/`-segments a path shares with the row above (a `scheme://` counts as part of the first segment); `'tree'` groups consecutive rows with the same parent under one parent row, the rows showing only their tail — when the page is sorted by that column, else it falls back to `'dim'` and says so in the header's tooltip. Hover and copy always give the full path.
+- `paths`: `'dim'` dims the whole `/`-segments a path shares with the row above (a `scheme://` counts as part of the first segment); `'tree'` groups consecutive rows with the same parent under one parent row, the rows showing only their tail — when the page is sorted by that column, else it falls back to `'dim'` and the header shows a "sort for tree" chip. Hover and copy always give the full path.
 - `<RowsTable rows columns? sortComparators?>` (`@rdub/file-tree/renderers/rowsTable`) is the table viewer over rows already in memory (`memoryTableSource`), with the same sort, filter, paging, resize, `ditto` and `paths` as a file. Demo: [`/runs`](https://file-tree.rbw.sh/runs).
 
 A cell whose renderer returns `defaultNode` untouched is treated as default: it keeps the native full-value `title` and string-aware ellipsis (`'middle'`). Only cells a renderer actually replaced own their title.

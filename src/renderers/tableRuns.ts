@@ -18,9 +18,10 @@ import type { TableColumn } from './table'
  *    top of the run's visible part as the table scrolls.
  *  - `'line'`: the first cell shows the value; a thin rule runs down through
  *    the rest and ends with a tick on the run's last row.
+ *  - `'arrow'`: `'line'`, ending in an arrowhead instead of a tick.
  *  - `'none'`: runs are computed (see `TableCellCtx.run`) but not drawn — a
  *    `renderCell` draws its own treatment. */
-export type RunMode = 'mark' | 'sticky' | 'line' | 'none'
+export type RunMode = 'mark' | 'sticky' | 'line' | 'arrow' | 'none'
 
 export interface RunSpec {
   mode: RunMode

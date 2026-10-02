@@ -2,10 +2,12 @@
  *  `<RowsTable>` of in-memory rows shaped like disk-tree's action log —
  *  batches that share an actor, a time, an owner, a status and a note, over
  *  paths that share long prefixes. */
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { RowsTable } from '@rdub/file-tree/renderers/rowsTable'
-import type { DittoOption, PathsOption, RunMode } from '@rdub/file-tree/renderers/tableRuns'
-import type { TableCellRenderer } from '@rdub/file-tree/renderers/table'
+import type { DittoOption, PathsOption, RunMode, RunSpec } from '@rdub/file-tree/renderers/tableRuns'
+import type { TableCellRenderer, TableHeaderRenderer } from '@rdub/file-tree/renderers/table'
+import { useUrlPersistedState } from '@rdub/file-tree/url-state'
+import { ColumnGear } from '../components/ColumnGear'
 import { Segmented } from '../components/Segmented'
 
 const NOW = Date.UTC(2026, 9, 1, 12)
@@ -77,24 +79,76 @@ type WhenKey = 'bucket' | 'raw'
 type PathMode = 'off' | 'dim' | 'tree'
 
 const ROWS = actionLog()
+const RUN_COLUMNS = ['who', 'when', 'owner', 'status', 'note'] as const
+const MODES: { key: Mode; label: string }[] = [
+  { key: 'off', label: 'Off' },
+  { key: 'mark', label: 'Mark' },
+  { key: 'sticky', label: 'Sticky' },
+  { key: 'line', label: 'Line' },
+  { key: 'arrow', label: 'Arrow' },
+]
+const PATH_MODES: { key: PathMode; label: string }[] = [
+  { key: 'off', label: 'Off' },
+  { key: 'dim', label: 'Dim' },
+  { key: 'tree', label: 'Tree' },
+]
+const NOWRAP = { whiteSpace: 'nowrap' } as const
+const isMode = (m: string): m is Mode => MODES.some(o => o.key === m)
+
+/** Per-column overrides of the page-wide run mode, as `?rc=note:line,who:arrow`. */
+function parseOverrides(raw: string): Map<string, Mode> {
+  return new Map(raw.split(',').map(kv => kv.split(':')).filter((kv): kv is [string, Mode] => kv.length === 2 && isMode(kv[1])))
+}
+const fmtOverrides = (m: Map<string, Mode>) => [...m].map(([c, v]) => `${c}:${v}`).join(',')
 
 export function RunsDemo() {
-  const [mode, setMode] = useState<Mode>('sticky')
-  const [whenKey, setWhenKey] = useState<WhenKey>('bucket')
-  const [pathMode, setPathMode] = useState<PathMode>('dim')
+  // All page state is in the URL, so any view deep-links: `?r=` (page-wide
+  // run mode), `?rc=` (per-column overrides), `?key=`, `?p=` (path mode),
+  // plus the table's own `?sort=`, `?page=`, `?q=`.
+  const [base, setBase] = useUrlPersistedState<string>('r', 'sticky')
+  const [rawOverrides, setRawOverrides] = useUrlPersistedState<string>('rc', '')
+  const [whenKey, setWhenKey] = useUrlPersistedState<string>('key', 'bucket')
+  const [pathMode, setPathMode] = useUrlPersistedState<string>('p', 'dim')
+  const [, setSort] = useUrlPersistedState<string>('sort', '')
+  const mode: Mode = isMode(base) ? base : 'sticky'
+  const overrides = useMemo(() => parseOverrides(rawOverrides), [rawOverrides])
+  const modeOf = (c: string): Mode => overrides.get(c) ?? mode
+  const setColumnMode = (c: string, m: Mode) => {
+    const next = new Map(overrides)
+    if (m === mode) next.delete(c)
+    else next.set(c, m)
+    setRawOverrides(fmtOverrides(next))
+  }
+  // Tree needs the page sorted by path, so picking it sorts (the column's
+  // "sort for tree" chip does the same from the header).
+  const setPaths = (m: PathMode) => {
+    setPathMode(m)
+    if (m === 'tree') setSort('path')
+  }
 
   const ditto = useMemo<DittoOption | undefined>(() => {
-    if (mode === 'off') return undefined
-    return {
-      who: mode, owner: mode, status: mode, note: mode,
-      when: whenKey === 'bucket' ? { mode, key: v => ago(v as number) } : mode,
+    const out: Record<string, RunMode | RunSpec> = {}
+    for (const c of RUN_COLUMNS) {
+      const m = overrides.get(c) ?? mode
+      if (m === 'off') continue
+      out[c] = c === 'when' && whenKey === 'bucket' ? { mode: m, key: v => ago(v as number) } : m
     }
-  }, [mode, whenKey])
-  const paths = useMemo<PathsOption | undefined>(() => (pathMode === 'off' ? undefined : { path: pathMode }), [pathMode])
+    return Object.keys(out).length ? out : undefined
+  }, [mode, overrides, whenKey])
+  const paths = useMemo<PathsOption | undefined>(() => (pathMode === 'dim' || pathMode === 'tree' ? { path: pathMode } : undefined), [pathMode])
+
+  const renderHeader: TableHeaderRenderer = ({ column, defaultNode }) => {
+    const c = column.name
+    if (c === 'path') {
+      return <span style={NOWRAP}>{defaultNode}<ColumnGear column={c} label="paths" value={pathMode as PathMode} options={PATH_MODES} onChange={setPaths} active={pathMode !== 'dim'} /></span>
+    }
+    if (!(RUN_COLUMNS as readonly string[]).includes(c)) return defaultNode
+    return <span style={NOWRAP}>{defaultNode}<ColumnGear column={c} label="runs" value={modeOf(c)} options={MODES} onChange={m => setColumnMode(c, m)} active={overrides.has(c)} /></span>
+  }
 
   const optionText = [
-    mode === 'off' ? null : `ditto={{ who: '${mode}', owner: '${mode}', status: '${mode}', note: '${mode}', when: ${whenKey === 'bucket' ? `{ mode: '${mode}', key: ago }` : `'${mode}'`} }}`,
-    pathMode === 'off' ? null : `paths={{ path: '${pathMode}' }}`,
+    ditto ? `ditto={{ ${Object.entries(ditto).map(([c, s]) => `${c}: ${typeof s === 'string' ? `'${s}'` : `{ mode: '${s.mode}', key: ago }`}`).join(', ')} }}` : null,
+    paths ? `paths={{ path: '${pathMode}' }}` : null,
   ].filter(Boolean).join('\n')
 
   return (
@@ -104,39 +158,30 @@ export function RunsDemo() {
         An action log comes in batches: one batch shares an actor, a time, an owner, a status and a note, and its
         paths share most of their prefix. The table viewers' <code>ditto</code> option draws each run of equal values
         once (<em>mark</em> with <code>〃</code>, merge into one <em>sticky</em> cell whose value floats while you
-        scroll, or rule a <em>line</em> down it), and <code>paths</code> dims the segments a path shares with the row
+        scroll, or rule a <em>line</em> or <em>arrow</em> down it), and <code>paths</code> dims the segments a path shares with the row
         above, or groups rows under their parent (<em>tree</em>, when sorted by path — click the header).
         The table is a <code>&lt;RowsTable&gt;</code>: {ROWS.length} in-memory rows, with the same sort, filter and
-        paging as a parquet or SQLite file.
+        paging as a parquet or SQLite file. Each column's ⚙️ sets its own mode; the URL carries all of it.
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.2em', margin: '1em 0' }}>
         <Segmented<Mode>
-          label="Runs"
+          label="Runs (all columns)"
           value={mode}
-          onChange={setMode}
-          options={[
-            { key: 'off', label: 'Off' },
-            { key: 'mark', label: 'Mark' },
-            { key: 'sticky', label: 'Sticky' },
-            { key: 'line', label: 'Line' },
-          ]}
+          onChange={m => { setBase(m); setRawOverrides('') }}
+          options={MODES}
         />
         <Segmented<WhenKey>
           label="when keyed on"
-          value={whenKey}
+          value={whenKey as WhenKey}
           onChange={setWhenKey}
           options={[{ key: 'bucket', label: 'Relative time' }, { key: 'raw', label: 'Raw value' }]}
         />
         <Segmented<PathMode>
           label="Paths"
-          value={pathMode}
-          onChange={setPathMode}
-          options={[
-            { key: 'off', label: 'Off' },
-            { key: 'dim', label: 'Dim' },
-            { key: 'tree', label: 'Tree' },
-          ]}
+          value={pathMode as PathMode}
+          onChange={setPaths}
+          options={PATH_MODES}
         />
       </div>
       {optionText && <pre style={{ fontSize: '0.8em', opacity: 0.8, margin: '0 0 1em', whiteSpace: 'pre-wrap' }}><code>{optionText}</code></pre>}
@@ -146,6 +191,8 @@ export function RunsDemo() {
           rows={ROWS}
           path="assignments"
           renderCell={renderWhen}
+          renderHeader={renderHeader}
+          usePersistedState={useUrlPersistedState}
           {...(ditto ? { ditto } : {})}
           {...(paths ? { paths } : {})}
           elide={{ ellipsis: { path: 'start' } }}

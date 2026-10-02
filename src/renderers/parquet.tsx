@@ -43,7 +43,7 @@ import {
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
   type TableHeaderCtx, type TablePageCtx, type TableViewerOptions,
 } from './table'
-import { TableRows } from './tableBody'
+import { PathNote, TableRows } from './tableBody'
 import { pathModes } from './tableRuns'
 
 // Re-exported so a consumer writing one `renderCell` for a mixed tree
@@ -441,8 +441,9 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                   )
                   : label
                 return (
-                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass} title={pathNotes?.get(c.name)}>
+                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass}>
                     {renderHeader ? renderHeader({ column: c, ...(stats ? { stats } : {}), path, defaultNode }) : defaultNode}
+                    <PathNote note={pathNotes?.get(c.name)} onSort={smallTable ? () => { sort.toggle(c.name); setRgPage(0) } : undefined} />
                     {resizableColumns && <ColumnResizeHandle col={c.name} widths={cw} />}
                   </th>
                 )

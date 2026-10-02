@@ -97,9 +97,10 @@ export function TableRows<C extends TableColumn = TableColumn>({
               node = ellipsisWrap(st?.ellipsis ?? 'end', dimPathNode(it.prefix, prev?.[c.name]), undefined)
               title = it.prefix
             } else {
-              // A `'line'` run continuing past this row keeps its rule.
+              // A `'line'`/`'arrow'` run continuing past this row keeps its rule.
               const run = layout.runs.get(c.name)?.[it.first]
-              if (layout.specs.get(c.name)?.mode === 'line' && run && !run.start) node = runLine(next[c.name], false)
+              const mode = layout.specs.get(c.name)?.mode
+              if ((mode === 'line' || mode === 'arrow') && run && !run.start) node = runLine(next[c.name], false)
             }
             return <td key={c.name} style={style} className={st?.cellClass} {...(title ? { title } : {})}>{node}</td>
           })}
@@ -185,4 +186,18 @@ export function TableRows<C extends TableColumn = TableColumn>({
     )
   })
   return <tbody ref={tbody}>{trs}{children}</tbody>
+}
+
+/** A header's path-mode note, made visible: a `'tree'` column on an
+ *  unsorted page shows a small chip that sorts by it (when the viewer can
+ *  sort), the note on its title. */
+export function PathNote({ note, onSort }: { note: string | undefined; onSort?: () => void }) {
+  if (!note) return null
+  const style: CSSProperties = {
+    marginLeft: '0.5em', fontSize: '0.8em', fontWeight: 400, opacity: 0.75, padding: '0 0.4em',
+    border: '1px dashed currentColor', borderRadius: 3, background: 'transparent', color: 'inherit', font: 'inherit',
+  }
+  return onSort
+    ? <button type="button" title={note} onClick={e => { e.stopPropagation(); onSort() }} style={{ ...style, cursor: 'pointer' }}>sort for tree</button>
+    : <span title={note} style={style}>tree needs sort</span>
 }
