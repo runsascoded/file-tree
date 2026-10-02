@@ -16,6 +16,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 're
 import type { SortComparators } from './tableSort'
 // Type-only (erased at build) — no runtime dependency on the React module.
 import type { ResizeScope } from './columnResize'
+import type { DittoOption, PathsOption, TableRun } from './tableRuns'
 
 /** What a viewer can say about a column without knowing its format.
  *
@@ -57,6 +58,11 @@ export interface TableCellCtx<C extends TableColumn = TableColumn> {
   path: string
   /** What the viewer would have rendered for this cell. */
   defaultNode: ReactNode
+  /** This cell's place in a run of equal values on the page, for a column
+   *  listed in the viewer's `ditto` option; `undefined` otherwise, or when
+   *  the cell is in no run. A `ditto` mode of `'none'` computes runs without
+   *  drawing them, so a `renderCell` can draw its own. */
+  run?: TableRun
 }
 
 /** Per-cell render hook: called for every cell, decorate the ones you
@@ -181,19 +187,29 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
    *  (CSV reads fixed byte ranges, so it has no rows-per-page). Default
    *  100. */
   pageSize?: number
-  /** Columns whose repeated values collapse to a ditto mark: in a run of
-   *  equal values, every row after the first (on the page) renders `〃`
-   *  instead of the value, so the eye lands where the column changes. The
-   *  repeated value stays on the `<td>`'s `title` for recovery.
+  /** Columns whose runs of equal values collapse, so the eye lands where
+   *  a column changes. A list of names draws each run with a ditto mark
+   *  (`〃`, value on its title); a record picks a mode per column — `'mark'`,
+   *  `'sticky'` (one merged cell whose value floats at the top of the run's
+   *  visible part), `'line'` (a rule down the run), or `'none'` (computed
+   *  for `ctx.run`, not drawn) — optionally with a `key` (run on a derived
+   *  value, e.g. a relative-time bucket) and a `min` length. See
+   *  {@link RunSpec}.
    *
-   *  Per-column opt-in by name — a ditto on an unsorted or numeric column
-   *  is noise. Sugar for chaining `dittoRenderer(ditto)` ahead of
-   *  `renderCell` (see {@link chainCellRenderers}): a `renderCell` receives
-   *  the mark as `defaultNode` on a repeated cell, and can override it (test
-   *  {@link repeatsAbove}). Runs are detected within the rendered page, so a
-   *  run spanning a page boundary restarts — the first row of a page always
-   *  shows its value. */
-  ditto?: readonly string[]
+   *  Runs are computed on the rendered page in display order, so a run
+   *  spanning a page boundary restarts. Empty values never join a run.
+   *  `'mark'`/`'line'` chain ahead of `renderCell` (which receives the mark
+   *  as `defaultNode`); a `'sticky'` run renders its first cell only. */
+  ditto?: DittoOption
+  /** Columns holding `/`-separated paths, drawn so the part that changes
+   *  stands out. A list of names dims, in each row, the whole segments it
+   *  shares with the row above; a record picks `'dim'` or `'tree'` per column
+   *  (`'tree'`: rows with a common parent are grouped under one parent row,
+   *  and show only their tail — when the page is sorted by that column, else
+   *  `'dim'`, noted in the header's tooltip). The cell's title is always the
+   *  full path, and copying it yields the full path. A `scheme://` counts as
+   *  part of the first segment. See {@link PathMode}. */
+  paths?: PathsOption
   /** How long cell values that outgrow their column are rendered — the
    *  clip and the way the full value comes back. `true`/absent is the
    *  batteries-included default (clip at 30em, native `title` = the full

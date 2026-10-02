@@ -8,6 +8,7 @@ import { R2Demo } from './routes/R2Demo'
 import { GcsDemo } from './routes/GcsDemo'
 import { ElideDemo } from './routes/ElideDemo'
 import { FoldDemo } from './routes/FoldDemo'
+import { RunsDemo } from './routes/RunsDemo'
 import { SqlStub } from './routes/SqlStub'
 import { SnapshotDemo } from './routes/SnapshotDemo'
 
@@ -24,6 +25,7 @@ export function App() {
           <Link to="/gcs">GCS</Link>
           <Link to="/elide">Elide</Link>
           <Link to="/fold">Fold</Link>
+          <Link to="/runs">Runs</Link>
           <Link to="/snapshots">Snapshots</Link>
           <a href="https://github.com/runsascoded/file-tree" target="_blank" rel="noreferrer">GitHub</a>
         </nav>
@@ -43,6 +45,7 @@ export function App() {
           <Route path="/gcs/:slug/*" element={<GcsDemo />} />
           <Route path="/elide" element={<ElideDemo />} />
           <Route path="/fold" element={<FoldDemo />} />
+          <Route path="/runs" element={<RunsDemo />} />
           <Route path="/snapshots" element={<SnapshotDemo />} />
           <Route path="/snapshots/*" element={<SnapshotDemo />} />
           <Route path="/sql" element={<SqlStub />} />

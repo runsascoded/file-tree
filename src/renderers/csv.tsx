@@ -7,25 +7,30 @@
  *  line quoted fields (a quote opening on one line and closing on the
  *  next) — those would need a streaming parser since byte-paginated
  *  chunks can split mid-row. */
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Store } from '../types'
 import { fmtSize } from '../react/fmt'
 import { PAGE_BYTES, useAllCsvRows, useCsvHeader, useCsvPage } from './csvData'
-import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, usePageNotify, useStableCallback } from './tableControls'
+import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, usePageNotify } from './tableControls'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 
 // Re-exported so the public subpath keeps every name it had; the
 // plumbing now lives in `./csvData` and is importable on its own.
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData'
-import { applyElide, chainCellRenderers, resolveColStyles, tableCellCtx, resolveElide, TD_STYLE, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
-import { ellipsisWrap } from './elideNode'
-import { dittoRenderer } from './ditto'
+import { resolveColStyles, resolveElide, TH_STYLE, type TableColumn, type TablePageCtx, type TableViewerOptions } from './table'
+import { TableRows } from './tableBody'
+import { pathModes } from './tableRuns'
 import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import type { PersistedState } from '../react/persistedState'
 
 export type { TableCellCtx, TableCellRenderer, TableColumn, TableViewerOptions } from './table'
 export { chainCellRenderers, repeatsAbove } from './table'
 export { dittoMark, dittoRenderer } from './ditto'
+export type { DittoOption, PathMode, PathsOption, RunMode, RunSpec, TableRun } from './tableRuns'
+
+const ROW_STYLE: CSSProperties = { borderTop: '1px solid rgba(127,127,127,0.15)' }
+/** A CSV value is a string, drawn as itself. */
+const csvCell = (value: unknown): ReactNode => value as string
 
 /** Note `rowIndex` in `renderCell` is **page-relative** here: pages are
  *  byte ranges, so the viewer never learns how many rows preceded them.
@@ -46,7 +51,7 @@ export function makeCsvViewer(opts: CsvViewerOptions = {}) {
   }
 }
 
-export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, ditto, onPage, onCellHover, elide, resizableColumns = false }: {
+export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, ditto, paths, onPage, onCellHover, elide, resizableColumns = false }: {
   store: Store; path: string; delimiter: string; usePersistedState?: PersistedState
 } & CsvViewerOptions) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter)
@@ -64,14 +69,8 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
   const allColumns: TableColumn[] = useMemo(() => (header ?? []).map(name => ({ name })), [header])
   const { visible, ...vis } = useColumnVisibility(allColumns, usePersistedState, hiddenColumns)
   const columns = useMemo(() => allColumns.filter(c => visible.includes(c.name)), [allColumns, visible])
-  // Column *positions* in the source row, so hiding one doesn't shift
-  // the rest — `r[j]` is indexed by the file's order, not the visible one.
-  const colIndex = useMemo(
-    () => new Map(allColumns.map((c, i) => [c.name, i])),
-    [allColumns])
   // Sorting works on named values, but a CSV row is positional — so
-  // rows are keyed by column name for the comparator, then rendered
-  // back through the same index map.
+  // rows are keyed by column name for the comparator.
   const keyed = useMemo(
     () => allRaw?.map(r => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? '']))) ?? null,
     [allRaw, allColumns])
@@ -84,7 +83,6 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     [filteredKeyed, allColumns])
 
   const el = useMemo(() => resolveElide(elide), [elide])
-  const cellRenderer = useMemo(() => chainCellRenderers(ditto ? dittoRenderer(ditto) : undefined, renderCell), [ditto, renderCell])
   const cw = useColumnWidths({
     on: !!resizableColumns,
     scope: typeof resizableColumns === 'object' ? (resizableColumns.scope ?? 'path') : 'path',
@@ -94,24 +92,26 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     () => resolveColStyles(columns, path, { cellProps, headerProps }, () => false, el),
     [columns, path, cellProps, headerProps, el])
 
+  // Small-table mode has the whole file, so there's nothing to page and
+  // an exact row count to show — which byte-range paging can never give.
+  const rows = smallTable ? allSorted : pageRows
+  // Rows go out keyed by name — a positional array would be unusable.
+  // Built from *all* columns, so a `renderCell` reading a sibling (or a
+  // neighbor, via `at`) keeps working when that sibling is hidden.
+  const rowObjs = useMemo(
+    () => (rows ?? []).map(r => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? '']))),
+    [rows, allColumns])
+
   // Called before the early returns — see `usePageNotify`.
   const pageCtxRef = useRef<TablePageCtx>({ rows: [], columns: [], path, pageStart: 0, totalRows: null })
   usePageNotify(onPage, pageCtxRef, [pageRows, allSorted, columns.length, path, smallTable])
-  const notifyHover = useStableCallback(onCellHover)
 
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (total === null || header === null) return <div style={{ opacity: 0.6 }}>reading CSV header…</div>
 
-  // Small-table mode has the whole file, so there's nothing to page and
-  // an exact row count to show — which byte-range paging can never give.
-  const rows = smallTable ? allSorted : pageRows
   const pages = smallTable ? 1 : Math.max(1, Math.ceil(total / PAGE_BYTES))
   // `totalRows` is null when streaming: byte-range pages never learn how
-  // many rows preceded them, so the viewer genuinely doesn't know. Rows
-  // go out keyed by name — a positional array would be unusable.
-  // Built from *all* columns, so a `renderCell` reading a sibling (or a
-  // neighbor, via `at`) keeps working when that sibling is hidden.
-  const rowObjs = (rows ?? []).map(r => Object.fromEntries(allColumns.map((c, i) => [c.name, r[i] ?? ''])))
+  // many rows preceded them, so the viewer genuinely doesn't know.
   pageCtxRef.current = {
     rows: rowObjs,
     columns,
@@ -120,8 +120,7 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
     totalRows: smallTable ? (rows?.length ?? null) : null,
   }
 
-  // `totalRows` is null when streaming: byte-range pages never learn how
-  // many rows preceded them, so the viewer genuinely doesn't know.
+  const pathNotes = paths ? pathModes(rowObjs, columns, paths).notes : undefined
 
   const offsetStart = page * PAGE_BYTES
   const offsetEnd = Math.min(total, offsetStart + PAGE_BYTES)
@@ -191,7 +190,7 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
                   )
                   : c.name
                 return (
-                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), whiteSpace: 'nowrap', ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass}>
+                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), whiteSpace: 'nowrap', ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass} title={pathNotes?.get(c.name)}>
                     {renderHeader ? renderHeader({ column: c, path, defaultNode }) : defaultNode}
                     {resizableColumns && <ColumnResizeHandle col={c.name} widths={cw} />}
                   </th>
@@ -199,45 +198,25 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
               })}
             </tr>
           </thead>
-          <tbody>
-            {rows === null ? (
+          <TableRows
+            rows={rowObjs}
+            columns={columns}
+            path={path}
+            colStyles={colStyles}
+            widthStyle={cw.styleFor}
+            el={el}
+            {...(ditto ? { ditto } : {})}
+            {...(paths ? { paths } : {})}
+            {...(renderCell ? { renderCell } : {})}
+            defaultNode={csvCell}
+            rowIndex={i => i}
+            rowStyle={ROW_STYLE}
+            {...(onCellHover ? { onCellHover } : {})}
+          >
+            {rows === null && (
               <tr><td colSpan={columns.length} style={{ padding: '0.5em', opacity: 0.6 }}>loading…</td></tr>
-            ) : (
-              rows.map((r, i) => {
-                const row = rowObjs[i]
-                const at = (d: number) => rowObjs[i + d]
-                return (
-                  <tr key={i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
-                    {columns.map(c => {
-                      const st = colStyles.get(c.name)
-                      const j = colIndex.get(c.name)!
-                      const value = r[j] ?? ''
-                      const ctx = tableCellCtx({ value, column: c, row, at, rowIndex: i, path, defaultNode: value })
-                      const rendered = cellRenderer ? cellRenderer(ctx) : value
-                      // Untouched (`defaultNode` returned) stays default — see parquet.
-                      const custom = rendered !== value
-                      // Ellipsis-wrap before the tooltip (see parquet note).
-                      const wrapped = ellipsisWrap(st?.ellipsis ?? 'end', rendered, !custom && typeof value === 'string' ? value : undefined)
-                      const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row, path, ellipsis: st?.ellipsis })
-                      const hoverEnter = onCellHover ? () => notifyHover(ctx) : undefined
-                      return (
-                        <td
-                          key={c.name}
-                          style={{ ...(st?.cell ?? TD_STYLE), ...cw.styleFor(c.name) }}
-                          className={st?.cellClass}
-                          {...(title != null ? { title } : {})}
-                          {...(measure || hoverEnter ? { onMouseEnter: (e: ReactMouseEvent<HTMLElement>) => { measure?.(e); hoverEnter?.() } } : {})}
-                          {...(onCellHover ? { onMouseLeave: () => notifyHover(null) } : {})}
-                        >
-                          {node}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })
             )}
-          </tbody>
+          </TableRows>
         </table>
       </div>
     </>

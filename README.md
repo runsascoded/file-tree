@@ -553,7 +553,28 @@ const renderCell = chainCellRenderers(
 )
 ```
 
-The `ditto: ['owner']` viewer option is sugar for exactly that: it chains `dittoRenderer` ahead of your `renderCell`. A renderer that wants the value back on a repeated cell tests `repeatsAbove(ctx)` and returns its own node.
+The `ditto: ['owner']` viewer option is sugar for exactly that: it chains `dittoRenderer` ahead of your `renderCell`. A renderer that wants the value back on a repeated cell tests `repeatsAbove(ctx)` (or `ctx.run`, below) and returns its own node.
+
+### Runs and paths
+
+`ditto` also takes a mode per column, for long runs (an action log where one batch shares an actor, a time, an owner and a note):
+
+```tsx
+<RowsTable
+  rows={log}
+  ditto={{
+    who: 'sticky',                                  // one merged cell; its value floats at the top of the run's visible part
+    note: 'line',                                   // value once, a rule down the run, a tick on its last row
+    owner: 'mark',                                  // `〃` (what a plain list means)
+    when: { mode: 'sticky', key: v => ago(v) },     // run on the rendered bucket ("5w ago"), not the raw timestamp
+  }}
+  paths={{ path: 'tree' }}                          // or `'dim'` / a list of columns
+/>
+```
+
+- Runs are computed per page in display order; empty values never join one; `min` (default 2) sets the shortest run collapsed. A `'none'` mode computes runs without drawing them. Every cell in a `ditto` column gets `ctx.run` (`{ start, end, length, index }`), so a `renderCell` can draw its own treatment.
+- `paths`: `'dim'` dims the whole `/`-segments a path shares with the row above (a `scheme://` counts as part of the first segment); `'tree'` groups consecutive rows with the same parent under one parent row, the rows showing only their tail — when the page is sorted by that column, else it falls back to `'dim'` and says so in the header's tooltip. Hover and copy always give the full path.
+- `<RowsTable rows columns? sortComparators?>` (`@rdub/file-tree/renderers/rowsTable`) is the table viewer over rows already in memory (`memoryTableSource`), with the same sort, filter, paging, resize, `ditto` and `paths` as a file. Demo: [`/runs`](https://file-tree.rbw.sh/runs).
 
 A cell whose renderer returns `defaultNode` untouched is treated as default: it keeps the native full-value `title` and string-aware ellipsis (`'middle'`). Only cells a renderer actually replaced own their title.
 
@@ -673,6 +694,8 @@ Site code in `site/src/components/` (`S2CellPreview`, `LogViewer`, `YamlViewer`)
 | `@rdub/file-tree/renderers/csv` | `CsvViewer` (pure JS) |
 | `@rdub/file-tree/renderers/table` | Format-neutral table hooks: `TableCellCtx`, `chainCellRenderers`, `repeatsAbove`, elide helpers |
 | `@rdub/file-tree/renderers/ditto` | `dittoRenderer`, `dittoMark` (also re-exported from `parquet` / `csv`) |
+| `@rdub/file-tree/renderers/tableRuns` | Pure run / path layout: `computeRuns`, `sharedPathPrefix`, `tableLayout`, `RunMode`, `PathMode` |
+| `@rdub/file-tree/renderers/rowsTable` | `RowsTable` (a table of in-memory rows), `memoryTableSource`, `inferColumns` |
 | `@rdub/file-tree/renderers/notebook` | `NotebookViewer` (peers via `markdown`) |
 | `@rdub/file-tree/renderers/code` | `renderCode` (peer: `highlight.js`) |
 | `@rdub/file-tree/renderers/json` | `renderJsonTree` — search, jq filter (optional `jq-web` peer), expand/collapse-all, copy-jq-path on key click |

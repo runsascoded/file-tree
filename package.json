@@ -102,6 +102,21 @@
       "import": "./dist/renderers/tableBrowser.js",
       "require": "./dist/renderers/tableBrowser.cjs"
     },
+    "./renderers/tableRuns": {
+      "types": "./dist/renderers/tableRuns.d.ts",
+      "import": "./dist/renderers/tableRuns.js",
+      "require": "./dist/renderers/tableRuns.cjs"
+    },
+    "./renderers/memoryTableSource": {
+      "types": "./dist/renderers/memoryTableSource.d.ts",
+      "import": "./dist/renderers/memoryTableSource.js",
+      "require": "./dist/renderers/memoryTableSource.cjs"
+    },
+    "./renderers/rowsTable": {
+      "types": "./dist/renderers/rowsTable.d.ts",
+      "import": "./dist/renderers/rowsTable.js",
+      "require": "./dist/renderers/rowsTable.cjs"
+    },
     "./renderers/remoteTable": {
       "types": "./dist/renderers/remoteTable.d.ts",
       "import": "./dist/renderers/remoteTable.js",

@@ -21,6 +21,7 @@ import {
   useDelayGroup, useDismiss, useFloating, useHover, useInteractions, useRole,
 } from '@floating-ui/react'
 import { CsvViewer } from '@rdub/file-tree/renderers/csv'
+import { Segmented } from '../components/Segmented'
 import { MockStore } from '@rdub/file-tree/stores/mock'
 import type { ElideConfig, ElideCtx } from '@rdub/file-tree/renderers/table'
 
@@ -128,37 +129,6 @@ function PathTip({ label, children }: { label: string; children: ReactNode }) {
 /** The `elide.tooltip` render-prop for the rich mode — stable identity so
  *  swapping `width` doesn't rebuild it. */
 const richTooltip = (ctx: ElideCtx): ReactNode => <PathTip label={ctx.text ?? ''}>{ctx.node}</PathTip>
-
-/** A small segmented control (matches the treemap brush panel idiom). */
-function Segmented<K extends string>({ label, value, options, onChange }: {
-  label: string
-  value: K
-  options: { key: K; label: string }[]
-  onChange: (k: K) => void
-}) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
-      <span style={{ fontSize: '0.85em', opacity: 0.7 }}>{label}</span>
-      <div style={{ display: 'inline-flex', border: '1px solid #8884', borderRadius: 6, overflow: 'hidden' }}>
-        {options.map(o => (
-          <button
-            key={o.key}
-            type="button"
-            aria-pressed={o.key === value}
-            onClick={() => onChange(o.key)}
-            style={{
-              border: 'none', padding: '0.3em 0.7em', cursor: 'pointer', fontSize: '0.85em',
-              background: o.key === value ? '#4a9eff' : 'transparent',
-              color: o.key === value ? '#fff' : 'inherit',
-            }}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 export function ElideDemo() {
   const store = useMemo(() => MockStore({ 'sweep-log.csv': CSV }, { describe: 'mock://sweep-logs/' }), [])

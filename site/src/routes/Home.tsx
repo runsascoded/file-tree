@@ -39,6 +39,10 @@ export function Home() {
           {' '}value too wide for its column clips, and how the clipped tail comes back (native
           {' '}tooltip, a consumer-supplied rich tooltip, wide/x-scroll mode, or nothing).
         </li>
+        <li>
+          <Link to="/runs">Runs</Link> — <code>ditto</code> run modes (mark, sticky, line) and
+          {' '}<code>paths</code> elision (dim, tree) on a <code>&lt;RowsTable&gt;</code> of in-memory rows.
+        </li>
       </ul>
 
       <h2>The <code>Store</code> interface</h2>

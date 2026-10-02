@@ -17,7 +17,7 @@
  *  Uses `hyparquet` (optional peer) for footer/metadata + row-range
  *  reads, fed via `asyncBufferFromStore` so it works against any
  *  `Store` (R2, S3, HTTP, …) without knowing the underlying URL. */
-import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useRef } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode, useRef } from 'react'
 import type { Compressors } from 'hyparquet'
 import type { Store } from '../types'
 import {
@@ -35,16 +35,16 @@ export type { ParquetColumn, ParquetColumnStats, ParquetMeta, RowGroupInfo } fro
 import { fmtSize } from '../react/fmt'
 import { defaultUseState, type PersistedState } from '../react/persistedState'
 import { formatTemporal, inferColumnFormats, type TemporalColumn, type TemporalFormat } from './temporal'
-import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, usePageNotify, useStableCallback } from './tableControls'
+import { ColumnPicker, FilterInput, filterRows, useColumnVisibility, useFilter, usePageNotify } from './tableControls'
 import { ColumnResizeHandle, useColumnWidths } from './columnResize'
 import { DEFAULT_FULL_LOAD_MAX_BYTES, sortGlyph, useSort, useSortedRows } from './tableSort'
 import {
-  applyElide, chainCellRenderers, resolveColStyles, tableCellCtx, resolveElide, TD_STYLE, TH_STYLE,
+  resolveColStyles, resolveElide, TH_STYLE,
   type TableCellCtx, type TableCellRenderer, type TableColumn, type TableColumnProps,
   type TableHeaderCtx, type TablePageCtx, type TableViewerOptions,
 } from './table'
-import { ellipsisWrap } from './elideNode'
-import { dittoRenderer } from './ditto'
+import { TableRows } from './tableBody'
+import { pathModes } from './tableRuns'
 
 // Re-exported so a consumer writing one `renderCell` for a mixed tree
 // (`.parquet` here, `.csv` next to it) can name the shared types from
@@ -55,6 +55,7 @@ export type {
 } from './table'
 export { chainCellRenderers, repeatsAbove } from './table'
 export { dittoMark, dittoRenderer } from './ditto'
+export type { DittoOption, PathMode, PathsOption, RunMode, RunSpec, TableRun } from './tableRuns'
 
 // Re-exported so a consumer writing a `renderCell` for a temporal
 // column can reuse the same reading + formatting the default does,
@@ -119,6 +120,8 @@ export interface ParquetViewerOptions extends TableViewerOptions<ParquetColumn> 
  *  want dense scan can just next-page rapidly. */
 const ROWS_PER_PAGE = 100
 
+const ROW_STYLE: CSSProperties = { borderTop: '1px solid rgba(127,127,127,0.15)' }
+
 /** LRU cache size for decoded RG rows. Keyed by RG index within the
  *  current `(store, path)`; on revisit of a recently-viewed RG (e.g.
  *  bouncing between two neighboring RGs, or the "row groups (N)"
@@ -145,7 +148,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, ditto, foldConstantColumns = false, compressors, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, ditto, paths, foldConstantColumns = false, compressors, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -206,7 +209,6 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   )
 
   const el = useMemo(() => resolveElide(elide), [elide])
-  const cellRenderer = useMemo(() => chainCellRenderers(ditto ? dittoRenderer<ParquetColumn>(ditto) : undefined, renderCell), [ditto, renderCell])
   // Whole-file-constant columns, folded out of the grid and stated once.
   // Empty unless opted in — and empty for a file whose footer lacks stats.
   const folded = useMemo(
@@ -234,7 +236,6 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   // ctx is passed by ref and read when the effect fires.
   const pageCtxRef = useRef<TablePageCtx<ParquetColumn>>({ rows: [], columns: [], path, pageStart: 0, totalRows: 0 })
   usePageNotify(onPage, pageCtxRef, [rows, rgPage, page, path, visible.join(',')])
-  const notifyHover = useStableCallback(onCellHover)
 
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (!meta) return <div style={{ opacity: 0.6 }}>reading parquet metadata…</div>
@@ -299,6 +300,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
   const pageRowEnd = rows ? rowBase + Math.min((clampedRgPage + 1) * pageSize, rows.length) : pageRowStart
   const visibleRows = rows ? rows.slice(clampedRgPage * pageSize, (clampedRgPage + 1) * pageSize) : null
   pageCtxRef.current = { rows: visibleRows ?? [], columns: schema, path, pageStart: pageRowStart, totalRows }
+  const pathNotes = paths ? pathModes(visibleRows ?? [], schema, paths).notes : undefined
 
 
   // Cross-RG page advance: if we're on the last (first) page of the
@@ -439,7 +441,7 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
                   )
                   : label
                 return (
-                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass}>
+                  <th key={c.name} style={{ ...(st?.header ?? TH_STYLE), ...(resizableColumns ? { position: 'relative' } : {}), ...cw.styleFor(c.name) }} className={st?.headerClass} title={pathNotes?.get(c.name)}>
                     {renderHeader ? renderHeader({ column: c, ...(stats ? { stats } : {}), path, defaultNode }) : defaultNode}
                     {resizableColumns && <ColumnResizeHandle col={c.name} widths={cw} />}
                   </th>
@@ -447,45 +449,27 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
               })}
             </tr>
           </thead>
-          <tbody>
-            {visibleRows === null ? (
+          <TableRows
+            rows={visibleRows ?? []}
+            columns={schema}
+            path={path}
+            colStyles={colStyles}
+            widthStyle={cw.styleFor}
+            el={el}
+            {...(ditto ? { ditto } : {})}
+            {...(paths ? { paths } : {})}
+            {...(renderCell ? { renderCell } : {})}
+            defaultNode={(value, c) => fmtCell(value, temporal.get(c.name))}
+            raw={(value, c) => cellRaw(value, temporal.get(c.name))}
+            rowIndex={i => pageRowStart + i}
+            rowKey={i => clampedRgPage * pageSize + i}
+            rowStyle={ROW_STYLE}
+            {...(onCellHover ? { onCellHover } : {})}
+          >
+            {visibleRows === null && (
               <tr><td colSpan={schema.length} style={{ padding: '0.5em', opacity: 0.6 }}>loading row group {rgIndex}…</td></tr>
-            ) : (
-              visibleRows.map((r, i) => (
-                <tr key={clampedRgPage * pageSize + i} style={{ borderTop: '1px solid rgba(127,127,127,0.15)' }}>
-                  {schema.map(c => {
-                    const value = r[c.name]
-                    const tf = temporal.get(c.name)
-                    const defaultNode = fmtCell(value, tf)
-                    const st = colStyles.get(c.name)
-                    const ctx = tableCellCtx({ value, column: c, row: r, at: d => visibleRows[i + d], rowIndex: pageRowStart + i, path, defaultNode })
-                    const rendered = cellRenderer ? cellRenderer(ctx) : defaultNode
-                    // A renderer returning `defaultNode` untouched leaves the cell
-                    // default: it keeps the native title and string-aware ellipsis.
-                    const custom = rendered !== defaultNode
-                    // Ellipsis-wrap *before* the tooltip so a render-prop wraps the
-                    // reshaped node (`'middle'` rebuilds from the string, discarding
-                    // whatever it wraps otherwise).
-                    const wrapped = ellipsisWrap(st?.ellipsis ?? 'end', rendered, !custom && typeof value === 'string' ? value : undefined)
-                    const { title, onMouseEnter: measure, node } = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row: r, path, raw: cellRaw(value, tf), ellipsis: st?.ellipsis })
-                    const hoverEnter = onCellHover ? () => notifyHover(ctx) : undefined
-                    return (
-                      <td
-                        key={c.name}
-                        style={{ ...(st?.cell ?? TD_STYLE), ...cw.styleFor(c.name) }}
-                        className={st?.cellClass}
-                        {...(title != null ? { title } : {})}
-                        {...(measure || hoverEnter ? { onMouseEnter: (e: ReactMouseEvent<HTMLElement>) => { measure?.(e); hoverEnter?.() } } : {})}
-                        {...(onCellHover ? { onMouseLeave: () => notifyHover(null) } : {})}
-                      >
-                        {node}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))
             )}
-          </tbody>
+          </TableRows>
         </table>
       </div>
     </>
