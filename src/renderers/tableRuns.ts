@@ -9,8 +9,9 @@
  *  sort/filter), and is pure, so it can be tested as plain data.
  *
  *  See `specs/done/table-runs-and-path-elision.md`. */
+import type { ReactNode } from 'react'
 import { compareValues } from './tableSort'
-import type { TableColumn } from './table'
+import type { RunRenderer, TableColumn } from './table'
 
 /** How a run of equal values in a column is drawn:
  *  - `'mark'`: every cell after the first renders `〃` (value on its title).
@@ -24,7 +25,16 @@ import type { TableColumn } from './table'
 export type RunMode = 'mark' | 'sticky' | 'line' | 'arrow' | 'none'
 
 export interface RunSpec {
-  mode: RunMode
+  /** A built-in renderer. Default `'sticky'` (ignored with `render`). */
+  mode?: RunMode
+  /** Draw the run's merged cell yourself, instead of a built-in `mode`. */
+  render?: RunRenderer
+  /** Built-ins: the value floats at the top of the run's visible part as the
+   *  table scrolls. Default `true`. */
+  float?: boolean
+  /** `'arrow'`: an arrowhead every this many rows, besides the last. Default
+   *  5; `0` for the last only. */
+  every?: number
   /** Key a run on this instead of the raw value: e.g. a relative-time
    *  bucket ("5w ago"), so rows a second apart don't break the run. A
    *  `null`/`undefined` key, like an empty value, is never part of a run. */
@@ -39,6 +49,9 @@ export type DittoOption = readonly string[] | Readonly<Record<string, RunMode | 
 
 export interface ResolvedRunSpec {
   mode: RunMode
+  render?: RunRenderer
+  float: boolean
+  every: number
   key?: (value: unknown, row: Record<string, unknown>) => unknown
   min: number
 }
@@ -70,12 +83,15 @@ export function normalizeDitto(ditto: DittoOption | undefined): Map<string, Reso
   const out = new Map<string, ResolvedRunSpec>()
   if (!ditto) return out
   if (isList(ditto)) {
-    for (const c of ditto) out.set(c, { mode: 'mark', min: 2 })
+    for (const c of ditto) out.set(c, { mode: 'mark', min: 2, float: true, every: 5 })
     return out
   }
   for (const [c, s] of Object.entries(ditto)) {
-    const spec = typeof s === 'string' ? { mode: s } : s
-    out.set(c, { mode: spec.mode, min: spec.min ?? 2, ...(spec.key ? { key: spec.key } : {}) })
+    const spec: RunSpec = typeof s === 'string' ? { mode: s } : s
+    out.set(c, {
+      mode: spec.mode ?? 'sticky', min: spec.min ?? 2, float: spec.float ?? true, every: spec.every ?? 5,
+      ...(spec.key ? { key: spec.key } : {}), ...(spec.render ? { render: spec.render } : {}),
+    })
   }
   return out
 }
@@ -106,7 +122,7 @@ export function runKey(spec: Pick<ResolvedRunSpec, 'key'>, value: unknown, row: 
 export function computeRuns(
   rows: readonly Record<string, unknown>[],
   column: string,
-  spec: Pick<ResolvedRunSpec, 'key' | 'min'>,
+  spec: Pick<RunSpec, 'key' | 'min'>,
 ): (TableRun | undefined)[] {
   const keys = rows.map(r => runKey(spec, r[column], r))
   const out: (TableRun | undefined)[] = new Array(rows.length).fill(undefined)
@@ -167,16 +183,129 @@ export function isSortedBy(rows: readonly Record<string, unknown>[], column: str
   return asc || desc
 }
 
+/** A group of consecutive page rows, drawn as a header row (collapsible)
+ *  above its rows. Groups nest via `children`. See {@link pathGroups},
+ *  {@link runGroups}, or build your own: a viewer's `groups` option is any
+ *  {@link GroupRows}. */
+export interface RowGroup {
+  /** Stable id: collapse state persists by it (hashed, see {@link groupHash}). */
+  key: string
+  /** Page rows `[start, end)`. */
+  start: number
+  end: number
+  /** The column whose cell holds the header's label. */
+  column: string
+  /** Header content. */
+  label: ReactNode
+  /** The header's tooltip. */
+  title?: string
+  /** For a path group, the full prefix its rows share: rows in the group
+   *  show `column`'s value after it (their tail), indented. */
+  prefix?: string
+  children?: RowGroup[]
+}
+
+/** Groups over a page (display order). */
+export type GroupRows = (rows: readonly Record<string, unknown>[]) => RowGroup[]
+
+/** A `/`-separated path's next segment after `base` (including its `/`),
+ *  or `null` when what remains is a leaf (a name, or a dir's `name/`). A
+ *  scheme belongs to the first segment. */
+function nextSegment(value: string, base: string): string | null {
+  const rem = value.slice(base.length)
+  const from = base === '' ? schemeLength(rem) : 0
+  const cut = rem.indexOf('/', from)
+  return cut === -1 || cut === rem.length - 1 ? null : rem.slice(0, cut + 1)
+}
+
+/** A multi-level tree over `column`'s `/`-segments: consecutive rows that
+ *  share a segment (at least `min`, default 2) form a group, nested per
+ *  segment. A chain of single-child levels compacts into one group
+ *  (`gs://bkt/checkpoints/`, not three). Needs the page sorted by `column`
+ *  (see {@link isSortedBy}); returns no groups otherwise. */
+export function pathGroups(column: string, opts: { min?: number } = {}): GroupRows {
+  const min = Math.max(2, opts.min ?? 2)
+  return rows => {
+    if (!isSortedBy(rows, column)) return []
+    const vals = rows.map(r => (typeof r[column] === 'string' ? r[column] as string : ''))
+    const build = (lo: number, hi: number, base: string): RowGroup[] => {
+      const out: RowGroup[] = []
+      let i = lo
+      while (i < hi) {
+        const seg = vals[i].startsWith(base) ? nextSegment(vals[i], base) : null
+        if (seg === null) { i++; continue }
+        let j = i + 1
+        while (j < hi && vals[j].startsWith(base + seg) && nextSegment(vals[j], base) === seg) j++
+        if (j - i >= min) {
+          // Compact: extend the prefix while every row shares the next segment.
+          let prefix = base + seg
+          for (;;) {
+            const next = nextSegment(vals[i], prefix)
+            if (next === null) break
+            let all = true
+            for (let k = i + 1; k < j && all; k++) all = nextSegment(vals[k], prefix) === next
+            if (!all) break
+            prefix += next
+          }
+          out.push({
+            key: `${column}:${prefix}`, start: i, end: j, column,
+            label: prefix.slice(base.length), title: prefix, prefix,
+            children: build(i, j, prefix),
+          })
+        }
+        i = j
+      }
+      return out
+    }
+    return build(0, rows.length, '')
+  }
+}
+
+/** Runs of equal values (or `key`s) in `column` as groups, labelled with the
+ *  value; collapsed, a run is one row. */
+export function runGroups(column: string, opts: Pick<RunSpec, 'key' | 'min'> = {}): GroupRows {
+  return rows => {
+    const runs = computeRuns(rows, column, opts)
+    const seen = new Map<string, number>()
+    const out: RowGroup[] = []
+    runs.forEach((r, i) => {
+      if (!r?.start) return
+      const k = String(runKey(opts, rows[i][column], rows[i]))
+      const n = (seen.get(k) ?? 0) + 1
+      seen.set(k, n)
+      out.push({ key: `${column}=${k}#${n}`, start: i, end: i + r.length, column, label: k, title: k })
+    })
+    return out
+  }
+}
+
+/** A group key's persisted form: 4 base-36 chars (FNV-1a), so a list of
+ *  collapsed groups is just their hashes concatenated. */
+export function groupHash(key: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 0x01000193)
+  return ((h >>> 0) % 36 ** 4).toString(36).padStart(4, '0')
+}
+
+/** Parse a concatenated {@link groupHash} list. */
+export function parseFolds(raw: string): Set<string> {
+  const out = new Set<string>()
+  for (let i = 0; i + 4 <= raw.length; i += 4) out.add(raw.slice(i, i + 4))
+  return out
+}
+
 /** One row of the rendered body: a data row (`i` indexes the page), or a
- *  synthetic parent row that `'tree'` path mode inserts above a group. */
+ *  group's header row. `depth` is the number of groups enclosing it;
+ *  `group` the innermost. */
 export type BodyItem =
-  | { kind: 'row'; i: number; tree?: { last: boolean } }
-  | { kind: 'parent'; column: string; prefix: string; first: number }
+  | { kind: 'row'; i: number; depth: number; group?: RowGroup }
+  | { kind: 'group'; group: RowGroup; depth: number; collapsed: boolean; size: number }
 
 /** The page as the body draws it. */
 export interface TableLayout {
   items: BodyItem[]
-  /** Per run column, one entry per page row (see {@link computeRuns}). */
+  /** Per run column, one entry per page row (see {@link computeRuns}),
+   *  computed over the *visible* rows (a collapsed group's are skipped). */
   runs: Map<string, (TableRun | undefined)[]>
   specs: Map<string, ResolvedRunSpec>
   /** Per path column, the mode in effect on this page (`'tree'` falls back
@@ -185,7 +314,7 @@ export interface TableLayout {
   /** The column grouping rows into a tree, if any. */
   tree?: string
   /** A note per column whose requested mode isn't in effect, for its
-   *  header's tooltip. */
+   *  header. */
   notes: Map<string, string>
 }
 
@@ -218,41 +347,42 @@ export function pathModes(
   return { paths: modes, ...(tree !== undefined ? { tree } : {}), notes }
 }
 
-/** Lay out a page: runs for the `ditto` columns, the path mode in effect
- *  per `paths` column (see {@link pathModes}), and — with a `'tree'`
- *  column — the parent rows to insert. */
+/** Lay out a page: groups (the `groups` option, or `pathGroups` for a
+ *  `'tree'` path column) with their header rows, collapsed groups' rows
+ *  dropped; then runs for the `ditto` columns over the rows that remain. */
 export function tableLayout(
   rows: readonly Record<string, unknown>[],
   columns: readonly Pick<TableColumn, 'name'>[],
-  opts: { ditto?: DittoOption; paths?: PathsOption },
+  opts: { ditto?: DittoOption; paths?: PathsOption; groups?: GroupRows; folded?: ReadonlySet<string> },
 ): TableLayout {
   const shown = new Set(columns.map(c => c.name))
   const specs = new Map([...normalizeDitto(opts.ditto)].filter(([c]) => shown.has(c)))
-  const runs = new Map([...specs].map(([c, s]) => [c, computeRuns(rows, c, s)]))
   const pm = pathModes(rows, columns, opts.paths)
-  const items: BodyItem[] = pm.tree === undefined ? rows.map((_, i) => ({ kind: 'row' as const, i })) : treeItems(rows, pm.tree)
-  return { items, runs, specs, ...pm }
-}
+  const groupFn = opts.groups ?? (pm.tree !== undefined ? pathGroups(pm.tree) : undefined)
+  const groups = groupFn ? groupFn(rows) : []
+  const folded = opts.folded ?? new Set<string>()
 
-/** Group consecutive rows sharing a (non-empty) parent under one parent
- *  row. A group of one stays a plain row. */
-function treeItems(rows: readonly Record<string, unknown>[], column: string): BodyItem[] {
-  const parents = rows.map(r => {
-    const v = r[column]
-    return typeof v === 'string' ? splitParent(v)[0] : ''
-  })
   const items: BodyItem[] = []
-  let i = 0
-  while (i < rows.length) {
-    let j = i + 1
-    while (j < rows.length && parents[j] === parents[i]) j++
-    if (parents[i] !== '' && j - i >= 2) {
-      items.push({ kind: 'parent', column, prefix: parents[i], first: i })
-      for (let k = i; k < j; k++) items.push({ kind: 'row', i: k, tree: { last: k === j - 1 } })
-    } else {
-      for (let k = i; k < j; k++) items.push({ kind: 'row', i: k })
+  const walk = (gs: readonly RowGroup[], lo: number, hi: number, depth: number, parent?: RowGroup) => {
+    let i = lo
+    for (const g of gs) {
+      for (; i < g.start; i++) items.push({ kind: 'row', i, depth, ...(parent ? { group: parent } : {}) })
+      const collapsed = folded.has(groupHash(g.key))
+      items.push({ kind: 'group', group: g, depth, collapsed, size: g.end - g.start })
+      if (!collapsed) walk(g.children ?? [], g.start, g.end, depth + 1, g)
+      i = g.end
     }
-    i = j
+    for (; i < hi; i++) items.push({ kind: 'row', i, depth, ...(parent ? { group: parent } : {}) })
   }
-  return items
+  walk(groups, 0, rows.length, 0)
+
+  const visible = items.flatMap(it => (it.kind === 'row' ? [it.i] : []))
+  const visRows = visible.map(i => rows[i])
+  const runs = new Map([...specs].map(([c, s]) => {
+    const vr = computeRuns(visRows, c, s)
+    const out: (TableRun | undefined)[] = new Array(rows.length).fill(undefined)
+    visible.forEach((i, k) => { out[i] = vr[k] })
+    return [c, out]
+  }))
+  return { items, runs, specs, ...pm }
 }

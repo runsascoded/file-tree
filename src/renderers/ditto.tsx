@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { cellTitle, type TableCellCtx, type TableCellRenderer, type TableColumn } from './table'
+import { cellTitle, type RunRenderer, type TableCellCtx, type TableCellRenderer, type TableColumn } from './table'
 import { normalizeDitto, runKey, sharedPathPrefix, type DittoOption, type ResolvedRunSpec, type RunMode } from './tableRuns'
 
 /** The ditto mark a collapsed repeated value renders instead of its text.
@@ -106,4 +106,78 @@ export function treeChildNode(parent: string, tail: string, last: boolean): Reac
       {tail}
     </>
   )
+}
+
+const RULE_X = '0.9em'
+const pct = (x: number, span: number) => `${(x / span) * 100}%`
+
+/** An arrowhead centered on the rule, its top at `top`. */
+function arrowhead(top: string, key: string | number): ReactNode {
+  return (
+    <span
+      key={key}
+      style={{
+        position: 'absolute', top, left: `calc(${RULE_X} - 0.3em + 0.5px)`, opacity: 0.5,
+        borderLeft: '0.3em solid transparent', borderRight: '0.3em solid transparent', borderTop: '0.45em solid currentColor',
+      }}
+    />
+  )
+}
+
+/** A built-in {@link RunRenderer}: the run's value (floating under the
+ *  sticky header while any of the run is in view, unless `float: false`),
+ *  and below it, positioned by `offsets / span`:
+ *  - `'sticky'`: nothing.
+ *  - `'mark'`: `〃` on each row after the first.
+ *  - `'line'`: a rule from the second row to the last, ending in `└`.
+ *  - `'arrow'`: a rule with an arrowhead every `every` rows and at the end.
+ *
+ *  The value sits on an opaque box (`--ft-run-bg`, default `Canvas`), so a
+ *  floating value occludes the rule behind it. Uses only {@link RunCellCtx}:
+ *  a template for your own. */
+export function runRenderer<C extends TableColumn = TableColumn>(
+  mode: Exclude<RunMode, 'none'>,
+  opts: { float?: boolean; every?: number } = {},
+): RunRenderer<C> {
+  const { float = true, every = 5 } = opts
+  return ({ span, offsets, defaultNode, stickyTop }) => {
+    const last = offsets[offsets.length - 1]
+    const deco: ReactNode[] = []
+    if (mode === 'mark') {
+      for (const o of offsets.slice(1)) {
+        deco.push(
+          <span key={o} aria-label="ditto" style={{
+            position: 'absolute', left: 0, right: 0, top: pct(o, span), height: pct(1, span),
+            display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.3,
+          }}>〃</span>,
+        )
+      }
+    } else if ((mode === 'line' || mode === 'arrow') && offsets.length > 1) {
+      const top = pct(offsets[0] + 1, span)
+      const bottom = pct(span - last - 0.5, span)
+      deco.push(
+        <span key="rule" aria-label={mode === 'line' ? 'run line' : 'run arrow'} style={{
+          position: 'absolute', left: RULE_X, top, bottom, opacity: 0.35, borderLeft: RULE,
+          ...(mode === 'line' ? { width: '0.6em', borderBottom: RULE } : {}),
+        }} />,
+      )
+      if (mode === 'arrow') {
+        offsets.forEach((o, k) => {
+          if (k > 0 && k < offsets.length - 1 && every > 0 && k % every === 0) deco.push(arrowhead(`calc(${pct(o + 0.5, span)} - 0.3em)`, k))
+        })
+        deco.push(arrowhead(`calc(${pct(last + 0.5, span)} - 0.2em)`, 'end'))
+      }
+    }
+    return (
+      <>
+        <span aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>{deco}</span>
+        <div style={{
+          position: float ? 'sticky' : 'relative', ...(float ? { top: stickyTop } : {}),
+          background: 'var(--ft-run-bg, Canvas)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {defaultNode}
+        </div>
+      </>
+    )
+  }
 }

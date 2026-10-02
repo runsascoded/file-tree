@@ -142,15 +142,17 @@ test.describe('ElideDemo', () => {
     expect(await cell.getAttribute('title')).toBe(FULL_PATH)
   })
 
-  test('ditto collapses a repeated value to a mark, keeping it on the title', async ({ page }) => {
+  test('ditto merges a run into one cell, marking its repeats and keeping its value on the title', async ({ page }) => {
     await page.getByRole('button', { name: 'On', exact: true }).click()
-    const sweeper = page.locator('[data-testid="elide-table"] tbody tr td:nth-child(3)')
+    await page.getByRole('button', { name: 'Native', exact: true }).click()
     // The fixture's sweeper column: david, david, kaiyue, ahmed, ahmed, …
-    await expect(sweeper.nth(0)).toHaveText('david')       // run head keeps its value
-    await expect(sweeper.nth(1)).toHaveText('〃')           // repeat → mark
-    expect(await sweeper.nth(1).getByLabel('ditto').getAttribute('title')).toBe('david')  // value recoverable
-    await expect(sweeper.nth(2)).toHaveText('kaiyue')      // a change shows through
-    await expect(sweeper.nth(4)).toHaveText('〃')           // ahmed after ahmed
+    const runs = page.locator('[data-testid="elide-table"] tbody td[rowspan]')
+    const david = runs.first()
+    await expect(david).toHaveAttribute('rowspan', '2')
+    await expect(david.locator('div')).toHaveText('david')       // the run's value, once
+    await expect(david.getByLabel('ditto')).toHaveText(['〃'])    // one mark for the repeat
+    expect(await david.getAttribute('title')).toBe('david')       // native title: the value, anywhere in the run
+    await expect(runs.nth(1).locator('div')).toHaveText('ahmed')  // kaiyue (a run of one) isn't merged
   })
 
   // `resizableColumns` — a separate axis from `elide`: drag the header's

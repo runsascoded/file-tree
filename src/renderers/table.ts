@@ -16,7 +16,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 're
 import type { SortComparators } from './tableSort'
 // Type-only (erased at build) — no runtime dependency on the React module.
 import type { ResizeScope } from './columnResize'
-import type { DittoOption, PathsOption, TableRun } from './tableRuns'
+import type { DittoOption, GroupRows, PathsOption, TableRun } from './tableRuns'
 
 /** What a viewer can say about a column without knowing its format.
  *
@@ -71,6 +71,33 @@ export interface TableCellCtx<C extends TableColumn = TableColumn> {
  *  library hands back the node it would have rendered and gets out of
  *  the way. */
 export type TableCellRenderer<C extends TableColumn = TableColumn> = (ctx: TableCellCtx<C>) => ReactNode
+
+/** A run in a `ditto` column, as its merged cell sees it: the viewer draws
+ *  each run (mode ≠ `'none'`) as one cell spanning its rows, and a
+ *  {@link RunRenderer} fills it. The built-ins (`runRenderer`) use nothing
+ *  but this, so a consumer's own renderer is on equal footing. */
+export interface RunCellCtx<C extends TableColumn = TableColumn> {
+  /** The run's first value. */
+  value: unknown
+  column: C
+  /** The run's rows, in display order. */
+  rows: Record<string, unknown>[]
+  /** Display rows the cell spans: the run's rows plus any group header rows
+   *  inside it. */
+  span: number
+  /** Each run row's display offset within the span, from 0 — so row `k`
+   *  occupies `[offsets[k], offsets[k] + 1) / span` of the cell's height. */
+  offsets: number[]
+  /** The first row's cell as the viewer would draw it (after `renderCell`
+   *  and elision). */
+  defaultNode: ReactNode
+  /** `top` for a `position: sticky` value, so it floats just under the
+   *  table's sticky header. */
+  stickyTop: number
+  path: string
+}
+
+export type RunRenderer<C extends TableColumn = TableColumn> = (ctx: RunCellCtx<C>) => ReactNode
 
 /** Build a {@link TableCellCtx}, with `prevRow` as a lazy getter over `at`. */
 export function tableCellCtx<C extends TableColumn>(ctx: Omit<TableCellCtx<C>, 'prevRow'>): TableCellCtx<C> {
@@ -188,18 +215,20 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
    *  100. */
   pageSize?: number
   /** Columns whose runs of equal values collapse, so the eye lands where
-   *  a column changes. A list of names draws each run with a ditto mark
-   *  (`〃`, value on its title); a record picks a mode per column — `'mark'`,
-   *  `'sticky'` (one merged cell whose value floats at the top of the run's
-   *  visible part), `'line'` (a rule down the run), or `'none'` (computed
-   *  for `ctx.run`, not drawn) — optionally with a `key` (run on a derived
-   *  value, e.g. a relative-time bucket) and a `min` length. See
-   *  {@link RunSpec}.
+   *  a column changes. Each run renders as one cell spanning its rows, its
+   *  value floating at the top of the run's visible part as the table
+   *  scrolls; the mode picks what's drawn below it: nothing (`'sticky'`,
+   *  the default), `〃` per row (`'mark'`, what a list of names means), a
+   *  rule ending in `└` (`'line'`), or a rule with arrowheads (`'arrow'`).
+   *  `'none'` computes runs (`ctx.run`) without merging. Per column:
+   *  a `key` (run on a derived value, e.g. a relative-time bucket), `min`
+   *  length, `float: false`, or your own `render` ({@link RunRenderer}).
+   *  See {@link RunSpec}.
    *
-   *  Runs are computed on the rendered page in display order, so a run
-   *  spanning a page boundary restarts. Empty values never join a run.
-   *  `'mark'`/`'line'` chain ahead of `renderCell` (which receives the mark
-   *  as `defaultNode`); a `'sticky'` run renders its first cell only. */
+   *  Runs are computed on the rendered page in display order (over visible
+   *  rows, when groups collapse), so a run spanning a page boundary
+   *  restarts. Empty values never join a run. `renderCell` is called for a
+   *  run's first cell only; its output is the run renderer's `defaultNode`. */
   ditto?: DittoOption
   /** Columns holding `/`-separated paths, drawn so the part that changes
    *  stands out. A list of names dims, in each row, the whole segments it
@@ -210,6 +239,12 @@ export interface TableViewerOptions<C extends TableColumn = TableColumn> {
    *  full path, and copying it yields the full path. A `scheme://` counts as
    *  part of the first segment. See {@link PathMode}. */
   paths?: PathsOption
+  /** Row groups: each group a collapsible header row above its rows, nested
+   *  via `children`. `pathGroups(col)` (a multi-level path tree; what
+   *  `paths: { col: 'tree' }` uses) and `runGroups(col)` are built in; any
+   *  {@link GroupRows} works. Collapse state persists via `usePersistedState`
+   *  (`?fold=`). */
+  groups?: GroupRows
   /** How long cell values that outgrow their column are rendered — the
    *  clip and the way the full value comes back. `true`/absent is the
    *  batteries-included default (clip at 30em, native `title` = the full

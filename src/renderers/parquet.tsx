@@ -54,8 +54,9 @@ export type {
   TableHeaderCtx, TableHeaderRenderer, TableViewerOptions,
 } from './table'
 export { chainCellRenderers, repeatsAbove } from './table'
-export { dittoMark, dittoRenderer } from './ditto'
-export type { DittoOption, PathMode, PathsOption, RunMode, RunSpec, TableRun } from './tableRuns'
+export { dittoMark, dittoRenderer, runRenderer } from './ditto'
+export { pathGroups, runGroups } from './tableRuns'
+export type { DittoOption, GroupRows, PathMode, PathsOption, RowGroup, RunMode, RunSpec, TableRun } from './tableRuns'
 
 // Re-exported so a consumer writing a `renderCell` for a temporal
 // column can reuse the same reading + formatting the default does,
@@ -148,7 +149,7 @@ export function makeParquetViewer(opts: ParquetViewerOptions = {}) {
   }
 }
 
-export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, ditto, paths, foldConstantColumns = false, compressors, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
+export function ParquetViewer({ store, path, usePersistedState, renderCell, renderHeader, cellProps, headerProps, inferTimestamps = true, alignNumeric = true, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, pageSize = ROWS_PER_PAGE, ditto, paths, groups, foldConstantColumns = false, compressors, onPage, onCellHover, elide, resizableColumns = false }: { store: Store; path: string; usePersistedState?: PersistedState } & ParquetViewerOptions) {
   const { meta, error: metaError } = useParquetMeta(store, path)
 
   // 0-indexed row-group pagination. Default `useState` (in-memory);
@@ -459,6 +460,8 @@ export function ParquetViewer({ store, path, usePersistedState, renderCell, rend
             el={el}
             {...(ditto ? { ditto } : {})}
             {...(paths ? { paths } : {})}
+            {...(groups ? { groups } : {})}
+            {...(usePersistedState ? { usePersistedState } : {})}
             {...(renderCell ? { renderCell } : {})}
             defaultNode={(value, c) => fmtCell(value, temporal.get(c.name))}
             raw={(value, c) => cellRaw(value, temporal.get(c.name))}

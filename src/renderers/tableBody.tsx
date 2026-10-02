@@ -9,13 +9,14 @@ import {
   type CSSProperties, type Key, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject,
 } from 'react'
 import {
-  applyElide, chainCellRenderers, tableCellCtx, TD_STYLE,
-  type ColStyle, type ResolvedElide, type TableCellCtx, type TableCellRenderer, type TableColumn,
+  applyElide, cellTitle, tableCellCtx, TD_STYLE,
+  type ColStyle, type ResolvedElide, type RunRenderer, type TableCellCtx, type TableCellRenderer, type TableColumn,
 } from './table'
 import { ellipsisWrap } from './elideNode'
-import { dimPathNode, dittoRenderer, runLine, treeChildNode } from './ditto'
-import { splitParent, tableLayout, type DittoOption, type PathsOption } from './tableRuns'
+import { dimPathNode, runRenderer, treeChildNode } from './ditto'
+import { groupHash, parseFolds, tableLayout, type DittoOption, type GroupRows, type PathsOption } from './tableRuns'
 import { useStableCallback } from './tableControls'
+import { defaultUseState, type PersistedState } from '../react/persistedState'
 
 export interface TableRowsProps<C extends TableColumn = TableColumn> {
   /** The page, in display order (after sort/filter). */
@@ -29,6 +30,9 @@ export interface TableRowsProps<C extends TableColumn = TableColumn> {
   el: ResolvedElide<C>
   ditto?: DittoOption
   paths?: PathsOption
+  groups?: GroupRows
+  /** Persists collapsed groups (`fold`). */
+  usePersistedState?: PersistedState
   renderCell?: TableCellRenderer<C>
   /** What the viewer renders for a value by default. */
   defaultNode: (value: unknown, column: C) => ReactNode
@@ -60,54 +64,78 @@ function useHeadHeight(tbody: RefObject<HTMLTableSectionElement | null>, on: boo
   return h
 }
 
+const INDENT_EM = 1.1
+const FOLD_BTN: CSSProperties = {
+  border: 'none', background: 'transparent', color: 'inherit', font: 'inherit', cursor: 'pointer',
+  padding: '0 0.3em 0 0', opacity: 0.6,
+}
+
 export function TableRows<C extends TableColumn = TableColumn>({
-  rows, columns, path, colStyles, widthStyle, el, ditto, paths, renderCell,
-  defaultNode, raw, rowIndex, rowKey = i => i, rowStyle, onCellHover, children,
+  rows, columns, path, colStyles, widthStyle, el, ditto, paths, groups, renderCell,
+  defaultNode, raw, rowIndex, rowKey = i => i, rowStyle, onCellHover, usePersistedState, children,
 }: TableRowsProps<C>) {
-  const layout = useMemo(() => tableLayout(rows, columns, { ditto, paths }), [rows, columns, ditto, paths])
-  const cellRenderer = useMemo(
-    () => chainCellRenderers(ditto ? dittoRenderer<C>(ditto) : undefined, renderCell),
-    [ditto, renderCell])
+  const use = usePersistedState ?? defaultUseState
+  const [foldRaw, setFoldRaw] = use<string>('fold', '')
+  const folded = useMemo(() => parseFolds(foldRaw), [foldRaw])
+  const toggleFold = (key: string) => {
+    const h = groupHash(key)
+    const next = new Set(folded)
+    if (next.has(h)) next.delete(h)
+    else next.add(h)
+    setFoldRaw([...next].join(''))
+  }
+  const layout = useMemo(
+    () => tableLayout(rows, columns, { ditto, paths, ...(groups ? { groups } : {}), folded }),
+    [rows, columns, ditto, paths, groups, folded])
   const notifyHover = useStableCallback(onCellHover)
   const tbody = useRef<HTMLTableSectionElement>(null)
-  const anySticky = [...layout.specs.values()].some(s => s.mode === 'sticky')
-  const headH = useHeadHeight(tbody, anySticky)
+  const anyMerged = [...layout.specs.values()].some(s => s.mode !== 'none')
+  const headH = useHeadHeight(tbody, anyMerged)
+  const renderers = useMemo(() => new Map([...layout.specs].map(([c, s]) => [
+    c, s.mode === 'none' ? undefined : (s.render ?? runRenderer<C>(s.mode, { float: s.float, every: s.every })) as RunRenderer<C> | undefined,
+  ])), [layout.specs])
 
-  // Display index of each page row (parent rows shift them), for a sticky
-  // run's `rowSpan`; and per column, the last display row a span covers.
+  // Display index of each visible page row (group headers shift them), and
+  // the visible rows in order, for a run's span; per column, the last
+  // display row a merged run covers.
   const displayOf: number[] = []
-  layout.items.forEach((it, d) => { if (it.kind === 'row') displayOf[it.i] = d })
+  const order: number[] = []
+  layout.items.forEach((it, d) => { if (it.kind === 'row') { displayOf[it.i] = d; order.push(it.i) } })
+  const posOf: number[] = []
+  order.forEach((i, k) => { posOf[i] = k })
   const coveredTo = new Map<string, number>()
   const covered = (c: string, d: number) => (coveredTo.get(c) ?? -1) >= d
   const width = (c: string) => widthStyle?.(c) ?? {}
 
   const trs = layout.items.map((it, d) => {
-    if (it.kind === 'parent') {
-      const next = rows[it.first]
-      const prev = rows[it.first - 1]
+    if (it.kind === 'group') {
+      const { group: g, depth, collapsed, size } = it
+      const label = typeof g.label === 'string' && g.prefix
+        // Keep the prefix's head in the text (invisibly), so a copy is the full prefix.
+        ? <><span style={{ fontSize: 0 }}>{g.prefix.slice(0, g.prefix.length - g.label.length)}</span>{g.label}</>
+        : g.label
       return (
-        <tr key={`parent:${rowKey(it.first)}`} data-parent="" style={rowStyle}>
+        <tr key={`group:${g.key}`} data-group={g.key} data-depth={depth} style={rowStyle}>
           {columns.map(c => {
             if (covered(c.name, d)) return null
             const st = colStyles.get(c.name)
             const style = { ...(st?.cell ?? TD_STYLE), ...width(c.name) }
-            let node: ReactNode = null
-            let title: string | undefined
-            if (c.name === it.column) {
-              node = ellipsisWrap(st?.ellipsis ?? 'end', dimPathNode(it.prefix, prev?.[c.name]), undefined)
-              title = it.prefix
-            } else {
-              // A `'line'`/`'arrow'` run continuing past this row keeps its rule.
-              const run = layout.runs.get(c.name)?.[it.first]
-              const mode = layout.specs.get(c.name)?.mode
-              if ((mode === 'line' || mode === 'arrow') && run && !run.start) node = runLine(next[c.name], false)
-            }
-            return <td key={c.name} style={style} className={st?.cellClass} {...(title ? { title } : {})}>{node}</td>
+            if (c.name !== g.column) return <td key={c.name} style={style} className={st?.cellClass} />
+            return (
+              // `ltr`: a header is toggle + label, not a value to clip from the start.
+              <td key={c.name} style={{ ...style, direction: 'ltr', paddingLeft: `calc(${style.paddingLeft ?? '0.6em'} + ${depth * INDENT_EM}em)` }} className={st?.cellClass} {...(g.title ? { title: g.title } : {})}>
+                <button type="button" aria-expanded={!collapsed} aria-label={collapsed ? 'expand' : 'collapse'} onClick={() => toggleFold(g.key)} style={FOLD_BTN}>
+                  {collapsed ? '▸' : '▾'}
+                </button>
+                {label}
+                {collapsed && <span style={{ opacity: 0.5 }}>{` · ${size.toLocaleString()} row${size === 1 ? '' : 's'}`}</span>}
+              </td>
+            )
           })}
         </tr>
       )
     }
-    const { i } = it
+    const { i, depth, group } = it
     const row = rows[i]
     return (
       <tr key={rowKey(i)} style={rowStyle}>
@@ -121,21 +149,23 @@ export function TableRows<C extends TableColumn = TableColumn>({
           // Path elision replaces the default node; the full path goes on the
           // title below, unless a `renderCell` takes the cell over.
           let start = base
+          let indent = 0
           const pathMode = layout.paths.get(c.name)
           const isPath = pathMode !== undefined && typeof value === 'string'
           if (isPath) {
-            if (pathMode === 'tree' && it.tree) {
-              const [parent, tail] = splitParent(value)
-              start = treeChildNode(parent, tail, it.tree.last)
+            if (group?.prefix !== undefined && group.column === c.name && value.startsWith(group.prefix)) {
+              start = treeChildNode(group.prefix, value.slice(group.prefix.length), i === group.end - 1)
+              indent = depth
             } else {
-              start = dimPathNode(value, rows[i - 1]?.[c.name])
+              const above = order[posOf[i] - 1]
+              start = dimPathNode(value, above === undefined ? undefined : rows[above][c.name])
             }
           }
           const ctx = tableCellCtx<C>({
             value, column: c, row, at: dr => rows[i + dr], rowIndex: rowIndex(i), path, defaultNode: start,
             ...(run ? { run } : {}),
           })
-          const rendered = cellRenderer ? cellRenderer(ctx) : start
+          const rendered = renderCell ? renderCell(ctx) : start
           // A renderer returning `defaultNode` untouched leaves the cell
           // default: it keeps the native title and string-aware ellipsis.
           const custom = rendered !== base
@@ -146,9 +176,11 @@ export function TableRows<C extends TableColumn = TableColumn>({
           const elided = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row, path, raw: raw?.(value, c), ellipsis })
           const { node } = elided
           let { title, onMouseEnter: measure } = elided
-          if (isPath && rendered === start && el.tooltip === 'native') {
-            title = value
-            measure = undefined
+          const runRender = renderers.get(c.name)
+          // A merged run's title is its value, wherever in the run you hover.
+          if ((isPath && rendered === start && el.tooltip === 'native') || (run?.start && runRender && el.tooltip === 'native' && !custom)) {
+            const t = cellTitle(value)
+            if (t !== undefined) { title = t; measure = undefined }
           }
           const hoverEnter = onCellHover ? () => notifyHover(ctx) : undefined
           const handlers = {
@@ -156,23 +188,34 @@ export function TableRows<C extends TableColumn = TableColumn>({
             ...(onCellHover ? { onMouseLeave: () => notifyHover(null) } : {}),
           }
           const tips = title != null ? { title } : {}
-          const style = { ...(st?.cell ?? TD_STYLE), ...width(c.name) }
-          if (run?.start && layout.specs.get(c.name)?.mode === 'sticky') {
-            // One cell spanning the run (parent rows included); its value
-            // sticks under the header while any of the run is in view. The
-            // clip moves to the inner box: an `overflow: hidden` cell would
-            // be the sticky box's scroll container, and it'd never move.
-            const rowSpan = displayOf[i + run.length - 1] - d + 1
-            coveredTo.set(c.name, d + rowSpan - 1)
+          const style: CSSProperties = {
+            ...(st?.cell ?? TD_STYLE), ...width(c.name),
+            ...(indent ? { paddingLeft: `calc(${(st?.cell ?? TD_STYLE).paddingLeft ?? '0.6em'} + ${indent * INDENT_EM}em)` } : {}),
+          }
+          if (run?.start && runRender) {
+            // One cell spanning the run (group rows included), filled by the
+            // run renderer. The clip moves to the renderer's own box: an
+            // `overflow: hidden` cell would be a floating value's scroll
+            // container, and it'd never move.
+            const runRows = order.slice(posOf[i], posOf[i] + run.length)
+            const spanEnd = displayOf[runRows[runRows.length - 1]]
+            const span = spanEnd - d + 1
+            coveredTo.set(c.name, spanEnd)
+            const content = runRender({
+              value, column: c, rows: runRows.map(k => rows[k]), span,
+              offsets: runRows.map(k => displayOf[k] - d), defaultNode: node, stickyTop: headH, path,
+            })
             return (
-              <td key={c.name} rowSpan={rowSpan} data-run={run.length} className={st?.cellClass} style={{ ...style, overflow: 'visible', verticalAlign: 'top' }}>
-                <div
-                  {...tips}
-                  {...handlers}
-                  style={{ position: 'sticky', top: headH, maxWidth: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                >
-                  {node}
-                </div>
+              <td
+                key={c.name}
+                rowSpan={span}
+                data-run={run.length}
+                className={st?.cellClass}
+                style={{ ...style, overflow: 'visible', verticalAlign: 'top', position: 'relative' }}
+                {...tips}
+                {...handlers}
+              >
+                {content}
               </td>
             )
           }

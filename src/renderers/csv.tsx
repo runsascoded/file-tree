@@ -25,8 +25,9 @@ import type { PersistedState } from '../react/persistedState'
 
 export type { TableCellCtx, TableCellRenderer, TableColumn, TableViewerOptions } from './table'
 export { chainCellRenderers, repeatsAbove } from './table'
-export { dittoMark, dittoRenderer } from './ditto'
-export type { DittoOption, PathMode, PathsOption, RunMode, RunSpec, TableRun } from './tableRuns'
+export { dittoMark, dittoRenderer, runRenderer } from './ditto'
+export { pathGroups, runGroups } from './tableRuns'
+export type { DittoOption, GroupRows, PathMode, PathsOption, RowGroup, RunMode, RunSpec, TableRun } from './tableRuns'
 
 const ROW_STYLE: CSSProperties = { borderTop: '1px solid rgba(127,127,127,0.15)' }
 /** A CSV value is a string, drawn as itself. */
@@ -51,7 +52,7 @@ export function makeCsvViewer(opts: CsvViewerOptions = {}) {
   }
 }
 
-export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, ditto, paths, onPage, onCellHover, elide, resizableColumns = false }: {
+export function CsvViewer({ store, path, delimiter, usePersistedState, renderCell, renderHeader, cellProps, headerProps, columnPicker = false, hiddenColumns, fullLoadMaxBytes = DEFAULT_FULL_LOAD_MAX_BYTES, sortComparators, ditto, paths, groups, onPage, onCellHover, elide, resizableColumns = false }: {
   store: Store; path: string; delimiter: string; usePersistedState?: PersistedState
 } & CsvViewerOptions) {
   const { header, total, error: headerError } = useCsvHeader(store, path, delimiter)
@@ -208,6 +209,8 @@ export function CsvViewer({ store, path, delimiter, usePersistedState, renderCel
             el={el}
             {...(ditto ? { ditto } : {})}
             {...(paths ? { paths } : {})}
+            {...(groups ? { groups } : {})}
+            {...(usePersistedState ? { usePersistedState } : {})}
             {...(renderCell ? { renderCell } : {})}
             defaultNode={csvCell}
             rowIndex={i => i}
