@@ -1,7 +1,7 @@
 import { Compressors } from 'hyparquet';
 import { Store } from './index.js';
 import './renderers/parquetCompressors.js';
-import { a as TableColumn } from './columnResize-C8nZPOQ0.js';
+import { a as TableColumn } from './columnResize-1aLrril6.js';
 
 /** Temporal inference + formatting for tabular cells.
  *

@@ -132,6 +132,7 @@ function resolveColStyles(columns, path, opts, isNumeric, el = ELIDE_DEFAULTS) {
 }
 
 // src/renderers/tableBody.tsx
+var import_react_dom = require("react-dom");
 var import_react4 = require("react");
 
 // src/renderers/elideNode.tsx
@@ -343,26 +344,38 @@ function tableLayout(rows, columns, opts) {
   const groups = groupFn ? groupFn(rows) : [];
   const folded = opts.folded ?? /* @__PURE__ */ new Set();
   const items = [];
-  const walk = (gs, lo, hi, depth, parent) => {
+  const walk = (gs, lo, hi, ancestors) => {
+    const depth = ancestors.length;
+    const parent = ancestors[depth - 1];
+    const row = (i2) => ({ kind: "row", i: i2, depth, ...parent ? { group: parent } : {}, ancestors });
     let i = lo;
     for (const g of gs) {
-      for (; i < g.start; i++) items.push({ kind: "row", i, depth, ...parent ? { group: parent } : {} });
+      for (; i < g.start; i++) items.push(row(i));
       const collapsed = folded.has(groupHash(g.key));
-      items.push({ kind: "group", group: g, depth, collapsed, size: g.end - g.start });
-      if (!collapsed) walk(g.children ?? [], g.start, g.end, depth + 1, g);
+      items.push({ kind: "group", group: g, depth, collapsed, size: g.end - g.start, ancestors });
+      if (!collapsed) walk(g.children ?? [], g.start, g.end, [...ancestors, g]);
       i = g.end;
     }
-    for (; i < hi; i++) items.push({ kind: "row", i, depth, ...parent ? { group: parent } : {} });
+    for (; i < hi; i++) items.push(row(i));
   };
-  walk(groups, 0, rows.length, 0);
-  const visible = items.flatMap((it) => it.kind === "row" ? [it.i] : []);
-  const visRows = visible.map((i) => rows[i]);
-  const runs = new Map([...specs].map(([c, s]) => {
-    const vr = computeRuns(visRows, c, s);
+  walk(groups, 0, rows.length, []);
+  const runs = new Map([...specs].map(([c, spec]) => {
     const out = new Array(rows.length).fill(void 0);
-    visible.forEach((i, k) => {
-      out[i] = vr[k];
-    });
+    let seg = [];
+    const flush = () => {
+      const vr = computeRuns(seg.map((i) => rows[i]), c, spec);
+      seg.forEach((i, k) => {
+        out[i] = vr[k];
+      });
+      seg = [];
+    };
+    for (const it of items) {
+      if (it.kind === "row") {
+        if (it.ancestors.some((g) => g.uniform && g.column === c)) flush();
+        else seg.push(it.i);
+      } else if (it.group.column === c) flush();
+    }
+    flush();
     return [c, out];
   }));
   return { items, runs, specs, ...pm };
@@ -633,6 +646,16 @@ var FOLD_BTN = {
   padding: "0 0.3em 0 0",
   opacity: 0.6
 };
+var ROW_LINE = "rgba(127,127,127,0.24)";
+var ROW_STYLE = { borderTop: `1px solid ${ROW_LINE}` };
+var ROW_HOVER = "rgba(127,127,127,0.12)";
+function scroller(el) {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if (oy === "auto" || oy === "scroll") return p;
+  }
+  return window;
+}
 function TableRows({
   rows,
   columns,
@@ -670,7 +693,8 @@ function TableRows({
   const notifyHover = useStableCallback(onCellHover);
   const tbody = (0, import_react4.useRef)(null);
   const anyMerged = [...layout.specs.values()].some((s) => s.mode !== "none");
-  const headH = useHeadHeight(tbody, anyMerged);
+  const anyGroups = layout.items.some((it) => it.kind === "group");
+  const headH = useHeadHeight(tbody, anyMerged || anyGroups);
   const renderers = (0, import_react4.useMemo)(() => new Map([...layout.specs].map(([c, s]) => [
     c,
     s.mode === "none" ? void 0 : s.render ?? runRenderer(s.mode, { float: s.float, every: s.every })
@@ -687,126 +711,275 @@ function TableRows({
   order.forEach((i, k) => {
     posOf[i] = k;
   });
+  const merges = /* @__PURE__ */ new Map();
+  for (const c of columns) {
+    if (!renderers.get(c.name)) continue;
+    const runs = layout.runs.get(c.name);
+    for (const i of order) {
+      const run = runs[i];
+      if (!run?.start) continue;
+      const runRows = order.slice(posOf[i], posOf[i] + run.length);
+      let d0 = displayOf[i];
+      for (; ; ) {
+        const above = layout.items[d0 - 1];
+        if (above?.kind !== "group" || above.group.column === c.name) break;
+        d0--;
+      }
+      if (!merges.has(d0)) merges.set(d0, /* @__PURE__ */ new Map());
+      merges.get(d0).set(c.name, { i, d0, end: displayOf[runRows[runRows.length - 1]], runRows });
+    }
+  }
+  const id = (0, import_react4.useId)().replace(/[^a-zA-Z0-9_-]/g, "");
+  const hoverStyle = (0, import_react4.useRef)(null);
+  (0, import_react4.useLayoutEffect)(() => {
+    if (typeof document === "undefined") return;
+    const st = document.createElement("style");
+    document.head.appendChild(st);
+    hoverStyle.current = st;
+    return () => {
+      st.remove();
+      hoverStyle.current = null;
+    };
+  }, []);
+  const setHover = (d) => {
+    tbody.current?.style.setProperty("--ft-hover", String(d ?? -1e4));
+    if (hoverStyle.current) {
+      hoverStyle.current.textContent = d === null ? "" : `tbody[data-ft="${id}"] > tr[data-d="${d}"] > td:not([rowspan]) { background: ${ROW_HOVER}; }`;
+    }
+  };
+  const onMouseMove = (e) => {
+    const td = e.target.closest("td");
+    const tr = td?.parentElement;
+    if (!td || !tr?.dataset.d) return setHover(null);
+    let d = Number(tr.dataset.d);
+    if (td.rowSpan > 1) {
+      const r = td.getBoundingClientRect();
+      d += Math.min(td.rowSpan - 1, Math.max(0, Math.floor((e.clientY - r.top) / r.height * td.rowSpan)));
+    }
+    setHover(d);
+  };
+  const [crumbs, setCrumbs] = (0, import_react4.useState)([]);
+  const [crumbHost, setCrumbHost] = (0, import_react4.useState)(null);
+  const crumbCol = layout.items.find((it) => it.kind === "group")?.group.column;
+  (0, import_react4.useLayoutEffect)(() => {
+    const tb = tbody.current;
+    const table = tb?.parentElement;
+    const ci = crumbCol === void 0 ? -1 : columns.findIndex((c) => c.name === crumbCol);
+    const th = ci < 0 ? null : table?.querySelector(`:scope > thead > tr > th:nth-child(${ci + 1})`) ?? null;
+    if (!tb || !th) {
+      setCrumbHost(null);
+      setCrumbs([]);
+      return;
+    }
+    if (getComputedStyle(th).position === "static") th.style.position = "relative";
+    setCrumbHost(th);
+    const sc = scroller(tb);
+    const update = () => {
+      const top = th.getBoundingClientRect().bottom;
+      const trs2 = tb.querySelectorAll(":scope > tr[data-d]");
+      const rowH = trs2[0]?.getBoundingClientRect().height ?? 20;
+      const firstBelow = (y) => {
+        for (const tr of trs2) if (tr.getBoundingClientRect().bottom > y + 1) return Number(tr.dataset.d);
+        return -1;
+      };
+      const chainAt = (d) => {
+        const it = layout.items[d];
+        return it ? it.ancestors : [];
+      };
+      let chain = chainAt(firstBelow(top));
+      chain = chainAt(firstBelow(top + chain.length * rowH));
+      chain = chain.filter((g) => {
+        const tr = tb.querySelector(`:scope > tr[data-group="${CSS.escape(g.key)}"]`);
+        return !tr || tr.getBoundingClientRect().top < top - 1;
+      });
+      setCrumbs((prev) => prev.length === chain.length && prev.every((g, k) => g.key === chain[k].key) ? prev : chain);
+    };
+    update();
+    sc.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      sc.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [layout, crumbCol, columns]);
+  const scrollToGroup = (g) => {
+    const tb = tbody.current;
+    const tr = tb?.querySelector(`:scope > tr[data-group="${CSS.escape(g.key)}"]`);
+    const th = crumbHost;
+    if (!tb || !tr || !th) return;
+    const sc = scroller(tb);
+    const delta = tr.getBoundingClientRect().top - th.getBoundingClientRect().bottom;
+    if (sc === window) window.scrollBy(0, delta);
+    else sc.scrollTop += delta;
+  };
+  const width = (c) => widthStyle?.(c) ?? {};
   const coveredTo = /* @__PURE__ */ new Map();
   const covered = (c, d) => (coveredTo.get(c) ?? -1) >= d;
-  const width = (c) => widthStyle?.(c) ?? {};
-  const trs = layout.items.map((it, d) => {
-    if (it.kind === "group") {
-      const { group: g, depth: depth2, collapsed, size } = it;
-      const label = typeof g.label === "string" && g.prefix ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontSize: 0 }, children: g.prefix.slice(0, g.prefix.length - g.label.length) }),
-        g.label
-      ] }) : g.label;
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("tr", { "data-group": g.key, "data-depth": depth2, style: rowStyle, children: columns.map((c) => {
-        if (covered(c.name, d)) return null;
-        const st = colStyles.get(c.name);
-        const style = { ...st?.cell ?? TD_STYLE, ...width(c.name) };
-        if (c.name !== g.column) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("td", { style, className: st?.cellClass }, c.name);
-        return (
-          // `ltr`: a header is toggle + label, not a value to clip from the start.
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("td", { style: { ...style, direction: "ltr", paddingLeft: `calc(${style.paddingLeft ?? "0.6em"} + ${depth2 * INDENT_EM}em)` }, className: st?.cellClass, ...g.title ? { title: g.title } : {}, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", "aria-expanded": !collapsed, "aria-label": collapsed ? "expand" : "collapse", onClick: () => toggleFold(g.key), style: FOLD_BTN, children: collapsed ? "\u25B8" : "\u25BE" }),
-            label,
-            collapsed && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { opacity: 0.5 }, children: ` \xB7 ${size.toLocaleString()} row${size === 1 ? "" : "s"}` })
-          ] }, c.name)
-        );
-      }) }, `group:${g.key}`);
-    }
+  const cellBase = (c) => ({ ...colStyles.get(c.name)?.cell ?? TD_STYLE, ...width(c.name) });
+  const indentStyle = (c, depth) => depth ? { paddingLeft: `calc(${cellBase(c).paddingLeft ?? "0.6em"} + ${depth * INDENT_EM}em)` } : {};
+  const groupLabel = (g, collapsed, size, onToggle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", "aria-expanded": !collapsed, "aria-label": collapsed ? "expand" : "collapse", onClick: onToggle ?? (() => toggleFold(g.key)), style: FOLD_BTN, children: collapsed ? "\u25B8" : "\u25BE" }),
+    typeof g.label === "string" && g.prefix ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontSize: 0 }, children: g.prefix.slice(0, g.prefix.length - g.label.length) }),
+      g.label
+    ] }) : g.label,
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { opacity: 0.45 }, children: ` \xB7 ${size.toLocaleString()}${collapsed ? ` row${size === 1 ? "" : "s"}` : ""}` })
+  ] });
+  const dataCell = (it, c) => {
     const { i, depth, group } = it;
     const row = rows[i];
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("tr", { style: rowStyle, children: columns.map((c) => {
+    const st = colStyles.get(c.name);
+    const ellipsis = st?.ellipsis ?? "end";
+    const value = row[c.name];
+    const run = layout.runs.get(c.name)?.[i];
+    const base = defaultNode(value, c);
+    let start = base;
+    let indent = 0;
+    const pathMode = layout.paths.get(c.name);
+    const isPath = pathMode !== void 0 && typeof value === "string";
+    if (isPath) {
+      if (group?.prefix !== void 0 && group.column === c.name && value.startsWith(group.prefix)) {
+        start = treeChildNode(group.prefix, value.slice(group.prefix.length), i === group.end - 1);
+        indent = depth;
+      } else {
+        const above = order[posOf[i] - 1];
+        start = dimPathNode(value, above === void 0 ? void 0 : rows[above][c.name]);
+      }
+    }
+    const ctx = tableCellCtx({
+      value,
+      column: c,
+      row,
+      at: (dr) => rows[i + dr],
+      rowIndex: rowIndex(i),
+      path,
+      defaultNode: start,
+      ...run ? { run } : {}
+    });
+    const stated = it.ancestors.some((g) => g.uniform && g.column === c.name);
+    const rendered = stated ? null : renderCell ? renderCell(ctx) : start;
+    const custom = rendered !== base;
+    const wrapped = ellipsisWrap(ellipsis, rendered, !custom && typeof value === "string" ? value : void 0);
+    const elided = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row, path, raw: raw?.(value, c), ellipsis });
+    const { node } = elided;
+    let { title, onMouseEnter: measure } = elided;
+    if (!stated && (isPath && rendered === start && el.tooltip === "native" || run?.start && renderers.get(c.name) && el.tooltip === "native" && !custom)) {
+      const t = cellTitle(value);
+      if (t !== void 0) {
+        title = t;
+        measure = void 0;
+      }
+    }
+    const hoverEnter = onCellHover ? () => notifyHover(ctx) : void 0;
+    const props = {
+      ...title != null ? { title } : {},
+      ...measure || hoverEnter ? { onMouseEnter: (e) => {
+        measure?.(e);
+        hoverEnter?.();
+      } } : {},
+      ...onCellHover ? { onMouseLeave: () => notifyHover(null) } : {}
+    };
+    return { node, props, value, style: { ...cellBase(c), ...indentStyle(c, indent) } };
+  };
+  const mergedCell = (m, c, d) => {
+    const it = layout.items[displayOf[m.i]];
+    const { node, props, value, style } = dataCell(it, c);
+    const span = m.end - d + 1;
+    coveredTo.set(c.name, m.end);
+    const content = renderers.get(c.name)({
+      value,
+      column: c,
+      rows: m.runRows.map((k) => rows[k]),
+      span,
+      offsets: m.runRows.map((k) => displayOf[k] - d),
+      defaultNode: node,
+      stickyTop: headH,
+      path
+    });
+    const slot = `calc(100% / ${span})`;
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      "td",
+      {
+        rowSpan: span,
+        "data-run": m.runRows.length,
+        className: colStyles.get(c.name)?.cellClass,
+        style: { ...style, overflow: "visible", verticalAlign: "top", position: "relative" },
+        ...props,
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { "aria-hidden": true, style: {
+            position: "absolute",
+            inset: 0,
+            overflow: "hidden",
+            pointerEvents: "none",
+            backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent calc(${slot} - 1px), ${ROW_LINE} calc(${slot} - 1px), ${ROW_LINE} ${slot})`
+          }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: {
+            position: "absolute",
+            left: 0,
+            right: 0,
+            height: slot,
+            background: ROW_HOVER,
+            top: `calc((var(--ft-hover, -10000) - ${d}) * 100% / ${span})`
+          } }) }),
+          content
+        ]
+      },
+      c.name
+    );
+  };
+  const trs = layout.items.map((it, d) => {
+    const starts = merges.get(d);
+    const cells = columns.map((c) => {
+      const m = starts?.get(c.name);
+      if (m) return mergedCell(m, c, d);
       if (covered(c.name, d)) return null;
       const st = colStyles.get(c.name);
-      const ellipsis = st?.ellipsis ?? "end";
-      const value = row[c.name];
-      const run = layout.runs.get(c.name)?.[i];
-      const base = defaultNode(value, c);
-      let start = base;
-      let indent = 0;
-      const pathMode = layout.paths.get(c.name);
-      const isPath = pathMode !== void 0 && typeof value === "string";
-      if (isPath) {
-        if (group?.prefix !== void 0 && group.column === c.name && value.startsWith(group.prefix)) {
-          start = treeChildNode(group.prefix, value.slice(group.prefix.length), i === group.end - 1);
-          indent = depth;
-        } else {
-          const above = order[posOf[i] - 1];
-          start = dimPathNode(value, above === void 0 ? void 0 : rows[above][c.name]);
-        }
-      }
-      const ctx = tableCellCtx({
-        value,
-        column: c,
-        row,
-        at: (dr) => rows[i + dr],
-        rowIndex: rowIndex(i),
-        path,
-        defaultNode: start,
-        ...run ? { run } : {}
-      });
-      const rendered = renderCell ? renderCell(ctx) : start;
-      const custom = rendered !== base;
-      const wrapped = ellipsisWrap(ellipsis, rendered, !custom && typeof value === "string" ? value : void 0);
-      const elided = applyElide(el, { value, node: wrapped, hasCustomRender: custom, column: c, row, path, raw: raw?.(value, c), ellipsis });
-      const { node } = elided;
-      let { title, onMouseEnter: measure } = elided;
-      const runRender = renderers.get(c.name);
-      if (isPath && rendered === start && el.tooltip === "native" || run?.start && runRender && el.tooltip === "native" && !custom) {
-        const t = cellTitle(value);
-        if (t !== void 0) {
-          title = t;
-          measure = void 0;
-        }
-      }
-      const hoverEnter = onCellHover ? () => notifyHover(ctx) : void 0;
-      const handlers = {
-        ...measure || hoverEnter ? { onMouseEnter: (e) => {
-          measure?.(e);
-          hoverEnter?.();
-        } } : {},
-        ...onCellHover ? { onMouseLeave: () => notifyHover(null) } : {}
-      };
-      const tips = title != null ? { title } : {};
-      const style = {
-        ...st?.cell ?? TD_STYLE,
-        ...width(c.name),
-        ...indent ? { paddingLeft: `calc(${(st?.cell ?? TD_STYLE).paddingLeft ?? "0.6em"} + ${indent * INDENT_EM}em)` } : {}
-      };
-      if (run?.start && runRender) {
-        const runRows = order.slice(posOf[i], posOf[i] + run.length);
-        const spanEnd = displayOf[runRows[runRows.length - 1]];
-        const span = spanEnd - d + 1;
-        coveredTo.set(c.name, spanEnd);
-        const content = runRender({
-          value,
-          column: c,
-          rows: runRows.map((k) => rows[k]),
-          span,
-          offsets: runRows.map((k) => displayOf[k] - d),
-          defaultNode: node,
-          stickyTop: headH,
-          path
-        });
-        return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          "td",
-          {
-            rowSpan: span,
-            "data-run": run.length,
-            className: st?.cellClass,
-            style: { ...style, overflow: "visible", verticalAlign: "top", position: "relative" },
-            ...tips,
-            ...handlers,
-            children: content
-          },
-          c.name
+      if (it.kind === "group") {
+        const { group: g, depth, collapsed, size } = it;
+        if (c.name !== g.column) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("td", { style: cellBase(c), className: st?.cellClass }, c.name);
+        return (
+          // `ltr`: a header is toggle + label, not a value to clip from the start.
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("td", { style: { ...cellBase(c), direction: "ltr", ...indentStyle(c, depth) }, className: st?.cellClass, ...g.title ? { title: g.title } : {}, children: groupLabel(g, collapsed, size) }, c.name)
         );
       }
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("td", { style, className: st?.cellClass, ...tips, ...handlers, children: node }, c.name);
-    }) }, rowKey(i));
+      const { node, props, style } = dataCell(it, c);
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("td", { style, className: st?.cellClass, ...props, children: node }, c.name);
+    });
+    return it.kind === "group" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("tr", { "data-d": d, "data-group": it.group.key, "data-depth": it.depth, style: rowStyle, children: cells }, `group:${it.group.key}`) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("tr", { "data-d": d, style: rowStyle, children: cells }, rowKey(it.i));
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("tbody", { ref: tbody, children: [
+  const crumbBar = crumbHost && crumbs.length > 0 && (0, import_react_dom.createPortal)(
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { "data-crumbs": "", style: {
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      right: 0,
+      zIndex: 2,
+      fontWeight: 400,
+      textAlign: "left",
+      background: "var(--ft-run-bg, Canvas)",
+      boxShadow: "0 3px 6px -3px rgba(0,0,0,0.5)"
+    }, children: crumbs.map((g, k) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      "div",
+      {
+        onClick: () => scrollToGroup(g),
+        title: g.title ?? (typeof g.label === "string" ? g.label : void 0),
+        style: {
+          ...TD_STYLE,
+          maxWidth: "none",
+          cursor: "pointer",
+          direction: "ltr",
+          paddingLeft: `calc(0.6em + ${k * INDENT_EM}em)`,
+          borderBottom: `1px solid ${ROW_LINE}`
+        },
+        children: groupLabel(g, false, g.end - g.start, () => toggleFold(g.key))
+      },
+      g.key
+    )) }),
+    crumbHost
+  );
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("tbody", { ref: tbody, "data-ft": id, onMouseMove, onMouseLeave: () => setHover(null), children: [
     trs,
-    children
+    children,
+    crumbBar
   ] });
 }
 function PathNote({ note, onSort }) {
@@ -1009,7 +1182,6 @@ var BTN2 = {
   border: "1px solid rgba(127,127,127,0.4)",
   background: "transparent"
 };
-var ROW_STYLE = { borderTop: "1px solid rgba(127,127,127,0.15)" };
 var NUMERIC_KINDS = /* @__PURE__ */ new Set(["number"]);
 var plural = (n, noun) => `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 function defaultTableCell(value) {

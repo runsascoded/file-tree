@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { a as TableColumn, D as DittoOption, f as TableCellRenderer, c as RunMode, m as RunRenderer } from '../columnResize-C8nZPOQ0.js';
+import { a as TableColumn, D as DittoOption, f as TableCellRenderer, c as RunMode, m as RunRenderer } from '../columnResize-1aLrril6.js';
 import 'react/jsx-runtime';
 import '../persistedState-CB_wfbcb.js';
 

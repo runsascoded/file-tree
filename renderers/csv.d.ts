@@ -1,8 +1,8 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { Store } from '../index.js';
 export { HEADER_PROBE_BYTES, PAGE_BYTES, parseLine, useCsvHeader, useCsvPage } from './csvData.js';
-import { T as TableViewerOptions, a as TableColumn } from '../columnResize-C8nZPOQ0.js';
-export { D as DittoOption, G as GroupRows, P as PathMode, b as PathsOption, R as RowGroup, c as RunMode, d as RunSpec, e as TableCellCtx, f as TableCellRenderer, g as TableRun, h as chainCellRenderers, p as pathGroups, r as repeatsAbove, i as runGroups } from '../columnResize-C8nZPOQ0.js';
+import { T as TableViewerOptions, a as TableColumn } from '../columnResize-1aLrril6.js';
+export { D as DittoOption, G as GroupRows, P as PathMode, b as PathsOption, R as RowGroup, c as RunMode, d as RunSpec, e as TableCellCtx, f as TableCellRenderer, g as TableRun, h as chainCellRenderers, p as pathGroups, r as repeatsAbove, i as runGroups } from '../columnResize-1aLrril6.js';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
 export { dittoMark, dittoRenderer, runRenderer } from './ditto.js';
 import 'react';

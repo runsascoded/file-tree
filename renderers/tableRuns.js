@@ -157,7 +157,7 @@ function runGroups(column, opts = {}) {
       const k = String(runKey(opts, rows[i][column], rows[i]));
       const n = (seen.get(k) ?? 0) + 1;
       seen.set(k, n);
-      out.push({ key: `${column}=${k}#${n}`, start: i, end: i + r.length, column, label: k, title: k });
+      out.push({ key: `${column}=${k}#${n}`, start: i, end: i + r.length, column, label: k, title: k, uniform: true });
     });
     return out;
   };
@@ -198,26 +198,38 @@ function tableLayout(rows, columns, opts) {
   const groups = groupFn ? groupFn(rows) : [];
   const folded = opts.folded ?? /* @__PURE__ */ new Set();
   const items = [];
-  const walk = (gs, lo, hi, depth, parent) => {
+  const walk = (gs, lo, hi, ancestors) => {
+    const depth = ancestors.length;
+    const parent = ancestors[depth - 1];
+    const row = (i2) => ({ kind: "row", i: i2, depth, ...parent ? { group: parent } : {}, ancestors });
     let i = lo;
     for (const g of gs) {
-      for (; i < g.start; i++) items.push({ kind: "row", i, depth, ...parent ? { group: parent } : {} });
+      for (; i < g.start; i++) items.push(row(i));
       const collapsed = folded.has(groupHash(g.key));
-      items.push({ kind: "group", group: g, depth, collapsed, size: g.end - g.start });
-      if (!collapsed) walk(g.children ?? [], g.start, g.end, depth + 1, g);
+      items.push({ kind: "group", group: g, depth, collapsed, size: g.end - g.start, ancestors });
+      if (!collapsed) walk(g.children ?? [], g.start, g.end, [...ancestors, g]);
       i = g.end;
     }
-    for (; i < hi; i++) items.push({ kind: "row", i, depth, ...parent ? { group: parent } : {} });
+    for (; i < hi; i++) items.push(row(i));
   };
-  walk(groups, 0, rows.length, 0);
-  const visible = items.flatMap((it) => it.kind === "row" ? [it.i] : []);
-  const visRows = visible.map((i) => rows[i]);
-  const runs = new Map([...specs].map(([c, s]) => {
-    const vr = computeRuns(visRows, c, s);
+  walk(groups, 0, rows.length, []);
+  const runs = new Map([...specs].map(([c, spec]) => {
     const out = new Array(rows.length).fill(void 0);
-    visible.forEach((i, k) => {
-      out[i] = vr[k];
-    });
+    let seg = [];
+    const flush = () => {
+      const vr = computeRuns(seg.map((i) => rows[i]), c, spec);
+      seg.forEach((i, k) => {
+        out[i] = vr[k];
+      });
+      seg = [];
+    };
+    for (const it of items) {
+      if (it.kind === "row") {
+        if (it.ancestors.some((g) => g.uniform && g.column === c)) flush();
+        else seg.push(it.i);
+      } else if (it.group.column === c) flush();
+    }
+    flush();
     return [c, out];
   }));
   return { items, runs, specs, ...pm };

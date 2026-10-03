@@ -156,6 +156,9 @@ interface RowGroup {
     /** For a path group, the full prefix its rows share: rows in the group
      *  show `column`'s value after it (their tail), indented. */
     prefix?: string;
+    /** Every row in the group has the same `column` value (the label), so
+     *  rows inside leave that cell blank rather than repeat the header. */
+    uniform?: boolean;
     children?: RowGroup[];
 }
 /** Groups over a page (display order). */
@@ -178,18 +181,20 @@ declare function groupHash(key: string): string;
 declare function parseFolds(raw: string): Set<string>;
 /** One row of the rendered body: a data row (`i` indexes the page), or a
  *  group's header row. `depth` is the number of groups enclosing it;
- *  `group` the innermost. */
+ *  `ancestors` those groups, outermost first (`group` the innermost). */
 type BodyItem = {
     kind: 'row';
     i: number;
     depth: number;
     group?: RowGroup;
+    ancestors: RowGroup[];
 } | {
     kind: 'group';
     group: RowGroup;
     depth: number;
     collapsed: boolean;
     size: number;
+    ancestors: RowGroup[];
 };
 /** The page as the body draws it. */
 interface TableLayout {

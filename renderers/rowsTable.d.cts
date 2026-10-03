@@ -4,7 +4,7 @@ import { TableBrowserOptions } from './tableBrowser.cjs';
 import { MemoryTableOptions } from './memoryTableSource.cjs';
 export { inferColumns, inferKind, memoryTableSource, singleTableCatalog } from './memoryTableSource.cjs';
 import 'react';
-import '../columnResize-BMt80okS.cjs';
+import '../columnResize-Bskkv32Y.cjs';
 import './tableSource.cjs';
 
 interface RowsTableOptions extends TableBrowserOptions, MemoryTableOptions {
