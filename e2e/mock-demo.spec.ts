@@ -29,8 +29,9 @@ test.describe('MockDemo', () => {
     await expect(page.getByRole('link', { name: /^📁\s*data\/$/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*logs\/$/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^📁\s*samples\/$/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^📁\s*formats\/$/ })).toBeVisible()
 
-    await expect(page.getByText('7 entries')).toBeVisible()
+    await expect(page.getByText('8 entries')).toBeVisible()
   })
 
   test('navigates into a directory', async ({ page }) => {
@@ -78,9 +79,9 @@ test.describe('MockDemo', () => {
     await page.getByRole('button', { name: 'Treemap view' }).click()
     await expect(page).toHaveURL(/\?view=tree$/)
     // The map's own crumb bar reports the rooted node + its recursive
-    // total (95.3 KB = samples 84.7K + logs 4.4K + docs 4.8K + the rest).
+    // total (105.6 KB = samples 84.7K + formats 10.4K + logs 4.4K + docs 4.8K + the rest).
     await expect(page.getByText('root').first()).toBeVisible()
-    await expect(page.getByText('95.3 KB')).toBeVisible()
+    await expect(page.getByText('105.6 KB')).toBeVisible()
     // samples dominates the map; its cell carries label + size. Locate
     // the branch cell itself (the click handler) rather than the label
     // span inside it, which the cell div intercepts pointer events for.
@@ -106,7 +107,7 @@ test.describe('MockDemo', () => {
     // Split view (default) shows the listing and the map over one source.
     // Drilling the map must move the *listing* too, not just the map — the
     // regression that motivated routing dir clicks through navigation.
-    await expect(page.getByText('7 entries')).toBeVisible()
+    await expect(page.getByText('8 entries')).toBeVisible()
     const samples = page.locator('.dt-treemap-cell.branch', { hasText: 'samples' }).first()
     await expect(samples).toBeVisible()
     await samples.click({ position: { x: 30, y: 10 } })
@@ -145,7 +146,7 @@ test.describe('MockDemo', () => {
 
   test('filters entries', async ({ page }) => {
     await page.goto('/mock')
-    await expect(page.getByText('7 entries')).toBeVisible()
+    await expect(page.getByText('8 entries')).toBeVisible()
 
     const filter = page.getByRole('searchbox')
     await filter.fill('config')
@@ -153,11 +154,11 @@ test.describe('MockDemo', () => {
     await expect(page.getByRole('link', { name: 'config.json', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'config.yaml', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'README.md', exact: true })).toHaveCount(0)
-    await expect(page.getByText('2 / 7')).toBeVisible()
+    await expect(page.getByText('2 / 8')).toBeVisible()
 
     await page.getByRole('button', { name: 'clear' }).click()
     await expect(filter).toHaveValue('')
-    await expect(page.getByText('7 entries')).toBeVisible()
+    await expect(page.getByText('8 entries')).toBeVisible()
     await expect(page.getByRole('link', { name: 'README.md', exact: true })).toBeVisible()
   })
 

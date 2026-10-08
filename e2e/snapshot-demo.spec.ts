@@ -30,7 +30,7 @@ test.describe('snapshot demo', () => {
   test('diff() between the two scans, at the root', async ({ page }) => {
     await page.goto('/snapshots')
     const rows = page.getByTestId('snapshot-diff').locator('tbody tr')
-    await expect(rows).toHaveCount(8)
+    await expect(rows).toHaveCount(9)
     const cells = await rows.evaluateAll(trs => trs.map(tr => [...tr.querySelectorAll('td')].map(td => td.textContent)))
     expect(cells).toEqual([
       ['README.md', 'unchanged', '267 B', '267 B'],
@@ -38,6 +38,7 @@ test.describe('snapshot demo', () => {
       ['config.yaml', 'unchanged', '665 B', '665 B'],
       ['data/', 'unchanged', '209 B', '209 B'],
       ['docs/', 'changed', '4.5 KB', '4.8 KB'],
+      ['formats/', 'unchanged', '10.4 KB', '10.4 KB'],
       ['logs/', 'changed', '3.5 KB', '4.4 KB'],
       ['samples/', 'changed', '78.4 KB', '84.7 KB'],
       ['tmp/', 'removed', '4.0 KB', '—'],

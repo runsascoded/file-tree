@@ -1,9 +1,45 @@
 /** Demo fixture for MockStore. Designed to look like a realistic
  *  data-bucket layout — same shape consumers (ctbk, crashes) browse
  *  in production. */
+import { gzipStored, tar, zstdRaw } from './archives'
 import { CATALOG_SQLITE } from './catalog'
 import { TREEMAPS_PDF } from './paper'
 import { EVENTS_PARQUET } from './parquet'
+
+/** Training-run records, one per line: nested `config` and `tags`
+ *  exercise the JSONL table's compact-JSON cells. Deterministic. */
+const RUNS_JSONL = Array.from({ length: 16 }, (_, i) => JSON.stringify({
+  run: `run-${String.fromCharCode(97 + (i % 4))}`,
+  step: (Math.floor(i / 4) + 1) * 500,
+  loss: +(3.2 * Math.exp(-i / 20) + (i % 4) * 0.03).toFixed(4),
+  ok: i % 11 !== 7,
+  tags: i % 4 === 0 ? ['baseline'] : ['sweep', `lr-${i % 4}`],
+  config: { lr: [3e-4, 1e-4, 6e-5, 3e-5][i % 4], batch: 256, warmup: 1000 },
+})).join('\n') + '\n'
+
+const METRICS_CSV = 'step,loss,acc\n' + Array.from({ length: 12 }, (_, i) =>
+  `${(i + 1) * 100},${(2.5 * Math.exp(-i / 8)).toFixed(3)},${(0.4 + i * 0.025).toFixed(3)}`).join('\n') + '\n'
+
+/** A tarball as a release or checkpoint bundle ships: a README, data in
+ *  a few formats, and an extension-less notes file. */
+const BUNDLE_TAR = tar([
+  { name: 'bundle/', type: '5' },
+  { name: 'bundle/README.md', data: '# bundle\n\nA `.tar.gz` browsed in place: members open in the same viewers as ordinary files.\n' },
+  { name: 'bundle/metrics.csv', data: METRICS_CSV },
+  { name: 'bundle/config.json', data: JSON.stringify({ model: 'demo-1b', seed: 0, layers: 16 }, null, 2) + '\n' },
+  { name: 'bundle/NOTES', data: 'Extension-less, but reads as text, so it renders as text.\n' },
+])
+
+/** Bytes with no known type: a small binary header then noise, so the
+ *  hexdump has NULs and a printable run to show. */
+const BLOB = (() => {
+  const b = new Uint8Array(640)
+  b.set(new TextEncoder().encode('FTBLOB\x00\x01'), 0)
+  let x = 0x2545f491
+  for (let i = 8; i < b.length; i++) { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; b[i] = x & 0xff }
+  b.set(new TextEncoder().encode('a printable run in the middle'), 256)
+  return b
+})()
 
 export const DEMO_FIXTURE = {
   'README.md': '# @rdub/file-tree demo\n\nThis is a `MockStore`-backed file browser. ' +
@@ -181,4 +217,14 @@ export const DEMO_FIXTURE = {
   // row-group pruning from footer statistics — is demoed on real data
   // rather than only unit-tested.
   'samples/events.pqt': EVENTS_PARQUET,
+  // Formats beyond the classic set. JSONL renders as a table; the `.gz`
+  // twin is decompressed in the browser and dispatched on its inner
+  // extension, so it gets the same table (likewise `.csv.zst`, `.log.gz`).
+  'formats/runs.jsonl': RUNS_JSONL,
+  'formats/runs.jsonl.gz': gzipStored(RUNS_JSONL),
+  'formats/metrics.csv.zst': zstdRaw(METRICS_CSV),
+  'formats/bundle.tar.gz': gzipStored(BUNDLE_TAR),
+  'formats/blob.bin': BLOB,
+  'formats/Makefile': 'demo:\n\tpnpm dev\n\ntest:\n\tpnpm test\n',
+  'formats/2026-01-08.log.gz': gzipStored('[INFO] Rotated and gzipped\n[INFO] Opened in place, no download\n'),
 }

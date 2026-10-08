@@ -21,7 +21,10 @@ import { PdfViewer } from './PdfViewer'
 import { TextViewer } from './TextViewer'
 import { ZipEntryList } from './ZipEntryList'
 import { ZipEntryPreview } from './ZipEntryPreview'
-import { type Parsed, parsePath, basename, keyToSplat, extOf, CODE_LANG } from './parsePath'
+import { type Parsed, parsePath, parseFileKey, basename, keyToSplat, extOf, CODE_LANG, JSONL, TEXTY } from './parsePath'
+import { BinaryView } from './BinaryView'
+import { TarEntryList } from './TarEntryList'
+import { CompressedView, TarMember } from './VirtualFile'
 import { defaultUseState, type PersistedState } from './persistedState'
 import { findViewer, RegistryViewer, type ViewerEntry } from './viewers'
 
@@ -183,6 +186,11 @@ export interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
    *  render via this component (typically a range-paginated sticky-
    *  header table) instead of plaintext `<pre>`. */
   csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>
+  /** Optional JSONL renderer. When set, `.jsonl` / `.ndjson` paths
+   *  (including `.jsonl.gz` and members of a tarball) render via this
+   *  component (typically one record per table row, as `JsonlViewer`
+   *  from `@rdub/file-tree/renderers/jsonl`) instead of plaintext. */
+  jsonlRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>
   /** Optional notebook renderer. When set, `.ipynb` paths render via
    *  this component (typically a cell-by-cell view with rendered
    *  markdown cells + code outputs). */
@@ -230,22 +238,23 @@ export interface ViewerActionCtx {
   store: Store
   path: string
   kind: Parsed['kind']
-  /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
+  /** Set only when `kind` is `'zipEntry'` / `'tarEntry'`: the member name inside the archive. */
   entry?: string
 }
 
-export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>) {
+export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix = '', extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>) {
   const location = useLocation()
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`)
   const splat = location.pathname.replace(baseRe, '')
   const parsed = useMemo(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty])
+  const texty = useMemo(() => extraTexty ? new Set([...TEXTY, ...extraTexty]) : TEXTY, [extraTexty])
   const crumbs = useMemo(() => {
     const tree = buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? 'root')
     return home ? [{ label: home.label, to: home.href, kind: 'home' as const }, ...tree] : tree
   }, [parsed, routeBase, rootPrefix, home])
-  // `zipEntry` would point `getUrl` at the wrapping zip — misleading.
-  // Suppress there; entry extraction is the consumer's concern.
-  const downloadable = parsed.kind !== 'dir' && parsed.kind !== 'zipEntry'
+  // An archive member would point `getUrl` at the wrapping archive —
+  // misleading. Suppress there; entry extraction is the consumer's concern.
+  const downloadable = parsed.kind !== 'dir' && parsed.kind !== 'zipEntry' && parsed.kind !== 'tarEntry'
   const downloadName = downloadable ? basename(parsed.path) : ''
   const downloadHref = useDownloadHref(store, downloadable ? parsed.path : null)
   const ctx: ViewerActionCtx | null = parsed.kind === 'dir'
@@ -254,7 +263,7 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
         store,
         path: parsed.path,
         kind: parsed.kind,
-        ...(parsed.kind === 'zipEntry' ? { entry: parsed.entry } : {}),
+        ...(parsed.kind === 'zipEntry' || parsed.kind === 'tarEntry' ? { entry: parsed.entry } : {}),
       }
   const actionsNode = ctx && viewerActions ? viewerActions(ctx) : null
   const right = (downloadHref || actionsNode)
@@ -285,19 +294,50 @@ export function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, r
         </h1>
       )}
       <Breadcrumb crumbs={crumbs} rightSlot={right} renderCrumb={renderCrumb} />
-      <Body store={store} parsed={parsed} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} pdfRenderer={pdfRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} treemapRenderer={treemapRenderer} />
+      <Body store={store} parsed={parsed} texty={texty} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} parquetRenderer={parquetRenderer} parquetOptions={parquetOptions} viewers={viewers} jsonRenderer={jsonRenderer} jsonlRenderer={jsonlRenderer} csvRenderer={csvRenderer} notebookRenderer={notebookRenderer} pdfRenderer={pdfRenderer} codeRenderer={codeRenderer} renderCell={renderCell} filterPlaceholder={filterPlaceholder} usePersistedState={usePersistedState} treeSource={treeSource} treemapRenderer={treemapRenderer} />
     </div>
   )
 }
 
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: { store: Store; parsed: Parsed; routeBase: string; rootPrefix: string; markdownRenderer?: MarkdownRenderer; parquetRenderer?: ParquetRenderer; parquetOptions?: Record<string, unknown>; viewers?: readonly ViewerEntry<never>[]; jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode; csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>; notebookRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; pdfRenderer?: ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>; codeRenderer?: (s: string, lang: string) => ReactNode; renderCell?: CellRenderer; filterPlaceholder?: string; usePersistedState?: PersistedState; treeSource?: TreeSource; treemapRenderer?: TreemapRenderer }) {
+type ComponentRenderer = ComponentType<{ store: Store; path: string; usePersistedState?: PersistedState }>
+
+interface BodyProps {
+  store: Store
+  parsed: Parsed
+  texty: ReadonlySet<string>
+  routeBase: string
+  rootPrefix: string
+  markdownRenderer?: MarkdownRenderer
+  parquetRenderer?: ParquetRenderer
+  parquetOptions?: Record<string, unknown>
+  viewers?: readonly ViewerEntry<never>[]
+  jsonRenderer?: (s: string, ups?: PersistedState) => ReactNode
+  jsonlRenderer?: ComponentRenderer
+  csvRenderer?: ComponentType<{ store: Store; path: string; delimiter: string; usePersistedState?: PersistedState }>
+  notebookRenderer?: ComponentRenderer
+  pdfRenderer?: ComponentRenderer
+  codeRenderer?: (s: string, lang: string) => ReactNode
+  renderCell?: CellRenderer
+  filterPlaceholder?: string
+  usePersistedState?: PersistedState
+  treeSource?: TreeSource
+  treemapRenderer?: TreemapRenderer
+}
+
+function Body(props: BodyProps) {
+  const { store, parsed, texty, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer } = props
+  // Bytes that aren't an object in `store` (a decompressed file, an
+  // archive member) render through this same dispatch, over a one-file
+  // store holding them — so every viewer, registry entries included,
+  // covers `foo.csv.gz` and `bundle.tgz!/data.parquet` too.
+  const inner = (s: Store, key: string) => <Body {...props} store={s} parsed={parseFileKey(key, texty)} />
   const navigate = useNavigate()
   // The registry wins over the built-ins: a consumer registering a
   // `.parquet` viewer means they want theirs, not the prop's. `dir` and
   // `zipEntry` are excluded — the first isn't a file, and the second is
   // a path *inside* one, which the container work will handle properly
   // (`specs/viewer-registry.md`).
-  if (parsed.kind !== 'dir' && parsed.kind !== 'zipEntry') {
+  if (parsed.kind !== 'dir' && parsed.kind !== 'zipEntry' && parsed.kind !== 'tarEntry') {
     const entry = findViewer(viewers, parsed.path)
     if (entry) return <RegistryViewer entry={entry} store={store} path={parsed.path} usePersistedState={usePersistedState} />
   }
@@ -329,6 +369,10 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
         const Component = csvRenderer
         return <Component store={store} path={parsed.path} delimiter={ext === 'tsv' ? '\t' : ','} usePersistedState={usePersistedState} />
       }
+      if (JSONL.has(ext) && jsonlRenderer) {
+        const Component = jsonlRenderer
+        return <Component store={store} path={parsed.path} usePersistedState={usePersistedState} />
+      }
       return (
         <TextViewer
           store={store}
@@ -345,6 +389,12 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       return <ZipEntryList store={store} path={parsed.path} routeBase={routeBase} rootPrefix={rootPrefix} />
     case 'zipEntry':
       return <ZipEntryPreview store={store} path={parsed.path} entry={parsed.entry} markdownRenderer={markdownRenderer} />
+    case 'tar':
+      return <TarEntryList store={store} path={parsed.path} codec={parsed.codec} routeBase={routeBase} rootPrefix={rootPrefix} />
+    case 'tarEntry':
+      return <TarMember store={store} path={parsed.path} entry={parsed.entry} codec={parsed.codec} render={inner} />
+    case 'compressed':
+      return <CompressedView store={store} path={parsed.path} codec={parsed.codec} inner={parsed.inner} render={inner} />
     case 'parquet': {
       if (!parquetRenderer) return <UnsupportedView label="Parquet preview" />
       const Component = parquetRenderer
@@ -369,11 +419,7 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       return <PdfViewer store={store} path={parsed.path} />
     }
     case 'binary':
-      return (
-        <div style={{ opacity: 0.7 }}>
-          Preview not supported for this file type.
-        </div>
-      )
+      return <BinaryView store={store} path={parsed.path} />
   }
 }
 
@@ -544,10 +590,17 @@ function UnsupportedView({ label }: { label: string }) {
 }
 
 function buildCrumbs(parsed: Parsed, routeBase: string, rootPrefix: string, rootLabel: string): Crumb[] {
-  const path = parsed.kind === 'dir' ? parsed.prefix : parsed.kind === 'zipEntry' ? `${parsed.path}!/${parsed.entry}` : parsed.path
+  const baseTrimmed = routeBase.replace(/\/+$/, '')
+  if (parsed.kind === 'zipEntry' || parsed.kind === 'tarEntry') {
+    // The archive's own crumbs, then the member as one leaf: paths inside
+    // an archive have no listing of their own to link to.
+    const archive = buildCrumbs({ kind: 'binary', path: parsed.path }, routeBase, rootPrefix, rootLabel)
+    const archiveSplat = keyToSplat(parsed.path, rootPrefix)
+    return [...archive, { label: parsed.entry, to: `${baseTrimmed}/${archiveSplat}!/${parsed.entry}`, path: `${parsed.path}!/${parsed.entry}` }]
+  }
+  const path = parsed.kind === 'dir' ? parsed.prefix : parsed.path
   const splat = keyToSplat(path, rootPrefix)
   const parts = splat.split('/').filter(p => p.length > 0)
-  const baseTrimmed = routeBase.replace(/\/+$/, '')
   const crumbs: Crumb[] = [{ label: rootLabel, to: `${baseTrimmed}/`, path: rootPrefix }]
   let cum = ''
   for (const p of parts) {

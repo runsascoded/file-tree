@@ -8,6 +8,7 @@ import { makeParquetViewer, type ParquetViewerOptions } from '@rdub/file-tree/re
 import type { TableCellCtx } from '@rdub/file-tree/renderers/table'
 import { renderJsonTree } from '@rdub/file-tree/renderers/json'
 import { makeCsvViewer } from '@rdub/file-tree/renderers/csv'
+import { JsonlViewer } from '@rdub/file-tree/renderers/jsonl'
 import { NotebookViewer } from '@rdub/file-tree/renderers/notebook'
 import { renderCode } from '@rdub/file-tree/renderers/code'
 import { TreeMapView, brushRing, brushSpotlight, brushBold, type BrushStyle } from '@rdub/file-tree/renderers/treemap'
@@ -416,6 +417,7 @@ export function MockDemo() {
         renderCell={renderCell}
         jsonRenderer={renderJsonTree}
         csvRenderer={CsvViewer}
+        jsonlRenderer={JsonlViewer}
         notebookRenderer={NotebookViewer}
         codeRenderer={renderCode}
         viewerActions={renderViewerActions}

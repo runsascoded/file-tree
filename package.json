@@ -162,6 +162,11 @@
       "import": "./dist/renderers/csv.js",
       "require": "./dist/renderers/csv.cjs"
     },
+    "./renderers/jsonl": {
+      "types": "./dist/renderers/jsonl.d.ts",
+      "import": "./dist/renderers/jsonl.js",
+      "require": "./dist/renderers/jsonl.cjs"
+    },
     "./renderers/csvData": {
       "types": "./dist/renderers/csvData.d.ts",
       "import": "./dist/renderers/csvData.js",

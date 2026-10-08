@@ -47,6 +47,7 @@ export default defineConfig({
     'src/renderers/parquetData.ts',
     'src/renderers/markdown.tsx',
     'src/renderers/csv.tsx',
+    'src/renderers/jsonl.tsx',
     'src/renderers/csvData.ts',
     'src/renderers/notebook.tsx',
     'src/renderers/code.tsx',
