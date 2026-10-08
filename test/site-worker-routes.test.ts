@@ -87,7 +87,7 @@ describe('pageOg', () => {
 
   it('gives other pages the site card', () => {
     const site = {
-      title: '@rdub/file-tree — demos',
+      title: '@rdub/file-tree',
       description: 'Storage-agnostic file/directory tree browser: React UI + Store abstraction (R2, S3, GCS, HTTP, …).',
       imagePath: '/og/mock/.png',
     }

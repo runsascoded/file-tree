@@ -1,90 +1,33 @@
-import { Link } from 'react-router-dom'
-
-export function Home() {
-  return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '1.5em' }}>
-      <h1>@rdub/file-tree</h1>
-      <p>
-        Storage-agnostic file/directory tree browser. Plug a <code>Store</code> implementation
-        (R2, HTTP, mock, …) into a React component and get a directory listing + file viewer.
-      </p>
-
-      <h2>Live demos</h2>
-      <ul>
-        <li>
-          <Link to="/mock">MockStore</Link> — in-memory fixture, no server. Inspects an
-          object literal as if it were a real bucket. Best for understanding the UI without
-          infra.
-        </li>
-        <li>
-          <Link to="/http">HttpStore</Link> — talks to a backend that exposes the file-tree
-          HTTP protocol. (Demo backend: see <code>site/worker/</code> in the repo.)
-        </li>
-        <li>
-          <Link to="/s3">S3</Link> — browse any S3 bucket directly from your browser via{' '}
-          <code>S3Store</code>. Public buckets work unsigned; paste an access key for private.
-          Credentials persist in LocalStorage on your device only.
-        </li>
-        <li>
-          <Link to="/r2">R2</Link> — browse a Cloudflare R2 bucket through its S3-compatible API.
-          Same client, different endpoint.
-        </li>
-        <li>
-          <Link to="/gcs">GCS</Link> — browse a Google Cloud Storage bucket via its
-          {' '}S3-interop XML API. Unsigned public buckets, HMAC interop keys, or (server-side)
-          OAuth bearer tokens.
-        </li>
-        <li>
-          <Link to="/elide">Elide</Link> — the table viewers' <code>elide</code> option: how a
-          {' '}value too wide for its column clips, and how the clipped tail comes back (native
-          {' '}tooltip, a consumer-supplied rich tooltip, wide/x-scroll mode, or nothing).
-        </li>
-        <li>
-          <Link to="/runs">Runs</Link> — <code>ditto</code> run modes (mark, sticky, line) and
-          {' '}<code>paths</code> elision (dim, tree) on a <code>&lt;RowsTable&gt;</code> of in-memory rows.
-        </li>
-      </ul>
-
-      <h2>The <code>Store</code> interface</h2>
-      <pre><code>{`interface Store {
-  list(prefix: string, opts?: { cursor?: string; limit?: number }):
-    Promise<{ entries: Entry[]; cursor?: string }>
-  get(path: string, range?: { offset: number; length: number }):
-    Promise<{ bytes: Uint8Array; totalSize?: number; contentType?: string }>
-  capabilities?: { range: boolean }
-}`}</code></pre>
-
-      <h2>Quick start</h2>
-      <p>Plug a store into the React component:</p>
-      <pre><code>{`import { FileTree } from '@rdub/file-tree/react'
+import { useMemo } from 'react'
+import { FileTree, walkTreeSource } from '@rdub/file-tree/react'
 import { MockStore } from '@rdub/file-tree/stores/mock'
+import { renderMarkdown } from '@rdub/file-tree/renderers/markdown'
+import { renderCode } from '@rdub/file-tree/renderers/code'
+import { renderJsonTree } from '@rdub/file-tree/renderers/json'
+import { useUrlPersistedState } from '@rdub/file-tree/url-state'
+import { DOCS_FIXTURE } from '../fixtures/docs'
+import { PathSearch } from '../components/PathSearch'
 
-const store = MockStore({
-  'README.md': '# hi',
-  'data/q1.csv': 'a,b\\n1,2\\n',
-})
-
-<Route path="/files/*" element={
-  <FileTree store={store} routeBase="/files" />
-} />`}</code></pre>
-
-      <h2>Currently shipped Stores</h2>
-      <ul>
-        <li><code>R2Store(bucket, &#123; prefixes? &#125;)</code> — Cloudflare Workers R2 binding</li>
-        <li><code>S3Store(&#123; bucket, region?, endpoint?, accessKeyId?, secretAccessKey? &#125;)</code> — S3-compat (AWS / R2 / MinIO); SigV4 via <code>aws4fetch</code></li>
-        <li><code>GcsStore(&#123; bucket, accessKeyId?, secretAccessKey?, getToken? &#125;)</code> — Google Cloud Storage (unsigned / HMAC / OAuth bearer)</li>
-        <li><code>HttpStore(apiBase)</code> — browser → server proxy</li>
-        <li><code>MockStore(input)</code> — in-memory fixture (this demo + tests)</li>
-        <li><code>MultiStore(&#123; name: store, … &#125;)</code> — namespaced composite over N children</li>
-      </ul>
-      <p>Roadmap: <code>GitHubStore</code>, <code>GitLabStore</code>, plus static-bucket variants.</p>
-
-      <h2>Conformance harness</h2>
-      <p>
-        Any <code>Store</code> implementation can plug into <code>runStoreConformance(makeStore)</code>{' '}
-        and get a battery of behavioral tests for free. New backends are added with confidence
-        that they match every existing impl on listings, pagination, range reads, and 404 handling.
-      </p>
+/** The landing page is the component, browsing the project's own docs:
+ *  the root lists `README.md` + `docs/` and renders the README beneath, and
+ *  every doc is a route (`/docs/tables.md`). Mounted at the site root, so it
+ *  owns every path the demo routes don't. */
+export function Home() {
+  const store = useMemo(() => MockStore(DOCS_FIXTURE, { describe: 'file-tree' }), [])
+  const treeSource = useMemo(() => walkTreeSource(store), [store])
+  return (
+    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '1.5em' }}>
+      <PathSearch source={treeSource} routeBase="">
+        <FileTree
+          store={store}
+          routeBase=""
+          treeSource={treeSource}
+          markdownRenderer={renderMarkdown}
+          codeRenderer={renderCode}
+          jsonRenderer={renderJsonTree}
+          usePersistedState={useUrlPersistedState}
+        />
+      </PathSearch>
     </div>
   )
 }

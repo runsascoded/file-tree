@@ -32,7 +32,6 @@ export function App() {
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<Home />} />
           <Route path="/mock" element={<MockDemo />} />
           <Route path="/mock/*" element={<MockDemo />} />
           <Route path="/http" element={<HttpDemo />} />
@@ -51,6 +50,7 @@ export function App() {
           <Route path="/sql" element={<SqlStub />} />
           <Route path="/og" element={<OgPreview />} />
           <Route path="/og/*" element={<OgPreview />} />
+          <Route path="/*" element={<Home />} />
         </Routes>
       </main>
     </>

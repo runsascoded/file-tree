@@ -86,7 +86,7 @@ const MOUNT_LABELS: Record<Mount, string> = {
 }
 
 export const SITE_NAME = '@rdub/file-tree'
-const SITE_TITLE = `${SITE_NAME} — demos`
+const SITE_TITLE = SITE_NAME
 const SITE_DESCRIPTION = 'Storage-agnostic file/directory tree browser: React UI + Store abstraction (R2, S3, GCS, HTTP, …).'
 
 /** What a page's `<head>` should advertise: title, description, and

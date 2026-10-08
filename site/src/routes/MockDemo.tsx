@@ -407,7 +407,7 @@ export function MockDemo() {
         // A mounted tree links back to its host site: the title, and a first
         // breadcrumb segment before the store root.
         titleHref="/"
-        home={{ href: '/', label: 'demos' }}
+        home={{ href: '/', label: 'docs' }}
         treeSource={treeSource}
         treemapRenderer={BrushableTreeMap}
         markdownRenderer={renderMarkdown}

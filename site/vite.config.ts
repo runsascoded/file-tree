@@ -97,6 +97,9 @@ export default defineConfig({
     strictPort: true,
     host: true,
     allowedHosts: true,  // trusted-tailnet dev server, reached by bare MagicDNS name (`m3:8731`)
+    // The landing page imports the repo's `README.md` + `docs/` (see
+    // `src/fixtures/docs.ts`), which sit above this package's root.
+    fs: { allow: ['..'] },
   },
   preview: {
     port: PORT,
