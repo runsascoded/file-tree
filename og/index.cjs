@@ -42,7 +42,68 @@ function fmtSize(n) {
 }
 
 // src/react/parsePath.ts
-var TEXTY = /* @__PURE__ */ new Set(["txt", "csv", "tsv", "json", "md", "log", "yaml", "yml", "toml", "ini", "sql", "sh", "py", "ts", "tsx", "js", "jsx", "html", "css"]);
+var TEXTY = /* @__PURE__ */ new Set([
+  "txt",
+  "csv",
+  "tsv",
+  "json",
+  "jsonl",
+  "ndjson",
+  "md",
+  "markdown",
+  "log",
+  "yaml",
+  "yml",
+  "toml",
+  "ini",
+  "cfg",
+  "conf",
+  "env",
+  "sql",
+  "sh",
+  "bash",
+  "zsh",
+  "py",
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "mjs",
+  "cjs",
+  "html",
+  "css",
+  "scss",
+  "xml",
+  "go",
+  "rs",
+  "rb",
+  "java",
+  "c",
+  "cpp",
+  "h",
+  "hpp",
+  "gitignore",
+  "dockerignore",
+  "editorconfig"
+]);
+var TEXT_NAMES = /* @__PURE__ */ new Set([
+  "Makefile",
+  "Dockerfile",
+  "Justfile",
+  "Procfile",
+  "Gemfile",
+  "Rakefile",
+  "Vagrantfile",
+  "LICENSE",
+  "LICENCE",
+  "COPYING",
+  "NOTICE",
+  "AUTHORS",
+  "README",
+  "CHANGELOG",
+  "CODEOWNERS"
+]);
+var CODECS = { gz: "gzip", gzip: "gzip", zst: "zstd", zstd: "zstd" };
 var IMAGE = /* @__PURE__ */ new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"]);
 var VIDEO = /* @__PURE__ */ new Set(["mp4", "webm", "mov", "m4v", "ogv"]);
 var AUDIO = /* @__PURE__ */ new Set(["mp3", "wav", "flac", "ogg", "opus", "m4a", "aac"]);
@@ -63,15 +124,31 @@ function parsePath(splat, opts = {}) {
   const key = root + stripped;
   const bangIdx = key.indexOf("!/");
   if (bangIdx >= 0) {
-    return {
-      kind: "zipEntry",
-      path: key.slice(0, bangIdx),
-      entry: key.slice(bangIdx + 2)
-    };
+    const path = key.slice(0, bangIdx);
+    const entry = key.slice(bangIdx + 2);
+    const tar = tarCodec(path);
+    if (tar !== null) return { kind: "tarEntry", path, entry, ...tar ? { codec: tar } : {} };
+    return { kind: "zipEntry", path, entry };
   }
   if (key === "" || key === root) return { kind: "dir", prefix: root };
   if (key.endsWith("/")) return { kind: "dir", prefix: key };
+  if (!extOf(key) && !TEXT_NAMES.has(basename(key))) return { kind: "dir", prefix: key + "/" };
+  return parseFileKey(key, texty);
+}
+function tarCodec(key) {
   const ext = extOf(key);
+  if (ext === "tar") return "";
+  if (ext === "tgz") return "gzip";
+  const codec = CODECS[ext];
+  if (codec && extOf(key.slice(0, -(ext.length + 1))) === "tar") return codec;
+  return null;
+}
+function parseFileKey(key, texty = TEXTY) {
+  const ext = extOf(key);
+  const tar = tarCodec(key);
+  if (tar !== null) return { kind: "tar", path: key, ...tar ? { codec: tar } : {} };
+  const codec = CODECS[ext];
+  if (codec) return { kind: "compressed", path: key, codec, inner: key.slice(0, -(ext.length + 1)) };
   if (ext === "zip") return { kind: "zip", path: key };
   if (ext === "pqt" || ext === "parquet") return { kind: "parquet", path: key };
   if (ext === "ipynb") return { kind: "notebook", path: key };
@@ -79,8 +156,7 @@ function parsePath(splat, opts = {}) {
   if (IMAGE.has(ext)) return { kind: "image", path: key };
   if (VIDEO.has(ext)) return { kind: "video", path: key };
   if (AUDIO.has(ext)) return { kind: "audio", path: key };
-  if (texty.has(ext)) return { kind: "text", path: key };
-  if (!ext) return { kind: "dir", prefix: key + "/" };
+  if (texty.has(ext) || TEXT_NAMES.has(basename(key))) return { kind: "text", path: key };
   return { kind: "binary", path: key };
 }
 function keyToSplat(key, rootPrefix = "") {

@@ -6,8 +6,8 @@ import { Entry, Store, ZipEntriesResult, GetResult } from '../index.js';
 import { TreeSource } from '../renderers/treeSource.js';
 export { ChildrenRequest, DiffLevel, DiffRequest, ScanJob, ScanRequest, Snapshot, SnapshotNotFoundError, TreeDiffNode, TreeLevel, TreeNode, TreeSourceCapabilities, TreeTooLargeError, diffLevels, diffNode, diffStatus } from '../renderers/treeSource.js';
 import { P as PersistedState } from '../persistedState-CB_wfbcb.js';
-import { a as Parsed } from '../parsePath-CLQfXstk.js';
-export { A as AUDIO, C as CODE_LANG, I as IMAGE, P as ParsePathOptions, T as TEXTY, V as VIDEO, b as basename, e as extOf, k as keyToSplat, p as parsePath } from '../parsePath-CLQfXstk.js';
+import { a as Parsed, C as Codec } from '../parsePath-D2tUNIiO.js';
+export { A as AUDIO, b as CODECS, c as CODE_LANG, I as IMAGE, J as JSONL, P as ParsePathOptions, T as TEXTY, d as TEXT_NAMES, V as VIDEO, e as basename, f as extOf, k as keyToSplat, p as parseFileKey, g as parsePath, t as tarCodec } from '../parsePath-D2tUNIiO.js';
 export { WalkTreeSourceOptions, walkTreeSource } from '../renderers/walkTreeSource.js';
 export { DiskTreeTreeSourceOptions, diskTreeTreeSource } from '../renderers/diskTreeTreeSource.js';
 export { HttpTreeSourceOptions, httpTreeSource } from '../renderers/httpTreeSource.js';
@@ -324,6 +324,15 @@ interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
         delimiter: string;
         usePersistedState?: PersistedState;
     }>;
+    /** Optional JSONL renderer. When set, `.jsonl` / `.ndjson` paths
+     *  (including `.jsonl.gz` and members of a tarball) render via this
+     *  component (typically one record per table row, as `JsonlViewer`
+     *  from `@rdub/file-tree/renderers/jsonl`) instead of plaintext. */
+    jsonlRenderer?: ComponentType<{
+        store: Store;
+        path: string;
+        usePersistedState?: PersistedState;
+    }>;
     /** Optional notebook renderer. When set, `.ipynb` paths render via
      *  this component (typically a cell-by-cell view with rendered
      *  markdown cells + code outputs). */
@@ -378,10 +387,10 @@ interface ViewerActionCtx {
     store: Store;
     path: string;
     kind: Parsed['kind'];
-    /** Set only when `kind === 'zipEntry'`: the entry name inside the zip. */
+    /** Set only when `kind` is `'zipEntry'` / `'tarEntry'`: the member name inside the archive. */
     entry?: string;
 }
-declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
+declare function FileTree<R extends ParquetRenderer = ParquetRenderer>({ store, routeBase, rootPrefix, extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }: FileTreeProps<R>): react_jsx_runtime.JSX.Element;
 
 /** Adapter from `Store` to hyparquet's `AsyncBuffer` shape
  *  (`{ byteLength: number; slice(start, end?): Promise<ArrayBuffer> }`).
@@ -470,6 +479,128 @@ declare function readZipEntry(store: Store, path: string, entryName: string, opt
     max?: number;
 }): Promise<GetResult>;
 
+interface TarEntryListProps {
+    store: Store;
+    path: string;
+    codec?: Codec;
+    routeBase: string;
+    rootPrefix?: string;
+}
+declare function TarEntryList({ store, path, codec, routeBase, rootPrefix }: TarEntryListProps): react_jsx_runtime.JSX.Element;
+
+/** Client-side tarball reading: `.tar`, `.tar.gz` / `.tgz`, `.tar.zst`.
+ *
+ *  A tar has no index — headers are interleaved with member data, and a
+ *  compressed tar can't be range-read at all — so unlike zip this reads
+ *  the archive whole (capped) and walks it. The parsed archive is cached
+ *  per store + path, so going from the listing to a member and back
+ *  doesn't refetch. */
+
+type TarEntryType = 'file' | 'dir' | 'symlink' | 'other';
+interface TarEntry {
+    /** Path inside the archive; directories end in `/`. */
+    name: string;
+    size: number;
+    type: TarEntryType;
+    /** ISO-8601, from the header's mtime. */
+    lastModified?: string;
+    /** Symlink target. */
+    linkName?: string;
+    /** Offset of the member's data in the (decompressed) archive. */
+    offset: number;
+}
+interface TarArchive {
+    entries: TarEntry[];
+    bytes: Uint8Array;
+    /** The archive was cut at a read or decompression cap; members past the
+     *  cut are missing, and the last one listed may be partial. */
+    truncated: boolean;
+}
+/** Walk a tar's headers. Handles ustar (`prefix` + `name`), GNU long
+ *  names (`L`) and PAX `path` / `size` overrides; stops at the
+ *  end-of-archive marker or the end of `bytes`. */
+declare function parseTar(bytes: Uint8Array): TarEntry[];
+/** One member's bytes, clipped to what was read. */
+declare function tarEntryBytes(archive: TarArchive, entry: TarEntry): Uint8Array;
+/** Read and parse the tarball at `path`, once per store + path. */
+declare function readTar(store: Store, path: string, codec?: Codec): Promise<TarArchive>;
+
+/** Whole-file decompression for `foo.csv.gz`-style keys and compressed
+ *  tarballs. `gzip` uses the platform's `DecompressionStream` (no JS
+ *  inflate shipped); `zstd` lazy-loads `fzstd`, so pages that never open
+ *  a `.zst` don't pay for it.
+ *
+ *  Output is capped: a small compressed object can expand enormously,
+ *  and the viewers above hold the result in memory. Callers disclose
+ *  `truncated`. */
+
+/** Compressed bytes read for one object. Above this the input itself is
+ *  cut, which `truncated` reports the same way. */
+declare const MAX_COMPRESSED_BYTES: number;
+/** Decompressed bytes kept. */
+declare const MAX_DECOMPRESSED_BYTES: number;
+interface Decompressed {
+    bytes: Uint8Array;
+    /** Output stopped at `max`, or the input was already cut short. */
+    truncated: boolean;
+}
+/** Decompress `input` with `codec`, keeping at most `max` output bytes.
+ *  `inputTruncated` marks input that was already cut short (a capped
+ *  read), so a decode that runs out of data reports `truncated` rather
+ *  than failing. */
+declare function decompress(input: Uint8Array, codec: Codec, opts?: {
+    max?: number;
+    inputTruncated?: boolean;
+}): Promise<Decompressed>;
+
+/** Bytes shown. A hexdump line is 16 bytes, so this is 256 lines. */
+declare const HEXDUMP_BYTES = 4096;
+declare function BinaryView({ store, path }: {
+    store: Store;
+    path: string;
+}): react_jsx_runtime.JSX.Element;
+
+/** `hexdump -C`-style lines: offset, 16 bytes in two groups of 8, and
+ *  the printable-ASCII column.
+ *
+ *    00000000  48 65 6c 6c 6f 0a                                 |Hello.|
+ */
+declare function hexdump(bytes: Uint8Array, base?: number): string[];
+/** Whether `bytes` reads as text: no NUL, and valid UTF-8 apart from a
+ *  multi-byte sequence cut off at the end (a head read can split one). */
+declare function looksLikeText(bytes: Uint8Array): boolean;
+
+/** A one-file `Store` over bytes that aren't an object in the real
+ *  store: a decompressed `foo.csv.gz`, or a member of a tarball. Every
+ *  viewer already speaks `Store`, so wrapping the bytes in one is what
+ *  lets `foo.jsonl.gz` get the JSONL table, a `.parquet` inside a
+ *  `.tar.gz` get the parquet viewer, and so on, with no viewer knowing.
+ *
+ *  `load` runs once, on first `get`. The bytes are in memory, so ranges
+ *  are free and `capabilities.range` is on. */
+
+declare function bytesStore(key: string, load: () => Promise<Uint8Array>, opts?: {
+    describe?: string;
+}): Store;
+
+/** `foo.jsonl.gz` → the JSONL viewer over the decompressed bytes. */
+declare function CompressedView({ store, path, codec, inner, render }: {
+    store: Store;
+    path: string;
+    codec: Codec;
+    /** `path` minus the codec extension; the virtual file's key. */
+    inner: string;
+    render: (store: Store, key: string) => ReactNode;
+}): react_jsx_runtime.JSX.Element;
+/** One member of a tarball, rendered by its own name's viewer. */
+declare function TarMember({ store, path, entry, codec, render }: {
+    store: Store;
+    path: string;
+    entry: string;
+    codec?: Codec;
+    render: (store: Store, key: string) => ReactNode;
+}): react_jsx_runtime.JSX.Element;
+
 type MediaKind = 'image' | 'video' | 'audio';
 interface MediaViewerProps {
     store: Store;
@@ -490,4 +621,4 @@ declare function fmtSize(n: number | undefined): string;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { type AsyncBuffer, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, type Crumb, type CrumbCtx, type CrumbRenderer, DirListing, type DirListingProps, FileTree, type FileTreeProps, MarkdownCtx, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PdfViewer, type PdfViewerProps, PersistedState, RegistryViewer, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, findViewer, fmtSize, makeMatcher, readZipEntries, readZipEntry };
+export { type AsyncBuffer, BinaryView, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, Codec, CompressedView, type Crumb, type CrumbCtx, type CrumbRenderer, type Decompressed, DirListing, type DirListingProps, FileTree, type FileTreeProps, HEXDUMP_BYTES, MAX_COMPRESSED_BYTES, MAX_DECOMPRESSED_BYTES, MarkdownCtx, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PdfViewer, type PdfViewerProps, PersistedState, RegistryViewer, type TarArchive, type TarEntry, TarEntryList, type TarEntryListProps, type TarEntryType, TarMember, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, bytesStore, decompress, findViewer, fmtSize, hexdump, looksLikeText, makeMatcher, parseTar, readTar, readZipEntries, readZipEntry, tarEntryBytes };

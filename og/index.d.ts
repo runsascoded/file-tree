@@ -1,5 +1,5 @@
 import { Store } from '../index.js';
-import { P as ParsePathOptions } from '../parsePath-CLQfXstk.js';
+import { P as ParsePathOptions } from '../parsePath-D2tUNIiO.js';
 import { TreeSource } from '../renderers/treeSource.js';
 
 /** The standard Open Graph image box. */

@@ -1,9 +1,71 @@
 // src/react/FileTree.tsx
-import { cloneElement, isValidElement, useEffect as useEffect7, useMemo as useMemo3, useState as useState8 } from "react";
+import { cloneElement, isValidElement, useEffect as useEffect10, useMemo as useMemo4, useState as useState11 } from "react";
 import { useLocation, useNavigate as useNavigate2 } from "react-router-dom";
 
 // src/react/parsePath.ts
-var TEXTY = /* @__PURE__ */ new Set(["txt", "csv", "tsv", "json", "md", "log", "yaml", "yml", "toml", "ini", "sql", "sh", "py", "ts", "tsx", "js", "jsx", "html", "css"]);
+var TEXTY = /* @__PURE__ */ new Set([
+  "txt",
+  "csv",
+  "tsv",
+  "json",
+  "jsonl",
+  "ndjson",
+  "md",
+  "markdown",
+  "log",
+  "yaml",
+  "yml",
+  "toml",
+  "ini",
+  "cfg",
+  "conf",
+  "env",
+  "sql",
+  "sh",
+  "bash",
+  "zsh",
+  "py",
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "mjs",
+  "cjs",
+  "html",
+  "css",
+  "scss",
+  "xml",
+  "go",
+  "rs",
+  "rb",
+  "java",
+  "c",
+  "cpp",
+  "h",
+  "hpp",
+  "gitignore",
+  "dockerignore",
+  "editorconfig"
+]);
+var TEXT_NAMES = /* @__PURE__ */ new Set([
+  "Makefile",
+  "Dockerfile",
+  "Justfile",
+  "Procfile",
+  "Gemfile",
+  "Rakefile",
+  "Vagrantfile",
+  "LICENSE",
+  "LICENCE",
+  "COPYING",
+  "NOTICE",
+  "AUTHORS",
+  "README",
+  "CHANGELOG",
+  "CODEOWNERS"
+]);
+var JSONL = /* @__PURE__ */ new Set(["jsonl", "ndjson"]);
+var CODECS = { gz: "gzip", gzip: "gzip", zst: "zstd", zstd: "zstd" };
 var CODE_LANG = {
   ts: "typescript",
   tsx: "tsx",
@@ -51,15 +113,31 @@ function parsePath(splat, opts = {}) {
   const key = root + stripped;
   const bangIdx = key.indexOf("!/");
   if (bangIdx >= 0) {
-    return {
-      kind: "zipEntry",
-      path: key.slice(0, bangIdx),
-      entry: key.slice(bangIdx + 2)
-    };
+    const path = key.slice(0, bangIdx);
+    const entry = key.slice(bangIdx + 2);
+    const tar = tarCodec(path);
+    if (tar !== null) return { kind: "tarEntry", path, entry, ...tar ? { codec: tar } : {} };
+    return { kind: "zipEntry", path, entry };
   }
   if (key === "" || key === root) return { kind: "dir", prefix: root };
   if (key.endsWith("/")) return { kind: "dir", prefix: key };
+  if (!extOf(key) && !TEXT_NAMES.has(basename(key))) return { kind: "dir", prefix: key + "/" };
+  return parseFileKey(key, texty);
+}
+function tarCodec(key) {
   const ext = extOf(key);
+  if (ext === "tar") return "";
+  if (ext === "tgz") return "gzip";
+  const codec = CODECS[ext];
+  if (codec && extOf(key.slice(0, -(ext.length + 1))) === "tar") return codec;
+  return null;
+}
+function parseFileKey(key, texty = TEXTY) {
+  const ext = extOf(key);
+  const tar = tarCodec(key);
+  if (tar !== null) return { kind: "tar", path: key, ...tar ? { codec: tar } : {} };
+  const codec = CODECS[ext];
+  if (codec) return { kind: "compressed", path: key, codec, inner: key.slice(0, -(ext.length + 1)) };
   if (ext === "zip") return { kind: "zip", path: key };
   if (ext === "pqt" || ext === "parquet") return { kind: "parquet", path: key };
   if (ext === "ipynb") return { kind: "notebook", path: key };
@@ -67,8 +145,7 @@ function parsePath(splat, opts = {}) {
   if (IMAGE.has(ext)) return { kind: "image", path: key };
   if (VIDEO.has(ext)) return { kind: "video", path: key };
   if (AUDIO.has(ext)) return { kind: "audio", path: key };
-  if (texty.has(ext)) return { kind: "text", path: key };
-  if (!ext) return { kind: "dir", prefix: key + "/" };
+  if (texty.has(ext) || TEXT_NAMES.has(basename(key))) return { kind: "text", path: key };
   return { kind: "binary", path: key };
 }
 function keyToSplat(key, rootPrefix = "") {
@@ -906,9 +983,481 @@ function TruncationBanner({ shown, total }) {
   ] });
 }
 
+// src/react/BinaryView.tsx
+import { useEffect as useEffect7, useState as useState8 } from "react";
+
+// src/react/hexdump.ts
+function hexdump(bytes, base = 0) {
+  const lines = [];
+  for (let o = 0; o < bytes.length; o += 16) {
+    const row = bytes.subarray(o, o + 16);
+    let hex = "";
+    let ascii = "";
+    for (let i = 0; i < 16; i++) {
+      if (i === 8) hex += " ";
+      if (i < row.length) {
+        const b = row[i];
+        hex += b.toString(16).padStart(2, "0") + " ";
+        ascii += b >= 32 && b < 127 ? String.fromCharCode(b) : ".";
+      } else {
+        hex += "   ";
+      }
+    }
+    lines.push(`${(base + o).toString(16).padStart(8, "0")}  ${hex} |${ascii}|`);
+  }
+  return lines;
+}
+function looksLikeText(bytes) {
+  if (bytes.includes(0)) return false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, trimPartialUtf8(bytes)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+function trimPartialUtf8(bytes) {
+  const n = bytes.length;
+  for (let back = 1; back <= Math.min(3, n); back++) {
+    const b = bytes[n - back];
+    if ((b & 192) === 128) continue;
+    const need = b >= 240 ? 4 : b >= 224 ? 3 : b >= 192 ? 2 : 1;
+    return need > back ? n - back : n;
+  }
+  return n;
+}
+
+// src/react/BinaryView.tsx
+import { Fragment as Fragment5, jsx as jsx8, jsxs as jsxs8 } from "react/jsx-runtime";
+var HEXDUMP_BYTES = 4096;
+var PRE = {
+  background: "rgba(127,127,127,0.08)",
+  padding: "0.6em 0.8em",
+  borderRadius: 4,
+  overflow: "auto",
+  maxHeight: "80vh",
+  fontSize: "0.85em",
+  fontFamily: "ui-monospace, monospace",
+  margin: 0
+};
+function BinaryView({ store, path }) {
+  const [head, setHead] = useState8(null);
+  const [error, setError] = useState8(null);
+  useEffect7(() => {
+    let cancelled = false;
+    setHead(null);
+    setError(null);
+    store.get(path, store.capabilities?.range ? { offset: 0, length: HEXDUMP_BYTES } : void 0).then((r) => {
+      if (cancelled) return;
+      const bytes = r.bytes.subarray(0, HEXDUMP_BYTES);
+      setHead({ bytes, total: r.totalSize ?? r.bytes.byteLength });
+    }).catch((e) => {
+      if (!cancelled) setError(String(e));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path]);
+  if (error) return /* @__PURE__ */ jsxs8("div", { style: { color: "salmon" }, children: [
+    "error: ",
+    error
+  ] });
+  if (!head) return /* @__PURE__ */ jsxs8("div", { style: { opacity: 0.6 }, children: [
+    "loading ",
+    path,
+    "\u2026"
+  ] });
+  const text = looksLikeText(head.bytes);
+  const shown = head.total != null && head.total > head.bytes.byteLength ? `first ${fmtSize(head.bytes.byteLength)} of ${fmtSize(head.total)}` : fmtSize(head.bytes.byteLength);
+  return /* @__PURE__ */ jsxs8(Fragment5, { children: [
+    /* @__PURE__ */ jsxs8("div", { style: { opacity: 0.7, fontSize: "0.85em", margin: "0 0 0.5em" }, children: [
+      text ? "Unknown type; reads as text" : "Binary",
+      " \xB7 ",
+      shown
+    ] }),
+    text ? /* @__PURE__ */ jsx8("pre", { "data-testid": "binary-text", style: { ...PRE, whiteSpace: "pre-wrap" }, children: new TextDecoder().decode(head.bytes) }) : /* @__PURE__ */ jsx8("pre", { "data-testid": "hexdump", style: PRE, children: hexdump(head.bytes).join("\n") })
+  ] });
+}
+
+// src/react/TarEntryList.tsx
+import { useEffect as useEffect8, useState as useState9 } from "react";
+import { Link as Link4 } from "react-router-dom";
+
+// src/react/decompress.ts
+var MAX_COMPRESSED_BYTES = 32 * 1024 * 1024;
+var MAX_DECOMPRESSED_BYTES = 64 * 1024 * 1024;
+function concat(chunks, n) {
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.byteLength;
+  }
+  return out;
+}
+async function gunzip(input, max) {
+  const DS = globalThis.DecompressionStream;
+  if (!DS) throw new Error("gzip: DecompressionStream not available; need a modern browser or Worker runtime");
+  const reader = new Blob([input]).stream().pipeThrough(new DS("gzip")).getReader();
+  const chunks = [];
+  let produced = 0;
+  let truncated = false;
+  try {
+    for (; ; ) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (produced + value.byteLength > max) {
+        chunks.push(value.subarray(0, max - produced));
+        produced = max;
+        truncated = true;
+        reader.cancel().catch(() => {
+        });
+        break;
+      }
+      chunks.push(value);
+      produced += value.byteLength;
+    }
+  } catch (e) {
+    if (!produced) throw e;
+    truncated = true;
+  }
+  return { bytes: concat(chunks, produced), truncated };
+}
+async function unzstd(input, max) {
+  const { Decompress } = await import("fzstd");
+  const chunks = [];
+  let produced = 0;
+  let truncated = false;
+  const d = new Decompress((chunk) => {
+    if (truncated) return;
+    if (produced + chunk.byteLength > max) {
+      chunks.push(chunk.subarray(0, max - produced));
+      produced = max;
+      truncated = true;
+      return;
+    }
+    chunks.push(chunk);
+    produced += chunk.byteLength;
+  });
+  const STEP = 1 << 20;
+  try {
+    for (let o = 0; o < input.byteLength && !truncated; o += STEP) {
+      const end = Math.min(o + STEP, input.byteLength);
+      d.push(input.subarray(o, end), end === input.byteLength);
+    }
+  } catch (e) {
+    if (!produced) throw e;
+    truncated = true;
+  }
+  return { bytes: concat(chunks, produced), truncated };
+}
+async function decompress(input, codec, opts = {}) {
+  const max = opts.max ?? MAX_DECOMPRESSED_BYTES;
+  const r = codec === "gzip" ? await gunzip(input, max) : await unzstd(input, max);
+  return opts.inputTruncated ? { ...r, truncated: true } : r;
+}
+
+// src/react/tar.ts
+var BLOCK = 512;
+var DEC = new TextDecoder();
+function str(b, off, len) {
+  const s = b.subarray(off, off + len);
+  const nul = s.indexOf(0);
+  return DEC.decode(nul < 0 ? s : s.subarray(0, nul));
+}
+function num(b, off, len) {
+  if (b[off] & 128) {
+    let n = b[off] & 127;
+    for (let i = 1; i < len; i++) n = n * 256 + b[off + i];
+    return n;
+  }
+  const s = str(b, off, len).trim();
+  return s ? parseInt(s, 8) : 0;
+}
+function paxRecords(data) {
+  const out = {};
+  let o = 0;
+  while (o < data.length) {
+    const sp = data.indexOf(32, o);
+    if (sp < 0) break;
+    const len = parseInt(DEC.decode(data.subarray(o, sp)), 10);
+    if (!len) break;
+    const rec = DEC.decode(data.subarray(sp + 1, o + len - 1));
+    const eq = rec.indexOf("=");
+    if (eq > 0) out[rec.slice(0, eq)] = rec.slice(eq + 1);
+    o += len;
+  }
+  return out;
+}
+function typeOf(flag) {
+  if (flag === "" || flag === "0" || flag === "7") return "file";
+  if (flag === "5") return "dir";
+  if (flag === "2") return "symlink";
+  return "other";
+}
+function parseTar(bytes) {
+  const entries = [];
+  let o = 0;
+  let longName;
+  let pax = {};
+  while (o + BLOCK <= bytes.length) {
+    const h = bytes.subarray(o, o + BLOCK);
+    if (h.every((b) => b === 0)) break;
+    const flag = str(h, 156, 1);
+    const size = num(h, 124, 12);
+    const dataOffset = o + BLOCK;
+    const next = dataOffset + Math.ceil(size / BLOCK) * BLOCK;
+    if (flag === "L") {
+      longName = str(bytes, dataOffset, size);
+    } else if (flag === "x") {
+      pax = paxRecords(bytes.subarray(dataOffset, dataOffset + size));
+    } else if (flag === "g") {
+    } else {
+      const magic = str(h, 257, 6);
+      const prefix = magic.startsWith("ustar") ? str(h, 345, 155) : "";
+      const base = str(h, 0, 100);
+      let name = pax.path ?? longName ?? (prefix ? `${prefix}/${base}` : base);
+      const type = typeOf(flag);
+      if (type === "dir" && !name.endsWith("/")) name += "/";
+      const realSize = pax.size !== void 0 ? Number(pax.size) : size;
+      const mtime = pax.mtime !== void 0 ? Number(pax.mtime) : num(h, 136, 12);
+      const linkName = pax.linkpath ?? str(h, 157, 100);
+      entries.push({
+        name: name.replace(/^\.\//, ""),
+        size: realSize,
+        type,
+        ...mtime ? { lastModified: new Date(mtime * 1e3).toISOString() } : {},
+        ...type === "symlink" && linkName ? { linkName } : {},
+        offset: dataOffset
+      });
+      longName = void 0;
+      pax = {};
+      o = dataOffset + Math.ceil(realSize / BLOCK) * BLOCK;
+      continue;
+    }
+    o = next;
+  }
+  return entries.filter((e) => e.name !== "" && e.name !== "./");
+}
+function tarEntryBytes(archive, entry) {
+  return archive.bytes.subarray(entry.offset, Math.min(entry.offset + entry.size, archive.bytes.length));
+}
+async function load(store, path, codec) {
+  const cap = codec ? MAX_COMPRESSED_BYTES : MAX_DECOMPRESSED_BYTES;
+  const r = await store.get(path, store.capabilities?.range ? { offset: 0, length: cap } : void 0);
+  const raw = r.bytes.byteLength > cap ? r.bytes.subarray(0, cap) : r.bytes;
+  const inputTruncated = (r.totalSize ?? r.bytes.byteLength) > raw.byteLength;
+  const { bytes, truncated } = codec ? await decompress(raw, codec, { inputTruncated }) : { bytes: raw, truncated: inputTruncated };
+  return { entries: parseTar(bytes), bytes, truncated };
+}
+var cache = /* @__PURE__ */ new WeakMap();
+function readTar(store, path, codec) {
+  let byPath = cache.get(store);
+  if (!byPath) {
+    byPath = /* @__PURE__ */ new Map();
+    cache.set(store, byPath);
+  }
+  let p = byPath.get(path);
+  if (!p) {
+    p = load(store, path, codec);
+    p.catch(() => byPath.delete(path));
+    byPath.set(path, p);
+  }
+  return p;
+}
+
+// src/react/TarEntryList.tsx
+import { Fragment as Fragment6, jsx as jsx9, jsxs as jsxs9 } from "react/jsx-runtime";
+var TD = { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" };
+function TarEntryList({ store, path, codec, routeBase, rootPrefix = "" }) {
+  const [archive, setArchive] = useState9(null);
+  const [error, setError] = useState9(null);
+  useEffect8(() => {
+    let cancelled = false;
+    setArchive(null);
+    setError(null);
+    readTar(store, path, codec).then((a) => {
+      if (!cancelled) setArchive(a);
+    }).catch((e) => {
+      if (!cancelled) setError(String(e));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, path, codec]);
+  if (error) return /* @__PURE__ */ jsxs9("div", { style: { color: "salmon" }, children: [
+    "error: ",
+    error
+  ] });
+  if (!archive) return /* @__PURE__ */ jsxs9("div", { style: { opacity: 0.6 }, children: [
+    "reading ",
+    path,
+    "\u2026"
+  ] });
+  const href = (name) => `${routeBase.replace(/\/+$/, "")}/${keyToSplat(path, rootPrefix)}!/${name}`;
+  const files = archive.entries.filter((e) => e.type === "file");
+  const total = files.reduce((n, e) => n + e.size, 0);
+  return /* @__PURE__ */ jsxs9(Fragment6, { children: [
+    /* @__PURE__ */ jsxs9("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em" }, children: [
+      /* @__PURE__ */ jsx9("b", { children: files.length }),
+      " files \xB7 ",
+      /* @__PURE__ */ jsx9("b", { children: fmtSize(total) }),
+      codec && /* @__PURE__ */ jsxs9(Fragment6, { children: [
+        " \xB7 ",
+        codec
+      ] })
+    ] }),
+    archive.truncated && /* @__PURE__ */ jsxs9("p", { "data-testid": "tar-truncated", style: { fontSize: "0.9em", margin: "0 0 0.6em", color: "rgb(220,165,60)" }, children: [
+      "Archive read stopped at ",
+      fmtSize(archive.bytes.byteLength),
+      "; members past that point aren't listed."
+    ] }),
+    /* @__PURE__ */ jsxs9("table", { style: { borderCollapse: "collapse", width: "100%" }, children: [
+      /* @__PURE__ */ jsx9("thead", { children: /* @__PURE__ */ jsxs9("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
+        /* @__PURE__ */ jsx9("th", { style: { padding: "0.2em 0.6em 0.2em 0", fontWeight: 400 }, children: "name" }),
+        /* @__PURE__ */ jsx9("th", { style: { ...TD, padding: "0.2em 0.6em", fontWeight: 400 }, children: "size" }),
+        /* @__PURE__ */ jsx9("th", { style: { ...TD, padding: "0.2em 0", fontWeight: 400 }, children: "modified" })
+      ] }) }),
+      /* @__PURE__ */ jsx9("tbody", { children: archive.entries.map((e) => /* @__PURE__ */ jsxs9("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.2)" }, children: [
+        /* @__PURE__ */ jsx9("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: e.type === "file" ? /* @__PURE__ */ jsx9(Link4, { to: href(e.name), children: e.name }) : /* @__PURE__ */ jsxs9("span", { style: { opacity: 0.7 }, children: [
+          e.name,
+          e.linkName ? ` \u2192 ${e.linkName}` : ""
+        ] }) }),
+        /* @__PURE__ */ jsx9("td", { style: TD, children: e.type === "file" ? fmtSize(e.size) : "" }),
+        /* @__PURE__ */ jsx9("td", { style: { ...TD, padding: "0.3em 0", opacity: 0.7 }, children: e.lastModified?.slice(0, 10) ?? "" })
+      ] }, e.name)) })
+    ] })
+  ] });
+}
+
+// src/react/VirtualFile.tsx
+import { useEffect as useEffect9, useMemo as useMemo3, useState as useState10 } from "react";
+
+// src/types.ts
+var NotFoundError = class extends Error {
+  constructor(path) {
+    super(`not found: ${path}`);
+    this.name = "NotFoundError";
+  }
+};
+
+// src/react/bytesStore.ts
+function bytesStore(key, load2, opts = {}) {
+  let bytes;
+  const read = () => bytes ??= load2();
+  return {
+    capabilities: { range: true },
+    describe: () => opts.describe,
+    async list() {
+      return { entries: [] };
+    },
+    async get(path, range) {
+      if (path !== key) throw new NotFoundError(path);
+      const all = await read();
+      const out = range ? all.subarray(range.offset, range.offset + range.length) : all;
+      return { bytes: out, totalSize: all.byteLength };
+    }
+  };
+}
+
+// src/react/VirtualFile.tsx
+import { Fragment as Fragment7, jsx as jsx10, jsxs as jsxs10 } from "react/jsx-runtime";
+function useLoaded(load2, deps) {
+  const [state, setState] = useState10({});
+  useEffect9(() => {
+    let cancelled = false;
+    setState({});
+    load2().then((loaded) => {
+      if (!cancelled) setState({ loaded });
+    }).catch((e) => {
+      if (!cancelled) setState({ error: String(e) });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, deps);
+  return state;
+}
+function Note({ children }) {
+  return /* @__PURE__ */ jsx10("div", { style: { opacity: 0.7, fontSize: "0.85em", margin: "0 0 0.5em" }, children });
+}
+function Virtual({ vkey, state, label, render }) {
+  const { loaded, error } = state;
+  const store = useMemo3(
+    () => loaded ? bytesStore(vkey, async () => loaded.bytes) : null,
+    [vkey, loaded]
+  );
+  if (error) return /* @__PURE__ */ jsxs10("div", { style: { color: "salmon" }, children: [
+    "error: ",
+    error
+  ] });
+  if (!loaded || !store) return /* @__PURE__ */ jsxs10("div", { style: { opacity: 0.6 }, children: [
+    "reading ",
+    vkey,
+    "\u2026"
+  ] });
+  return /* @__PURE__ */ jsxs10(Fragment7, { children: [
+    /* @__PURE__ */ jsx10(Note, { children: label(loaded) }),
+    render(store, vkey)
+  ] });
+}
+function CompressedView({ store, path, codec, inner, render }) {
+  const state = useLoaded(async () => {
+    const r = await store.get(path, store.capabilities?.range ? { offset: 0, length: MAX_COMPRESSED_BYTES } : void 0);
+    const raw = r.bytes.byteLength > MAX_COMPRESSED_BYTES ? r.bytes.subarray(0, MAX_COMPRESSED_BYTES) : r.bytes;
+    const compressed = r.totalSize ?? r.bytes.byteLength;
+    const d = await decompress(raw, codec, { inputTruncated: compressed > raw.byteLength });
+    return { ...d, compressed };
+  }, [store, path, codec]);
+  return /* @__PURE__ */ jsx10(
+    Virtual,
+    {
+      vkey: inner,
+      state,
+      render,
+      label: (l) => /* @__PURE__ */ jsxs10("span", { "data-testid": "decompressed-note", children: [
+        codec,
+        ": ",
+        fmtSize(l.compressed),
+        " \u2192 ",
+        fmtSize(l.bytes.byteLength),
+        l.truncated && /* @__PURE__ */ jsxs10("b", { children: [
+          " (truncated: showing the first ",
+          fmtSize(l.bytes.byteLength),
+          ")"
+        ] })
+      ] })
+    }
+  );
+}
+function TarMember({ store, path, entry, codec, render }) {
+  const state = useLoaded(async () => {
+    const archive = await readTar(store, path, codec);
+    const e = archive.entries.find((x) => x.name === entry);
+    if (!e) throw new Error(`tar: no member ${entry} in ${path}`);
+    const bytes = tarEntryBytes(archive, e);
+    return { bytes, truncated: bytes.byteLength < e.size };
+  }, [store, path, entry, codec]);
+  return /* @__PURE__ */ jsx10(
+    Virtual,
+    {
+      vkey: `${path}!/${entry}`,
+      state,
+      render,
+      label: (l) => /* @__PURE__ */ jsxs10("span", { "data-testid": "tar-member-note", children: [
+        "member of ",
+        /* @__PURE__ */ jsx10("code", { children: path }),
+        " \xB7 ",
+        fmtSize(l.bytes.byteLength),
+        l.truncated && /* @__PURE__ */ jsx10("b", { children: " (truncated: the archive read stopped partway through this member)" })
+      ] })
+    }
+  );
+}
+
 // src/react/viewers.tsx
 import { lazy, Suspense } from "react";
-import { jsx as jsx8 } from "react/jsx-runtime";
+import { jsx as jsx11 } from "react/jsx-runtime";
 var lazyCache = /* @__PURE__ */ new Map();
 function lazyFor(entry) {
   let C = lazyCache.get(entry.id);
@@ -925,36 +1474,37 @@ function findViewer(viewers, path) {
 }
 function RegistryViewer({ entry, store, path, usePersistedState, fallback }) {
   const Component = lazyFor(entry);
-  return /* @__PURE__ */ jsx8(Suspense, { fallback: fallback ?? /* @__PURE__ */ jsx8("div", { style: { opacity: 0.6 }, children: "loading viewer\u2026" }), children: /* @__PURE__ */ jsx8(Component, { store, path, usePersistedState, ...entry.options ?? {} }) });
+  return /* @__PURE__ */ jsx11(Suspense, { fallback: fallback ?? /* @__PURE__ */ jsx11("div", { style: { opacity: 0.6 }, children: "loading viewer\u2026" }), children: /* @__PURE__ */ jsx11(Component, { store, path, usePersistedState, ...entry.options ?? {} }) });
 }
 
 // src/react/FileTree.tsx
-import { Fragment as Fragment5, jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
-function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
+import { Fragment as Fragment8, jsx as jsx12, jsxs as jsxs11 } from "react/jsx-runtime";
+function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
   const location = useLocation();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
-  const parsed = useMemo3(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
-  const crumbs = useMemo3(() => {
+  const parsed = useMemo4(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
+  const texty = useMemo4(() => extraTexty ? /* @__PURE__ */ new Set([...TEXTY, ...extraTexty]) : TEXTY, [extraTexty]);
+  const crumbs = useMemo4(() => {
     const tree = buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? "root");
     return home ? [{ label: home.label, to: home.href, kind: "home" }, ...tree] : tree;
   }, [parsed, routeBase, rootPrefix, home]);
-  const downloadable = parsed.kind !== "dir" && parsed.kind !== "zipEntry";
+  const downloadable = parsed.kind !== "dir" && parsed.kind !== "zipEntry" && parsed.kind !== "tarEntry";
   const downloadName = downloadable ? basename(parsed.path) : "";
   const downloadHref = useDownloadHref(store, downloadable ? parsed.path : null);
   const ctx = parsed.kind === "dir" ? null : {
     store,
     path: parsed.path,
     kind: parsed.kind,
-    ...parsed.kind === "zipEntry" ? { entry: parsed.entry } : {}
+    ...parsed.kind === "zipEntry" || parsed.kind === "tarEntry" ? { entry: parsed.entry } : {}
   };
   const actionsNode = ctx && viewerActions ? viewerActions(ctx) : null;
-  const right = downloadHref || actionsNode ? /* @__PURE__ */ jsxs8("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.6em" }, children: [
+  const right = downloadHref || actionsNode ? /* @__PURE__ */ jsxs11("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.6em" }, children: [
     actionsNode,
-    downloadHref && /* @__PURE__ */ jsx9(DownloadIcon, { href: downloadHref, name: downloadName })
+    downloadHref && /* @__PURE__ */ jsx12(DownloadIcon, { href: downloadHref, name: downloadName })
   ] }) : void 0;
-  return /* @__PURE__ */ jsxs8("div", { className, style, children: [
-    title && /* @__PURE__ */ jsx9("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: titleHref ? /* @__PURE__ */ jsx9(
+  return /* @__PURE__ */ jsxs11("div", { className, style, children: [
+    title && /* @__PURE__ */ jsx12("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: titleHref ? /* @__PURE__ */ jsx12(
       "a",
       {
         href: titleHref,
@@ -968,21 +1518,23 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleH
         children: title
       }
     ) : title }),
-    /* @__PURE__ */ jsx9(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
-    /* @__PURE__ */ jsx9(Body, { store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer })
+    /* @__PURE__ */ jsx12(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
+    /* @__PURE__ */ jsx12(Body, { store, parsed, texty, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer })
   ] });
 }
-function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
+function Body(props) {
+  const { store, parsed, texty, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer } = props;
+  const inner = (s, key) => /* @__PURE__ */ jsx12(Body, { ...props, store: s, parsed: parseFileKey(key, texty) });
   const navigate = useNavigate2();
-  if (parsed.kind !== "dir" && parsed.kind !== "zipEntry") {
+  if (parsed.kind !== "dir" && parsed.kind !== "zipEntry" && parsed.kind !== "tarEntry") {
     const entry = findViewer(viewers, parsed.path);
-    if (entry) return /* @__PURE__ */ jsx9(RegistryViewer, { entry, store, path: parsed.path, usePersistedState });
+    if (entry) return /* @__PURE__ */ jsx12(RegistryViewer, { entry, store, path: parsed.path, usePersistedState });
   }
   switch (parsed.kind) {
     case "dir": {
-      const listing = /* @__PURE__ */ jsx9(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource });
+      const listing = /* @__PURE__ */ jsx12(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource });
       if (!treeSource || !treemapRenderer) return listing;
-      return /* @__PURE__ */ jsx9(
+      return /* @__PURE__ */ jsx12(
         DirView,
         {
           treeSource,
@@ -1004,9 +1556,13 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       const lang = CODE_LANG[ext];
       if (isCsv && csvRenderer) {
         const Component = csvRenderer;
-        return /* @__PURE__ */ jsx9(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
+        return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
       }
-      return /* @__PURE__ */ jsx9(
+      if (JSONL.has(ext) && jsonlRenderer) {
+        const Component = jsonlRenderer;
+        return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, usePersistedState });
+      }
+      return /* @__PURE__ */ jsx12(
         TextViewer,
         {
           store,
@@ -1020,34 +1576,40 @@ function Body({ store, parsed, routeBase, rootPrefix, markdownRenderer, parquetR
       );
     }
     case "zip":
-      return /* @__PURE__ */ jsx9(ZipEntryList, { store, path: parsed.path, routeBase, rootPrefix });
+      return /* @__PURE__ */ jsx12(ZipEntryList, { store, path: parsed.path, routeBase, rootPrefix });
     case "zipEntry":
-      return /* @__PURE__ */ jsx9(ZipEntryPreview, { store, path: parsed.path, entry: parsed.entry, markdownRenderer });
+      return /* @__PURE__ */ jsx12(ZipEntryPreview, { store, path: parsed.path, entry: parsed.entry, markdownRenderer });
+    case "tar":
+      return /* @__PURE__ */ jsx12(TarEntryList, { store, path: parsed.path, codec: parsed.codec, routeBase, rootPrefix });
+    case "tarEntry":
+      return /* @__PURE__ */ jsx12(TarMember, { store, path: parsed.path, entry: parsed.entry, codec: parsed.codec, render: inner });
+    case "compressed":
+      return /* @__PURE__ */ jsx12(CompressedView, { store, path: parsed.path, codec: parsed.codec, inner: parsed.inner, render: inner });
     case "parquet": {
-      if (!parquetRenderer) return /* @__PURE__ */ jsx9(UnsupportedView, { label: "Parquet preview" });
+      if (!parquetRenderer) return /* @__PURE__ */ jsx12(UnsupportedView, { label: "Parquet preview" });
       const Component = parquetRenderer;
-      return /* @__PURE__ */ jsx9(Component, { store, path: parsed.path, usePersistedState, ...parquetOptions });
+      return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, usePersistedState, ...parquetOptions });
     }
     case "notebook": {
-      if (!notebookRenderer) return /* @__PURE__ */ jsx9(UnsupportedView, { label: "Notebook preview" });
+      if (!notebookRenderer) return /* @__PURE__ */ jsx12(UnsupportedView, { label: "Notebook preview" });
       const Component = notebookRenderer;
-      return /* @__PURE__ */ jsx9(Component, { store, path: parsed.path, usePersistedState });
+      return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, usePersistedState });
     }
     case "image":
-      return /* @__PURE__ */ jsx9(MediaViewer, { store, path: parsed.path, kind: "image" });
+      return /* @__PURE__ */ jsx12(MediaViewer, { store, path: parsed.path, kind: "image" });
     case "video":
-      return /* @__PURE__ */ jsx9(MediaViewer, { store, path: parsed.path, kind: "video" });
+      return /* @__PURE__ */ jsx12(MediaViewer, { store, path: parsed.path, kind: "video" });
     case "audio":
-      return /* @__PURE__ */ jsx9(MediaViewer, { store, path: parsed.path, kind: "audio" });
+      return /* @__PURE__ */ jsx12(MediaViewer, { store, path: parsed.path, kind: "audio" });
     case "pdf": {
       if (pdfRenderer) {
         const Component = pdfRenderer;
-        return /* @__PURE__ */ jsx9(Component, { store, path: parsed.path, usePersistedState });
+        return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, usePersistedState });
       }
-      return /* @__PURE__ */ jsx9(PdfViewer, { store, path: parsed.path });
+      return /* @__PURE__ */ jsx12(PdfViewer, { store, path: parsed.path });
     }
     case "binary":
-      return /* @__PURE__ */ jsx9("div", { style: { opacity: 0.7 }, children: "Preview not supported for this file type." });
+      return /* @__PURE__ */ jsx12(BinaryView, { store, path: parsed.path });
   }
 }
 function DirView({ treeSource, treemapRenderer: Map2, prefix, routeBase, rootPrefix, rootLabel, usePersistedState, listing }) {
@@ -1056,15 +1618,15 @@ function DirView({ treeSource, treemapRenderer: Map2, prefix, routeBase, rootPre
   const [stored, setView] = use("view", "split");
   const view = stored === "tree" || stored === "split" ? stored : "list";
   const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, "");
-  const [hovered, setHovered] = useState8(null);
-  const [selected, setSelected] = useState8(null);
-  useEffect7(() => {
+  const [hovered, setHovered] = useState11(null);
+  const [selected, setSelected] = useState11(null);
+  useEffect10(() => {
     setSelected(null);
     setHovered(null);
   }, [treePath]);
   const baseTrimmed = routeBase.replace(/\/+$/, "");
   const navigateTo = (p) => navigate(`${baseTrimmed}/${p}/`);
-  const map = (height, onHover) => /* @__PURE__ */ jsx9(
+  const map = (height, onHover) => /* @__PURE__ */ jsx12(
     Map2,
     {
       source: treeSource,
@@ -1082,18 +1644,18 @@ function DirView({ treeSource, treemapRenderer: Map2, prefix, routeBase, rootPre
     listing,
     { highlightedPath: hovered, selectedPath: selected, onHoverPath: setHovered }
   ) : listing;
-  return /* @__PURE__ */ jsxs8("div", { children: [
-    /* @__PURE__ */ jsx9(ViewToggle, { view, setView }),
+  return /* @__PURE__ */ jsxs11("div", { children: [
+    /* @__PURE__ */ jsx12(ViewToggle, { view, setView }),
     view === "tree" && map(),
     view === "list" && listing,
-    view === "split" && /* @__PURE__ */ jsxs8("div", { style: { display: "flex", flexDirection: "column", gap: "1em" }, children: [
+    view === "split" && /* @__PURE__ */ jsxs11("div", { style: { display: "flex", flexDirection: "column", gap: "1em" }, children: [
       scrubListing,
       map("45vh", setHovered)
     ] })
   ] });
 }
 function ViewToggle({ view, setView }) {
-  const btn = (v, label, path) => /* @__PURE__ */ jsx9(
+  const btn = (v, label, path) => /* @__PURE__ */ jsx12(
     "button",
     {
       type: "button",
@@ -1111,36 +1673,36 @@ function ViewToggle({ view, setView }) {
         color: "inherit",
         lineHeight: 1
       },
-      children: /* @__PURE__ */ jsx9("svg", { viewBox: "0 0 24 24", width: "1.15em", height: "1.15em", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: path })
+      children: /* @__PURE__ */ jsx12("svg", { viewBox: "0 0 24 24", width: "1.15em", height: "1.15em", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: path })
     }
   );
-  return /* @__PURE__ */ jsxs8("div", { style: { display: "inline-flex", gap: 0, marginBottom: "0.5em" }, role: "group", "aria-label": "View", children: [
-    btn("list", "List view", /* @__PURE__ */ jsxs8(Fragment5, { children: [
-      /* @__PURE__ */ jsx9("path", { d: "M8 6h13" }),
-      /* @__PURE__ */ jsx9("path", { d: "M8 12h13" }),
-      /* @__PURE__ */ jsx9("path", { d: "M8 18h13" }),
-      /* @__PURE__ */ jsx9("path", { d: "M3 6h.01" }),
-      /* @__PURE__ */ jsx9("path", { d: "M3 12h.01" }),
-      /* @__PURE__ */ jsx9("path", { d: "M3 18h.01" })
+  return /* @__PURE__ */ jsxs11("div", { style: { display: "inline-flex", gap: 0, marginBottom: "0.5em" }, role: "group", "aria-label": "View", children: [
+    btn("list", "List view", /* @__PURE__ */ jsxs11(Fragment8, { children: [
+      /* @__PURE__ */ jsx12("path", { d: "M8 6h13" }),
+      /* @__PURE__ */ jsx12("path", { d: "M8 12h13" }),
+      /* @__PURE__ */ jsx12("path", { d: "M8 18h13" }),
+      /* @__PURE__ */ jsx12("path", { d: "M3 6h.01" }),
+      /* @__PURE__ */ jsx12("path", { d: "M3 12h.01" }),
+      /* @__PURE__ */ jsx12("path", { d: "M3 18h.01" })
     ] })),
-    btn("tree", "Treemap view", /* @__PURE__ */ jsxs8(Fragment5, { children: [
-      /* @__PURE__ */ jsx9("rect", { x: "3", y: "3", width: "8", height: "8", rx: "1" }),
-      /* @__PURE__ */ jsx9("rect", { x: "13", y: "3", width: "8", height: "5", rx: "1" }),
-      /* @__PURE__ */ jsx9("rect", { x: "13", y: "10", width: "8", height: "11", rx: "1" }),
-      /* @__PURE__ */ jsx9("rect", { x: "3", y: "13", width: "8", height: "8", rx: "1" })
+    btn("tree", "Treemap view", /* @__PURE__ */ jsxs11(Fragment8, { children: [
+      /* @__PURE__ */ jsx12("rect", { x: "3", y: "3", width: "8", height: "8", rx: "1" }),
+      /* @__PURE__ */ jsx12("rect", { x: "13", y: "3", width: "8", height: "5", rx: "1" }),
+      /* @__PURE__ */ jsx12("rect", { x: "13", y: "10", width: "8", height: "11", rx: "1" }),
+      /* @__PURE__ */ jsx12("rect", { x: "3", y: "13", width: "8", height: "8", rx: "1" })
     ] })),
-    btn("split", "Split view (list + map)", /* @__PURE__ */ jsxs8(Fragment5, { children: [
-      /* @__PURE__ */ jsx9("path", { d: "M4 6h16" }),
-      /* @__PURE__ */ jsx9("path", { d: "M4 9h16" }),
-      /* @__PURE__ */ jsx9("rect", { x: "4", y: "13", width: "7", height: "7", rx: "1" }),
-      /* @__PURE__ */ jsx9("rect", { x: "13", y: "13", width: "7", height: "7", rx: "1" })
+    btn("split", "Split view (list + map)", /* @__PURE__ */ jsxs11(Fragment8, { children: [
+      /* @__PURE__ */ jsx12("path", { d: "M4 6h16" }),
+      /* @__PURE__ */ jsx12("path", { d: "M4 9h16" }),
+      /* @__PURE__ */ jsx12("rect", { x: "4", y: "13", width: "7", height: "7", rx: "1" }),
+      /* @__PURE__ */ jsx12("rect", { x: "13", y: "13", width: "7", height: "7", rx: "1" })
     ] }))
   ] });
 }
 function useDownloadHref(store, path) {
   const syncHref = path != null && typeof store.getUrl === "function" ? store.getUrl(path) : null;
-  const [asyncHref, setAsyncHref] = useState8(null);
-  useEffect7(() => {
+  const [asyncHref, setAsyncHref] = useState11(null);
+  useEffect10(() => {
     if (path == null || typeof store.getDownloadUrl !== "function") {
       setAsyncHref(null);
       return;
@@ -1164,7 +1726,7 @@ function useDownloadHref(store, path) {
   return syncHref;
 }
 function DownloadIcon({ href, name }) {
-  return /* @__PURE__ */ jsx9(
+  return /* @__PURE__ */ jsx12(
     "a",
     {
       href,
@@ -1172,7 +1734,7 @@ function DownloadIcon({ href, name }) {
       title: `Download ${name}`,
       "aria-label": `Download ${name}`,
       style: { textDecoration: "none", display: "inline-block", lineHeight: 1, verticalAlign: "middle" },
-      children: /* @__PURE__ */ jsxs8(
+      children: /* @__PURE__ */ jsxs11(
         "svg",
         {
           viewBox: "0 0 24 24",
@@ -1185,9 +1747,9 @@ function DownloadIcon({ href, name }) {
           strokeLinejoin: "round",
           "aria-hidden": "true",
           children: [
-            /* @__PURE__ */ jsx9("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
-            /* @__PURE__ */ jsx9("path", { d: "M16.5 12 12 16.5 7.5 12" }),
-            /* @__PURE__ */ jsx9("path", { d: "M12 3v13.5" })
+            /* @__PURE__ */ jsx12("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
+            /* @__PURE__ */ jsx12("path", { d: "M16.5 12 12 16.5 7.5 12" }),
+            /* @__PURE__ */ jsx12("path", { d: "M12 3v13.5" })
           ]
         }
       )
@@ -1195,16 +1757,21 @@ function DownloadIcon({ href, name }) {
   );
 }
 function UnsupportedView({ label }) {
-  return /* @__PURE__ */ jsxs8("div", { style: { opacity: 0.7 }, children: [
+  return /* @__PURE__ */ jsxs11("div", { style: { opacity: 0.7 }, children: [
     label,
     " not yet supported in this version."
   ] });
 }
 function buildCrumbs(parsed, routeBase, rootPrefix, rootLabel) {
-  const path = parsed.kind === "dir" ? parsed.prefix : parsed.kind === "zipEntry" ? `${parsed.path}!/${parsed.entry}` : parsed.path;
+  const baseTrimmed = routeBase.replace(/\/+$/, "");
+  if (parsed.kind === "zipEntry" || parsed.kind === "tarEntry") {
+    const archive = buildCrumbs({ kind: "binary", path: parsed.path }, routeBase, rootPrefix, rootLabel);
+    const archiveSplat = keyToSplat(parsed.path, rootPrefix);
+    return [...archive, { label: parsed.entry, to: `${baseTrimmed}/${archiveSplat}!/${parsed.entry}`, path: `${parsed.path}!/${parsed.entry}` }];
+  }
+  const path = parsed.kind === "dir" ? parsed.prefix : parsed.path;
   const splat = keyToSplat(path, rootPrefix);
   const parts = splat.split("/").filter((p) => p.length > 0);
-  const baseTrimmed = routeBase.replace(/\/+$/, "");
   const crumbs = [{ label: rootLabel, to: `${baseTrimmed}/`, path: rootPrefix }];
   let cum = "";
   for (const p of parts) {
@@ -1384,12 +1951,12 @@ function walkTreeSource(store, opts = {}) {
     };
     return { node, children: children2 };
   }
-  function cache(built) {
+  function cache2(built) {
     levels.set(built.node.path, {
       node: built.node,
       children: built.children.map((c) => c.node)
     });
-    for (const c of built.children) if (c.node.kind === "dir") cache(c);
+    for (const c of built.children) if (c.node.kind === "dir") cache2(c);
   }
   async function children(req = {}) {
     const path = (req.path ?? "").replace(/^\/+|\/+$/g, "");
@@ -1400,7 +1967,7 @@ function walkTreeSource(store, opts = {}) {
       pending = (async () => {
         try {
           const built = await build(path, { n: 0 });
-          cache(built);
+          cache2(built);
           return levels.get(path);
         } finally {
           inflight.delete(path);
@@ -1416,19 +1983,11 @@ function walkTreeSource(store, opts = {}) {
   };
 }
 
-// src/types.ts
-var NotFoundError = class extends Error {
-  constructor(path) {
-    super(`not found: ${path}`);
-    this.name = "NotFoundError";
-  }
-};
-
 // src/renderers/diskTreeTreeSource.ts
 function isoTime(t) {
   return t.replace(/^(\d{4}-\d\d-\d\d) /, "$1T");
 }
-var num = (v) => v == null ? null : v;
+var num2 = (v) => v == null ? null : v;
 function diskTreeTreeSource(opts) {
   const base = opts.baseUrl.replace(/\/+$/, "");
   const doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis);
@@ -1459,11 +2018,11 @@ function diskTreeTreeSource(opts) {
       path,
       name: path ? nodeName(path) : rootLabel,
       kind: r.kind === "dir" ? "dir" : "file",
-      size: num(r.size),
+      size: num2(r.size),
       ...r.n_children != null ? { nChildren: r.n_children } : {},
       ...r.n_desc != null ? { nDesc: r.n_desc } : {},
-      mtime: num(r.mtime),
-      ...r.mtime_mean !== void 0 ? { mtimeMean: num(r.mtime_mean) } : {}
+      mtime: num2(r.mtime),
+      ...r.mtime_mean !== void 0 ? { mtimeMean: num2(r.mtime_mean) } : {}
     };
   }
   async function children(req = {}) {
@@ -1506,7 +2065,7 @@ function diskTreeTreeSource(opts) {
     };
     const kids = r.rows.map((row) => {
       const p = join(path, row.path);
-      const [sizeA, sizeB, nDescA, nDescB] = row.status === "added" ? [null, num(row.size), null, num(row.n_desc)] : row.status === "removed" ? [num(row.size), null, num(row.n_desc), null] : [num(row.size_old), num(row.size), num(row.n_desc_old), num(row.n_desc)];
+      const [sizeA, sizeB, nDescA, nDescB] = row.status === "added" ? [null, num2(row.size), null, num2(row.n_desc)] : row.status === "removed" ? [num2(row.size), null, num2(row.n_desc), null] : [num2(row.size_old), num2(row.size), num2(row.n_desc_old), num2(row.n_desc)];
       return {
         path: p,
         name: nodeName(p),
@@ -1605,16 +2164,26 @@ function httpTreeSource(opts) {
 }
 export {
   AUDIO,
+  BinaryView,
   Breadcrumb,
+  CODECS,
   CODE_LANG,
+  CompressedView,
   DirListing,
   FileTree,
+  HEXDUMP_BYTES,
   IMAGE,
+  JSONL,
+  MAX_COMPRESSED_BYTES,
+  MAX_DECOMPRESSED_BYTES,
   MediaViewer,
   PdfViewer,
   RegistryViewer,
   SnapshotNotFoundError,
   TEXTY,
+  TEXT_NAMES,
+  TarEntryList,
+  TarMember,
   TextViewer,
   TreeTooLargeError,
   VIDEO,
@@ -1622,6 +2191,8 @@ export {
   ZipEntryPreview,
   asyncBufferFromStore,
   basename,
+  bytesStore,
+  decompress,
   diffLevels,
   diffNode,
   diffStatus,
@@ -1629,16 +2200,23 @@ export {
   extOf,
   findViewer,
   fmtSize,
+  hexdump,
   httpTreeSource,
   isPlainClick,
   keyToSplat,
+  looksLikeText,
   makeMatcher,
   markdownCtx,
+  parseFileKey,
   parsePath,
+  parseTar,
+  readTar,
   readZipEntries,
   readZipEntry,
   resolveTreeHref,
   resolveTreeKey,
+  tarCodec,
+  tarEntryBytes,
   walkTreeSource
 };
 //# sourceMappingURL=index.js.map
