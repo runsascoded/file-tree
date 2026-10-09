@@ -79,9 +79,9 @@ test.describe('MockDemo', () => {
     await page.getByRole('button', { name: 'Treemap view' }).click()
     await expect(page).toHaveURL(/\?view=tree$/)
     // The map's own crumb bar reports the rooted node + its recursive
-    // total (105.6 KB = samples 84.7K + formats 10.4K + logs 4.4K + docs 4.8K + the rest).
+    // total (105.7 KB = samples 84.7K + formats 10.5K + logs 4.4K + docs 4.8K + the rest).
     await expect(page.getByText('root').first()).toBeVisible()
-    await expect(page.getByText('105.6 KB')).toBeVisible()
+    await expect(page.getByText('105.7 KB')).toBeVisible()
     // samples dominates the map; its cell carries label + size. Locate
     // the branch cell itself (the click handler) rather than the label
     // span inside it, which the cell div intercepts pointer events for.

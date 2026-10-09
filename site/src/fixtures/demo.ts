@@ -24,7 +24,7 @@ const METRICS_CSV = 'step,loss,acc\n' + Array.from({ length: 12 }, (_, i) =>
  *  a few formats, and an extension-less notes file. */
 const BUNDLE_TAR = tar([
   { name: 'bundle/', type: '5' },
-  { name: 'bundle/README.md', data: '# bundle\n\nA `.tar.gz` browsed in place: members open in the same viewers as ordinary files.\n' },
+  { name: 'bundle/README.md', data: '# bundle\n\nA `.tar.gz` browsed in place: members open in the same viewers as ordinary files, and this README renders below the listing. Links resolve to sibling members, e.g. [`metrics.csv`](metrics.csv).\n' },
   { name: 'bundle/metrics.csv', data: METRICS_CSV },
   { name: 'bundle/config.json', data: JSON.stringify({ model: 'demo-1b', seed: 0, layers: 16 }, null, 2) + '\n' },
   { name: 'bundle/NOTES', data: 'Extension-less, but reads as text, so it renders as text.\n' },
@@ -220,6 +220,7 @@ export const DEMO_FIXTURE = {
   // Formats beyond the classic set. JSONL renders as a table; the `.gz`
   // twin is decompressed in the browser and dispatched on its inner
   // extension, so it gets the same table (likewise `.csv.zst`, `.log.gz`).
+  'formats/README.txt': 'Formats beyond the classic set.\n\nA plain-text README renders as text below its listing, as on GitHub.\n',
   'formats/runs.jsonl': RUNS_JSONL,
   'formats/runs.jsonl.gz': gzipStored(RUNS_JSONL),
   'formats/metrics.csv.zst': zstdRaw(METRICS_CSV),

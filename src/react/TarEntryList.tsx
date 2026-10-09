@@ -1,12 +1,14 @@
 /** Tarball member listing (`.tar`, `.tar.gz` / `.tgz`, `.tar.zst`).
  *  Files link to `<routeBase>/<path>!/<member>`, the same pkzip-style
  *  form zip entries use. */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Store } from '../types'
+import { ArchiveReadme } from './ArchiveReadme'
+import type { MarkdownRenderer } from './FileTree'
 import { fmtSize } from './fmt'
 import { keyToSplat, type Codec } from './parsePath'
-import { readTar, type TarArchive } from './tar'
+import { readTar, tarEntryBytes, type TarArchive } from './tar'
 
 export interface TarEntryListProps {
   store: Store
@@ -14,11 +16,13 @@ export interface TarEntryListProps {
   codec?: Codec
   routeBase: string
   rootPrefix?: string
+  /** When set, the archive's README (if any) renders below the listing. */
+  markdownRenderer?: MarkdownRenderer
 }
 
 const TD = { padding: '0.3em 0.6em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as const
 
-export function TarEntryList({ store, path, codec, routeBase, rootPrefix = '' }: TarEntryListProps) {
+export function TarEntryList({ store, path, codec, routeBase, rootPrefix = '', markdownRenderer }: TarEntryListProps) {
   const [archive, setArchive] = useState<TarArchive | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -30,6 +34,13 @@ export function TarEntryList({ store, path, codec, routeBase, rootPrefix = '' }:
       .catch(e => { if (!cancelled) setError(String(e)) })
     return () => { cancelled = true }
   }, [store, path, codec])
+
+  const names = useMemo(() => archive?.entries.filter(e => e.type === 'file').map(e => e.name) ?? [], [archive])
+  const load = useCallback(async (name: string) => {
+    const entry = archive?.entries.find(e => e.name === name)
+    if (!archive || !entry) throw new Error(`tar: no member ${name}`)
+    return tarEntryBytes(archive, entry)
+  }, [archive])
 
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (!archive) return <div style={{ opacity: 0.6 }}>reading {path}…</div>
@@ -71,6 +82,9 @@ export function TarEntryList({ store, path, codec, routeBase, rootPrefix = '' }:
           ))}
         </tbody>
       </table>
+      {markdownRenderer && (
+        <ArchiveReadme store={store} path={path} names={names} load={load} markdownRenderer={markdownRenderer} routeBase={routeBase} rootPrefix={rootPrefix} />
+      )}
     </>
   )
 }

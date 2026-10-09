@@ -67,6 +67,22 @@ test.describe('formats (MockDemo)', () => {
     await expect(page).toHaveURL(/\/mock\/formats\/bundle\.tar\.gz$/)
   })
 
+  test(".tar.gz renders its wrapper dir's README; links open sibling members", async ({ page }) => {
+    await page.goto('/mock/formats/bundle.tar.gz')
+    const readme = page.locator('[data-readme-key="bundle/README.md"]')
+    await expect(readme.getByRole('heading', { level: 1 })).toHaveText('bundle')
+    await readme.getByRole('link', { name: 'metrics.csv' }).click()
+    await expect(page).toHaveURL(/\/mock\/formats\/bundle\.tar\.gz!\/bundle\/metrics\.csv$/)
+    expect(await headers(page)).toEqual(['step', 'loss', 'acc'])
+  })
+
+  test('a plain-text README.txt renders as text below the dir listing', async ({ page }) => {
+    await page.goto('/mock/formats/')
+    await expect(page.locator('[data-readme-key="formats/README.txt"] pre')).toHaveText(
+      'Formats beyond the classic set.\n\nA plain-text README renders as text below its listing, as on GitHub.\n',
+    )
+  })
+
   test('an extension-less tar member that reads as text shows as text', async ({ page }) => {
     await page.goto('/mock/formats/bundle.tar.gz!/bundle/NOTES')
     await expect(page.getByTestId('binary-text')).toHaveText('Extension-less, but reads as text, so it renders as text.\n')

@@ -92,6 +92,7 @@ More built-ins:
 
 - **TAR** (`.tar`, `.tar.gz` / `.tgz`, `.tar.zst`): a member list, each member at `<archive>!/<member>` (the same URL form as zip) and opened with whatever viewer its own name implies. The archive is read whole, capped at 32 MiB compressed / 64 MiB inflated, and a cut-off listing says so.
 - **Compressed files** (`.gz`, `.zst`): inflated in the browser (`DecompressionStream`; `fzstd` for zstd), then dispatched on the inner name, so `runs.jsonl.gz` gets the JSONL table and `app.log.gz` whatever viewer handles `.log`. `.bz2` / `.xz` aren't decoded.
+- **READMEs** (with `markdownRenderer` set): a directory's README renders below its listing, as on GitHub. `README.md` / `.markdown` render as markdown; `.rst`, `.txt` and a bare `README` render as text (there's no reStructuredText renderer). If a directory has several, `.md` wins, then `.markdown`, `.rst`, `.txt`, bare. Zip and tar listings do the same, using the README at the archive root or, when every member sits under one top-level directory (`foo-1.2.3/…`), the one in that directory. Its relative links open sibling members. `pickReadme` / `pickArchiveReadme` are exported.
 - **Unknown types**: the first 4 KiB is read; text-looking bytes render as text, anything else as a `hexdump -C`-style dump.
 - **Extension-less names** (`Makefile`, `Dockerfile`, `LICENSE`, …) and dotfiles (`.gitignore`) render as text rather than being taken for directories.
 

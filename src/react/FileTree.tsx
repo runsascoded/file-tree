@@ -129,8 +129,9 @@ export interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
   /** Optional inline style for the outer wrapper. */
   style?: React.CSSProperties
   /** Optional markdown renderer (see `MarkdownRenderer`). When set, `.md`
-   *  files render as rich markdown (instead of plaintext `<pre>`) and
-   *  any `README.md` in a directory is rendered below the listing. */
+   *  files render as rich markdown (instead of plaintext `<pre>`) and a
+   *  directory's or archive's README (`README.md`, `.rst`, `.txt`, bare
+   *  `README`, …; see `pickReadme`) is rendered below its listing. */
   markdownRenderer?: MarkdownRenderer
   /** Optional parquet renderer (see `ParquetRenderer`). When set,
    *  `.parquet`/`.pqt` paths render via this component (typically a
@@ -386,11 +387,11 @@ function Body(props: BodyProps) {
       )
     }
     case 'zip':
-      return <ZipEntryList store={store} path={parsed.path} routeBase={routeBase} rootPrefix={rootPrefix} />
+      return <ZipEntryList store={store} path={parsed.path} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
     case 'zipEntry':
       return <ZipEntryPreview store={store} path={parsed.path} entry={parsed.entry} markdownRenderer={markdownRenderer} />
     case 'tar':
-      return <TarEntryList store={store} path={parsed.path} codec={parsed.codec} routeBase={routeBase} rootPrefix={rootPrefix} />
+      return <TarEntryList store={store} path={parsed.path} codec={parsed.codec} routeBase={routeBase} rootPrefix={rootPrefix} markdownRenderer={markdownRenderer} />
     case 'tarEntry':
       return <TarMember store={store} path={parsed.path} entry={parsed.entry} codec={parsed.codec} render={inner} />
     case 'compressed':

@@ -38,7 +38,7 @@ test.describe('snapshot demo', () => {
       ['config.yaml', 'unchanged', '665 B', '665 B'],
       ['data/', 'unchanged', '209 B', '209 B'],
       ['docs/', 'changed', '4.5 KB', '4.8 KB'],
-      ['formats/', 'unchanged', '10.4 KB', '10.4 KB'],
+      ['formats/', 'unchanged', '10.5 KB', '10.5 KB'],
       ['logs/', 'changed', '3.5 KB', '4.4 KB'],
       ['samples/', 'changed', '78.4 KB', '84.7 KB'],
       ['tmp/', 'removed', '4.0 KB', '—'],

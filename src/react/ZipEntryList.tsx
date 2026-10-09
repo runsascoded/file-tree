@@ -2,12 +2,14 @@
  *  when defined (server-side path); otherwise parses the central
  *  directory client-side via range reads. Linked entries route to
  *  `<routeBase>/<path>!/<entry>` (file-tree's pkzip-style URI form). */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Store, ZipEntriesResult } from '../types'
+import { ARCHIVE_README_MAX_BYTES, ArchiveReadme } from './ArchiveReadme'
+import type { MarkdownRenderer } from './FileTree'
 import { fmtSize } from './fmt'
 import { keyToSplat } from './parsePath'
-import { readZipEntries } from './zip'
+import { readZipEntries, readZipEntry } from './zip'
 
 export interface ZipEntryListProps {
   store: Store
@@ -16,9 +18,11 @@ export interface ZipEntryListProps {
   routeBase: string
   /** Root prefix, mirroring `<FileTree rootPrefix>`. */
   rootPrefix?: string
+  /** When set, the archive's README (if any) renders below the listing. */
+  markdownRenderer?: MarkdownRenderer
 }
 
-export function ZipEntryList({ store, path, routeBase, rootPrefix = '' }: ZipEntryListProps) {
+export function ZipEntryList({ store, path, routeBase, rootPrefix = '', markdownRenderer }: ZipEntryListProps) {
   const [resp, setResp] = useState<ZipEntriesResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,6 +39,12 @@ export function ZipEntryList({ store, path, routeBase, rootPrefix = '' }: ZipEnt
     })
     return () => { cancelled = true }
   }, [store, path])
+
+  const names = useMemo(() => resp?.entries.map(e => e.name) ?? [], [resp])
+  const load = useCallback(
+    async (name: string) => (await readZipEntry(store, path, name, { max: ARCHIVE_README_MAX_BYTES })).bytes,
+    [store, path],
+  )
 
   if (error) return <div style={{ color: 'salmon' }}>error: {error}</div>
   if (!resp) return <div style={{ opacity: 0.6 }}>reading central directory of {path}…</div>
@@ -81,6 +91,9 @@ export function ZipEntryList({ store, path, routeBase, rootPrefix = '' }: ZipEnt
           })}
         </tbody>
       </table>
+      {markdownRenderer && (
+        <ArchiveReadme store={store} path={path} names={names} load={load} markdownRenderer={markdownRenderer} routeBase={routeBase} rootPrefix={rootPrefix} />
+      )}
     </>
   )
 }

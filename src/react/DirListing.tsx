@@ -7,6 +7,8 @@ import type { MarkdownRenderer } from './FileTree'
 import { markdownCtx } from './markdownLinks'
 import { makeMatcher } from './match'
 import { basename, keyToSplat } from './parsePath'
+import { pickReadme } from './readme'
+import { ReadmePanel } from './ReadmePanel'
 import { defaultUseState, type PersistedState } from './persistedState'
 
 /** Columns rendered by the default `<DirListing>` table. */
@@ -56,8 +58,9 @@ export interface DirListingProps {
    *  `@rdub/file-tree/url-state`) to bind `q` to `?q=…`. Ignored when
    *  the caller controls `q`/`setQ` directly. */
   usePersistedState?: PersistedState
-  /** When set + a `README.md` (case-insensitive) is in the listing, the
-   *  README is fetched and rendered below the table via this fn. */
+  /** When set + a README is in the listing (`README.md`, `.markdown`,
+   *  `.rst`, `.txt` or bare `README`, case-insensitive), it's fetched and
+   *  rendered below the table: markdown via this fn, the rest as text. */
   markdownRenderer?: MarkdownRenderer
   /** Optional per-cell render hook (see `CellRenderer`). */
   renderCell?: CellRenderer
@@ -303,46 +306,37 @@ export function DirListing({ store, prefix, routeBase, rootPrefix = '', q: qExte
         <button onClick={loadMore} style={{ marginTop: '0.5em' }}>load more</button>
       )}
       {markdownRenderer && (
-        <DefaultReadme store={store} entries={entries} markdownRenderer={markdownRenderer} routeBase={routeBase} rootPrefix={rootPrefix} />
+        <DefaultReadme store={store} prefix={prefix} entries={entries} markdownRenderer={markdownRenderer} routeBase={routeBase} rootPrefix={rootPrefix} />
       )}
     </>
   )
 }
 
-/** Find the directory's `README.md` (case-insensitive basename match) and
- *  render it below the listing. Renders nothing when no README is present
- *  or the fetch fails (404/network), so the dir UI stays clean. */
-function DefaultReadme({ store, entries, markdownRenderer, routeBase, rootPrefix }: { store: Store; entries: Entry[]; markdownRenderer: MarkdownRenderer; routeBase: string; rootPrefix: string }) {
+/** Find the directory's README (see `pickReadme`: `README.md`, `.rst`,
+ *  `.txt`, bare `README`, …) and render it below the listing. Renders
+ *  nothing when no README is present or the fetch fails (404/network), so
+ *  the dir UI stays clean. */
+function DefaultReadme({ store, prefix, entries, markdownRenderer, routeBase, rootPrefix }: { store: Store; prefix: string; entries: Entry[]; markdownRenderer: MarkdownRenderer; routeBase: string; rootPrefix: string }) {
   const navigate = useNavigate()
-  const readme = entries.find(e => !e.isDir && /^README\.md$/i.test(basename(e.key)))
+  const key = pickReadme(entries.filter(e => !e.isDir).map(e => e.key), prefix)
   const [text, setText] = useState<string | null>(null)
   useEffect(() => {
     setText(null)
-    if (!readme) return
+    if (!key) return
     let cancelled = false
-    store.get(readme.key).then(r => {
+    store.get(key).then(r => {
       if (cancelled) return
       setText(new TextDecoder().decode(r.bytes))
     }).catch(() => { /* swallow — README is best-effort */ })
     return () => { cancelled = true }
-  }, [store, readme?.key])
-  if (!readme || text == null) return null
+  }, [store, key])
+  if (!key || text == null) return null
   return (
-    <div
-      className="rdub-file-tree-default-readme"
-      data-readme-key={readme.key}
-      style={{
-        marginTop: '1.5em',
-        padding: '0.8em 1em',
-        border: '1px solid rgba(127,127,127,0.25)',
-        borderRadius: 6,
-        background: 'rgba(127,127,127,0.04)',
-      }}
-    >
-      <div style={{ fontSize: '0.8em', opacity: 0.6, fontFamily: 'ui-monospace, monospace', marginBottom: '0.5em' }}>
-        {basename(readme.key)}
-      </div>
-      {markdownRenderer(text, markdownCtx(readme.key, { store, routeBase, rootPrefix, navigate }))}
-    </div>
+    <ReadmePanel
+      name={key}
+      text={text}
+      markdownRenderer={markdownRenderer}
+      ctx={markdownCtx(key, { store, routeBase, rootPrefix, navigate })}
+    />
   )
 }
