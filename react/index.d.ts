@@ -89,8 +89,9 @@ interface DirListingProps {
      *  `@rdub/file-tree/url-state`) to bind `q` to `?q=…`. Ignored when
      *  the caller controls `q`/`setQ` directly. */
     usePersistedState?: PersistedState;
-    /** When set + a `README.md` (case-insensitive) is in the listing, the
-     *  README is fetched and rendered below the table via this fn. */
+    /** When set + a README is in the listing (`README.md`, `.markdown`,
+     *  `.rst`, `.txt` or bare `README`, case-insensitive), it's fetched and
+     *  rendered below the table: markdown via this fn, the rest as text. */
     markdownRenderer?: MarkdownRenderer;
     /** Optional per-cell render hook (see `CellRenderer`). */
     renderCell?: CellRenderer;
@@ -262,8 +263,9 @@ interface FileTreeProps<R extends ParquetRenderer = ParquetRenderer> {
     /** Optional inline style for the outer wrapper. */
     style?: React.CSSProperties;
     /** Optional markdown renderer (see `MarkdownRenderer`). When set, `.md`
-     *  files render as rich markdown (instead of plaintext `<pre>`) and
-     *  any `README.md` in a directory is rendered below the listing. */
+     *  files render as rich markdown (instead of plaintext `<pre>`) and a
+     *  directory's or archive's README (`README.md`, `.rst`, `.txt`, bare
+     *  `README`, …; see `pickReadme`) is rendered below its listing. */
     markdownRenderer?: MarkdownRenderer;
     /** Optional parquet renderer (see `ParquetRenderer`). When set,
      *  `.parquet`/`.pqt` paths render via this component (typically a
@@ -443,8 +445,10 @@ interface ZipEntryListProps {
     routeBase: string;
     /** Root prefix, mirroring `<FileTree rootPrefix>`. */
     rootPrefix?: string;
+    /** When set, the archive's README (if any) renders below the listing. */
+    markdownRenderer?: MarkdownRenderer;
 }
-declare function ZipEntryList({ store, path, routeBase, rootPrefix }: ZipEntryListProps): react_jsx_runtime.JSX.Element;
+declare function ZipEntryList({ store, path, routeBase, rootPrefix, markdownRenderer }: ZipEntryListProps): react_jsx_runtime.JSX.Element;
 
 interface ZipEntryPreviewProps {
     store: Store;
@@ -485,8 +489,25 @@ interface TarEntryListProps {
     codec?: Codec;
     routeBase: string;
     rootPrefix?: string;
+    /** When set, the archive's README (if any) renders below the listing. */
+    markdownRenderer?: MarkdownRenderer;
 }
-declare function TarEntryList({ store, path, codec, routeBase, rootPrefix }: TarEntryListProps): react_jsx_runtime.JSX.Element;
+declare function TarEntryList({ store, path, codec, routeBase, rootPrefix, markdownRenderer }: TarEntryListProps): react_jsx_runtime.JSX.Element;
+
+/** Which file to render as a listing's README, GitHub-style: any basename
+ *  `README` (case-insensitive) with a markdown or plain-text extension, or
+ *  none. Markdown renders through the `markdownRenderer`; the rest render
+ *  as preformatted text (there's no reStructuredText renderer). */
+type ReadmeFormat = 'markdown' | 'text';
+declare function readmeFormat(name: string): ReadmeFormat;
+/** The preferred README among `names` sitting directly in `dir` (`''` or a
+ *  `/`-terminated prefix), or `null`. Directory names (trailing `/`) never
+ *  match. */
+declare function pickReadme(names: readonly string[], dir?: string): string | null;
+/** An archive's README: one at the archive root, else — when every member
+ *  sits under a single top-level directory, as most tarballs wrap theirs
+ *  (`foo-1.2.3/…`) — one directly in that directory. */
+declare function pickArchiveReadme(names: readonly string[]): string | null;
 
 /** Client-side tarball reading: `.tar`, `.tar.gz` / `.tgz`, `.tar.zst`.
  *
@@ -621,4 +642,4 @@ declare function fmtSize(n: number | undefined): string;
  *  if the value contains `*` or `?`, treats it as an anchored glob. */
 declare function makeMatcher(q: string): (s: string) => boolean;
 
-export { type AsyncBuffer, BinaryView, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, Codec, CompressedView, type Crumb, type CrumbCtx, type CrumbRenderer, type Decompressed, DirListing, type DirListingProps, FileTree, type FileTreeProps, HEXDUMP_BYTES, MAX_COMPRESSED_BYTES, MAX_DECOMPRESSED_BYTES, MarkdownCtx, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PdfViewer, type PdfViewerProps, PersistedState, RegistryViewer, type TarArchive, type TarEntry, TarEntryList, type TarEntryListProps, type TarEntryType, TarMember, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, bytesStore, decompress, findViewer, fmtSize, hexdump, looksLikeText, makeMatcher, parseTar, readTar, readZipEntries, readZipEntry, tarEntryBytes };
+export { type AsyncBuffer, BinaryView, Breadcrumb, type CellColumn, type CellCtx, type CellRenderer, Codec, CompressedView, type Crumb, type CrumbCtx, type CrumbRenderer, type Decompressed, DirListing, type DirListingProps, FileTree, type FileTreeProps, HEXDUMP_BYTES, MAX_COMPRESSED_BYTES, MAX_DECOMPRESSED_BYTES, MarkdownCtx, type MarkdownRenderer, type MediaKind, MediaViewer, type MediaViewerProps, type ParquetRenderer, Parsed, PdfViewer, type PdfViewerProps, PersistedState, type ReadmeFormat, RegistryViewer, type TarArchive, type TarEntry, TarEntryList, type TarEntryListProps, type TarEntryType, TarMember, TextViewer, type TextViewerProps, TreeSource, type TreemapRenderer, type TreemapRendererProps, type ViewerActionCtx, type ViewerEntry, type ViewerMatchCtx, type ViewerProps, ZipEntryList, type ZipEntryListProps, ZipEntryPreview, type ZipEntryPreviewProps, asyncBufferFromStore, bytesStore, decompress, findViewer, fmtSize, hexdump, looksLikeText, makeMatcher, parseTar, pickArchiveReadme, pickReadme, readTar, readZipEntries, readZipEntry, readmeFormat, tarEntryBytes };

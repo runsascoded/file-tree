@@ -1,6 +1,6 @@
 // src/react/FileTree.tsx
-import { cloneElement, isValidElement, useEffect as useEffect10, useMemo as useMemo4, useState as useState11 } from "react";
-import { useLocation, useNavigate as useNavigate2 } from "react-router-dom";
+import { cloneElement, isValidElement, useEffect as useEffect11, useMemo as useMemo7, useState as useState12 } from "react";
+import { useLocation, useNavigate as useNavigate3 } from "react-router-dom";
 
 // src/react/parsePath.ts
 var TEXTY = /* @__PURE__ */ new Set([
@@ -252,12 +252,79 @@ function makeMatcher(q) {
   return (s) => re.test(s);
 }
 
+// src/react/readme.ts
+var EXTS = [
+  [".md", "markdown"],
+  [".markdown", "markdown"],
+  [".rst", "text"],
+  [".txt", "text"],
+  ["", "text"]
+];
+function rank(base) {
+  const m = /^readme(\.[^.]*)?$/i.exec(base);
+  if (!m) return -1;
+  const ext = (m[1] ?? "").toLowerCase();
+  return EXTS.findIndex(([e]) => e === ext);
+}
+function readmeFormat(name) {
+  const base = name.slice(name.lastIndexOf("/") + 1);
+  const r = rank(base);
+  return r < 0 ? "text" : EXTS[r][1];
+}
+function pickReadme(names, dir = "") {
+  let best = null;
+  let bestRank = Infinity;
+  for (const name of names) {
+    if (!name.startsWith(dir)) continue;
+    const base = name.slice(dir.length);
+    if (!base || base.includes("/")) continue;
+    const r = rank(base);
+    if (r >= 0 && r < bestRank) {
+      best = name;
+      bestRank = r;
+    }
+  }
+  return best;
+}
+function pickArchiveReadme(names) {
+  const root = pickReadme(names);
+  if (root) return root;
+  const tops = new Set(names.map((n) => n.split("/")[0]));
+  if (tops.size !== 1) return null;
+  const [top] = tops;
+  return pickReadme(names, `${top}/`);
+}
+
+// src/react/ReadmePanel.tsx
+import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
+function ReadmePanel({ name, text, markdownRenderer, ctx }) {
+  const md = readmeFormat(name) === "markdown" && markdownRenderer;
+  return /* @__PURE__ */ jsxs2(
+    "div",
+    {
+      className: "rdub-file-tree-default-readme",
+      "data-readme-key": name,
+      style: {
+        marginTop: "1.5em",
+        padding: "0.8em 1em",
+        border: "1px solid rgba(127,127,127,0.25)",
+        borderRadius: 6,
+        background: "rgba(127,127,127,0.04)"
+      },
+      children: [
+        /* @__PURE__ */ jsx2("div", { style: { fontSize: "0.8em", opacity: 0.6, fontFamily: "ui-monospace, monospace", marginBottom: "0.5em" }, children: basename(name) }),
+        md ? markdownRenderer(text, ctx) : /* @__PURE__ */ jsx2("pre", { style: { margin: 0, whiteSpace: "pre-wrap", fontSize: "0.9em" }, children: text })
+      ]
+    }
+  );
+}
+
 // src/react/persistedState.ts
 import { useState } from "react";
 var defaultUseState = (_key, defaultValue) => useState(defaultValue);
 
 // src/react/DirListing.tsx
-import { Fragment, jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
+import { Fragment, jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 function useDirSizes(treeSource, prefix, rootPrefix) {
   const [sizes, setSizes] = useState2(null);
   useEffect(() => {
@@ -347,17 +414,17 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
     if (!q) return entries;
     return entries.filter((e) => matcher(basename(e.key)));
   }, [entries, q, matcher]);
-  if (error) return /* @__PURE__ */ jsxs2("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ jsxs3("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!entries || !filtered) return /* @__PURE__ */ jsxs2("div", { style: { opacity: 0.6 }, children: [
+  if (!entries || !filtered) return /* @__PURE__ */ jsxs3("div", { style: { opacity: 0.6 }, children: [
     "loading ",
     prefix,
     "\u2026"
   ] });
-  const filterUI = /* @__PURE__ */ jsxs2("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginBottom: "0.5em", fontSize: "0.9em" }, children: [
-    /* @__PURE__ */ jsx2(
+  const filterUI = /* @__PURE__ */ jsxs3("div", { style: { display: "flex", alignItems: "center", gap: "0.5em", marginBottom: "0.5em", fontSize: "0.9em" }, children: [
+    /* @__PURE__ */ jsx3(
       "input",
       {
         type: "search",
@@ -375,44 +442,44 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
         }
       }
     ),
-    /* @__PURE__ */ jsx2("span", { style: { opacity: 0.6, fontVariantNumeric: "tabular-nums" }, children: q ? /* @__PURE__ */ jsxs2(Fragment, { children: [
+    /* @__PURE__ */ jsx3("span", { style: { opacity: 0.6, fontVariantNumeric: "tabular-nums" }, children: q ? /* @__PURE__ */ jsxs3(Fragment, { children: [
       filtered.length,
       " / ",
       entries.length
-    ] }) : /* @__PURE__ */ jsxs2(Fragment, { children: [
+    ] }) : /* @__PURE__ */ jsxs3(Fragment, { children: [
       entries.length,
       " entries"
     ] }) }),
-    q && /* @__PURE__ */ jsx2("button", { onClick: () => setQ(""), style: { fontSize: "0.85em", padding: "0.2em 0.6em" }, children: "clear" })
+    q && /* @__PURE__ */ jsx3("button", { onClick: () => setQ(""), style: { fontSize: "0.85em", padding: "0.2em 0.6em" }, children: "clear" })
   ] });
   if (filtered.length === 0) {
-    return /* @__PURE__ */ jsxs2(Fragment, { children: [
+    return /* @__PURE__ */ jsxs3(Fragment, { children: [
       filterUI,
-      /* @__PURE__ */ jsx2("div", { style: { opacity: 0.6 }, children: q ? /* @__PURE__ */ jsxs2(Fragment, { children: [
+      /* @__PURE__ */ jsx3("div", { style: { opacity: 0.6 }, children: q ? /* @__PURE__ */ jsxs3(Fragment, { children: [
         "no entries match ",
-        /* @__PURE__ */ jsx2("code", { children: q })
-      ] }) : /* @__PURE__ */ jsxs2(Fragment, { children: [
+        /* @__PURE__ */ jsx3("code", { children: q })
+      ] }) : /* @__PURE__ */ jsxs3(Fragment, { children: [
         "empty: ",
-        /* @__PURE__ */ jsx2("code", { children: prefix })
+        /* @__PURE__ */ jsx3("code", { children: prefix })
       ] }) })
     ] });
   }
   const baseTrimmed = routeBase.replace(/\/+$/, "");
-  return /* @__PURE__ */ jsxs2(Fragment, { children: [
+  return /* @__PURE__ */ jsxs3(Fragment, { children: [
     filterUI,
-    /* @__PURE__ */ jsxs2("table", { style: { borderCollapse: "collapse", width: "100%" }, children: [
-      /* @__PURE__ */ jsx2("thead", { children: /* @__PURE__ */ jsxs2("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
-        /* @__PURE__ */ jsx2("th", { style: { padding: "0.2em 0.6em 0.2em 0", fontWeight: 400 }, children: "name" }),
-        /* @__PURE__ */ jsx2("th", { style: { padding: "0.2em 0.6em", fontWeight: 400, textAlign: "right" }, children: "size" }),
-        /* @__PURE__ */ jsx2("th", { style: { padding: "0.2em 0", fontWeight: 400, textAlign: "right" }, children: "modified" })
+    /* @__PURE__ */ jsxs3("table", { style: { borderCollapse: "collapse", width: "100%" }, children: [
+      /* @__PURE__ */ jsx3("thead", { children: /* @__PURE__ */ jsxs3("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
+        /* @__PURE__ */ jsx3("th", { style: { padding: "0.2em 0.6em 0.2em 0", fontWeight: 400 }, children: "name" }),
+        /* @__PURE__ */ jsx3("th", { style: { padding: "0.2em 0.6em", fontWeight: 400, textAlign: "right" }, children: "size" }),
+        /* @__PURE__ */ jsx3("th", { style: { padding: "0.2em 0", fontWeight: 400, textAlign: "right" }, children: "modified" })
       ] }) }),
-      /* @__PURE__ */ jsx2("tbody", { children: filtered.map((e) => {
+      /* @__PURE__ */ jsx3("tbody", { children: filtered.map((e) => {
         const name = basename(e.key);
         const splat = keyToSplat(e.key, rootPrefix);
         const href = `${baseTrimmed}/${splat}`;
         const rowPath = splat.replace(/\/+$/, "");
         const cell = (column, defaultNode) => renderCell ? renderCell({ entry: e, column, prefix, href, defaultNode }) : defaultNode;
-        return /* @__PURE__ */ jsxs2(
+        return /* @__PURE__ */ jsxs3(
           "tr",
           {
             onMouseEnter: onHoverPath ? () => onHoverPath(rowPath) : void 0,
@@ -422,32 +489,32 @@ function DirListing({ store, prefix, routeBase, rootPrefix = "", q: qExternal, s
               background: scrubMatchesRow(highlightedPath, rowPath) ? "rgba(127,127,127,0.16)" : scrubMatchesRow(selectedPath, rowPath) ? "rgba(74,158,255,0.18)" : void 0
             },
             children: [
-              /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: cell("name", /* @__PURE__ */ jsxs2(Link2, { to: href, children: [
-                e.isDir ? /* @__PURE__ */ jsx2("span", { style: { opacity: 0.6 }, children: "\u{1F4C1} " }) : null,
+              /* @__PURE__ */ jsx3("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: cell("name", /* @__PURE__ */ jsxs3(Link2, { to: href, children: [
+                e.isDir ? /* @__PURE__ */ jsx3("span", { style: { opacity: 0.6 }, children: "\u{1F4C1} " }) : null,
                 name,
                 e.isDir ? "/" : ""
               ] })) }),
-              /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: e.isDir && !dirSizes?.has(e.key) ? 0.4 : 1 }, children: cell("size", e.isDir ? dirSize(dirSizes, e.key) : fmtSize(e.size)) }),
-              /* @__PURE__ */ jsx2("td", { style: { padding: "0.3em 0", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6, fontSize: "0.9em" }, children: cell("modified", e.lastModified?.slice(0, 10) ?? "") })
+              /* @__PURE__ */ jsx3("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: e.isDir && !dirSizes?.has(e.key) ? 0.4 : 1 }, children: cell("size", e.isDir ? dirSize(dirSizes, e.key) : fmtSize(e.size)) }),
+              /* @__PURE__ */ jsx3("td", { style: { padding: "0.3em 0", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.6, fontSize: "0.9em" }, children: cell("modified", e.lastModified?.slice(0, 10) ?? "") })
             ]
           },
           e.key
         );
       }) })
     ] }),
-    cursor && /* @__PURE__ */ jsx2("button", { onClick: loadMore, style: { marginTop: "0.5em" }, children: "load more" }),
-    markdownRenderer && /* @__PURE__ */ jsx2(DefaultReadme, { store, entries, markdownRenderer, routeBase, rootPrefix })
+    cursor && /* @__PURE__ */ jsx3("button", { onClick: loadMore, style: { marginTop: "0.5em" }, children: "load more" }),
+    markdownRenderer && /* @__PURE__ */ jsx3(DefaultReadme, { store, prefix, entries, markdownRenderer, routeBase, rootPrefix })
   ] });
 }
-function DefaultReadme({ store, entries, markdownRenderer, routeBase, rootPrefix }) {
+function DefaultReadme({ store, prefix, entries, markdownRenderer, routeBase, rootPrefix }) {
   const navigate = useNavigate();
-  const readme = entries.find((e) => !e.isDir && /^README\.md$/i.test(basename(e.key)));
+  const key = pickReadme(entries.filter((e) => !e.isDir).map((e) => e.key), prefix);
   const [text, setText] = useState2(null);
   useEffect(() => {
     setText(null);
-    if (!readme) return;
+    if (!key) return;
     let cancelled = false;
-    store.get(readme.key).then((r) => {
+    store.get(key).then((r) => {
       if (cancelled) return;
       setText(new TextDecoder().decode(r.bytes));
     }).catch(() => {
@@ -455,31 +522,22 @@ function DefaultReadme({ store, entries, markdownRenderer, routeBase, rootPrefix
     return () => {
       cancelled = true;
     };
-  }, [store, readme?.key]);
-  if (!readme || text == null) return null;
-  return /* @__PURE__ */ jsxs2(
-    "div",
+  }, [store, key]);
+  if (!key || text == null) return null;
+  return /* @__PURE__ */ jsx3(
+    ReadmePanel,
     {
-      className: "rdub-file-tree-default-readme",
-      "data-readme-key": readme.key,
-      style: {
-        marginTop: "1.5em",
-        padding: "0.8em 1em",
-        border: "1px solid rgba(127,127,127,0.25)",
-        borderRadius: 6,
-        background: "rgba(127,127,127,0.04)"
-      },
-      children: [
-        /* @__PURE__ */ jsx2("div", { style: { fontSize: "0.8em", opacity: 0.6, fontFamily: "ui-monospace, monospace", marginBottom: "0.5em" }, children: basename(readme.key) }),
-        markdownRenderer(text, markdownCtx(readme.key, { store, routeBase, rootPrefix, navigate }))
-      ]
+      name: key,
+      text,
+      markdownRenderer,
+      ctx: markdownCtx(key, { store, routeBase, rootPrefix, navigate })
     }
   );
 }
 
 // src/react/MediaViewer.tsx
 import { useEffect as useEffect2, useState as useState3 } from "react";
-import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
+import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 function MediaViewer({ store, path, kind }) {
   const direct = typeof store.getUrl === "function" ? store.getUrl(path, { inline: true }) : null;
   const [blobUrl, setBlobUrl] = useState3(null);
@@ -503,18 +561,18 @@ function MediaViewer({ store, path, kind }) {
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
   }, [store, path, direct]);
-  if (error) return /* @__PURE__ */ jsxs3("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ jsxs4("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
   const src = direct ?? blobUrl;
-  if (!src) return /* @__PURE__ */ jsxs3("div", { style: { opacity: 0.6 }, children: [
+  if (!src) return /* @__PURE__ */ jsxs4("div", { style: { opacity: 0.6 }, children: [
     "loading ",
     path,
     "\u2026"
   ] });
   if (kind === "image") {
-    return /* @__PURE__ */ jsx3(
+    return /* @__PURE__ */ jsx4(
       "img",
       {
         src,
@@ -524,7 +582,7 @@ function MediaViewer({ store, path, kind }) {
     );
   }
   if (kind === "audio") {
-    return /* @__PURE__ */ jsx3(
+    return /* @__PURE__ */ jsx4(
       "audio",
       {
         src,
@@ -534,7 +592,7 @@ function MediaViewer({ store, path, kind }) {
       }
     );
   }
-  return /* @__PURE__ */ jsx3(
+  return /* @__PURE__ */ jsx4(
     "video",
     {
       src,
@@ -547,7 +605,7 @@ function MediaViewer({ store, path, kind }) {
 
 // src/react/PdfViewer.tsx
 import { useEffect as useEffect3, useState as useState4 } from "react";
-import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
+import { jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 function PdfViewer({ store, path }) {
   const direct = typeof store.getUrl === "function" ? store.getUrl(path, { inline: true }) : null;
   const [blobUrl, setBlobUrl] = useState4(null);
@@ -571,17 +629,17 @@ function PdfViewer({ store, path }) {
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
   }, [store, path, direct]);
-  if (error) return /* @__PURE__ */ jsxs4("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ jsxs5("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
   const src = direct ?? blobUrl;
-  if (!src) return /* @__PURE__ */ jsxs4("div", { style: { opacity: 0.6 }, children: [
+  if (!src) return /* @__PURE__ */ jsxs5("div", { style: { opacity: 0.6 }, children: [
     "loading ",
     path,
     "\u2026"
   ] });
-  return /* @__PURE__ */ jsx4(
+  return /* @__PURE__ */ jsx5(
     "iframe",
     {
       src,
@@ -593,7 +651,7 @@ function PdfViewer({ store, path }) {
 
 // src/react/TextViewer.tsx
 import { useEffect as useEffect4, useState as useState5 } from "react";
-import { Fragment as Fragment2, jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
+import { Fragment as Fragment2, jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
 var HEAD_BYTES = 64 * 1024;
 function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer, codeLang, usePersistedState }) {
   const [text, setText] = useState5(null);
@@ -631,18 +689,18 @@ function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer,
       setLoadingMore(false);
     }
   }
-  if (error) return /* @__PURE__ */ jsxs5("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ jsxs6("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (text == null) return /* @__PURE__ */ jsxs5("div", { style: { opacity: 0.6 }, children: [
+  if (text == null) return /* @__PURE__ */ jsxs6("div", { style: { opacity: 0.6 }, children: [
     "loading ",
     path,
     "\u2026"
   ] });
   const truncated = totalSize != null && text.length < totalSize;
-  return /* @__PURE__ */ jsxs5(Fragment2, { children: [
-    markdownRenderer ? /* @__PURE__ */ jsx5("div", { className: "rdub-file-tree-markdown", "data-path": path, children: markdownRenderer(text) }) : jsonRenderer ? /* @__PURE__ */ jsx5("div", { className: "rdub-file-tree-json", "data-path": path, children: jsonRenderer(text, usePersistedState) }) : codeRenderer ? /* @__PURE__ */ jsx5("div", { className: "rdub-file-tree-code", "data-path": path, "data-lang": codeLang, children: codeRenderer(text, codeLang ?? "") }) : /* @__PURE__ */ jsx5("pre", { style: {
+  return /* @__PURE__ */ jsxs6(Fragment2, { children: [
+    markdownRenderer ? /* @__PURE__ */ jsx6("div", { className: "rdub-file-tree-markdown", "data-path": path, children: markdownRenderer(text) }) : jsonRenderer ? /* @__PURE__ */ jsx6("div", { className: "rdub-file-tree-json", "data-path": path, children: jsonRenderer(text, usePersistedState) }) : codeRenderer ? /* @__PURE__ */ jsx6("div", { className: "rdub-file-tree-code", "data-path": path, "data-lang": codeLang, children: codeRenderer(text, codeLang ?? "") }) : /* @__PURE__ */ jsx6("pre", { style: {
       background: "rgba(127,127,127,0.08)",
       padding: "0.6em 0.8em",
       borderRadius: 4,
@@ -652,20 +710,46 @@ function TextViewer({ store, path, markdownRenderer, jsonRenderer, codeRenderer,
       fontFamily: "ui-monospace, monospace",
       whiteSpace: "pre-wrap"
     }, children: text }),
-    truncated && /* @__PURE__ */ jsxs5("div", { style: { marginTop: "0.5em", fontSize: "0.85em", opacity: 0.7 }, children: [
+    truncated && /* @__PURE__ */ jsxs6("div", { style: { marginTop: "0.5em", fontSize: "0.85em", opacity: 0.7 }, children: [
       "showing first ",
       fmtSize(text.length),
       " of ",
       fmtSize(totalSize),
       " ",
-      /* @__PURE__ */ jsx5("button", { onClick: loadAll, disabled: loadingMore, children: loadingMore ? "loading\u2026" : "load all" })
+      /* @__PURE__ */ jsx6("button", { onClick: loadAll, disabled: loadingMore, children: loadingMore ? "loading\u2026" : "load all" })
     ] })
   ] });
 }
 
 // src/react/ZipEntryList.tsx
-import { useEffect as useEffect5, useState as useState6 } from "react";
+import { useCallback, useEffect as useEffect6, useMemo as useMemo3, useState as useState7 } from "react";
 import { Link as Link3 } from "react-router-dom";
+
+// src/react/ArchiveReadme.tsx
+import { useEffect as useEffect5, useMemo as useMemo2, useState as useState6 } from "react";
+import { useNavigate as useNavigate2 } from "react-router-dom";
+import { jsx as jsx7 } from "react/jsx-runtime";
+var ARCHIVE_README_MAX_BYTES = 1 << 20;
+function ArchiveReadme({ store, path, names, load: load2, markdownRenderer, routeBase, rootPrefix = "" }) {
+  const navigate = useNavigate2();
+  const name = useMemo2(() => pickArchiveReadme(names), [names]);
+  const [text, setText] = useState6(null);
+  useEffect5(() => {
+    setText(null);
+    if (!name) return;
+    let cancelled = false;
+    load2(name).then((b) => {
+      if (!cancelled) setText(new TextDecoder().decode(b.subarray(0, ARCHIVE_README_MAX_BYTES)));
+    }).catch(() => {
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, load2]);
+  if (!name || text == null) return null;
+  const ctx = { ...markdownCtx(`${path}!/${name}`, { store, routeBase, rootPrefix, navigate }), resolveSrc: (src) => src };
+  return /* @__PURE__ */ jsx7(ReadmePanel, { name, text, markdownRenderer, ctx });
+}
 
 // src/react/zip.ts
 var SIG_EOCD = 101010256;
@@ -821,11 +905,11 @@ async function inflateDeflateRaw(input, max) {
 }
 
 // src/react/ZipEntryList.tsx
-import { Fragment as Fragment3, jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
-function ZipEntryList({ store, path, routeBase, rootPrefix = "" }) {
-  const [resp, setResp] = useState6(null);
-  const [error, setError] = useState6(null);
-  useEffect5(() => {
+import { Fragment as Fragment3, jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
+function ZipEntryList({ store, path, routeBase, rootPrefix = "", markdownRenderer }) {
+  const [resp, setResp] = useState7(null);
+  const [error, setError] = useState7(null);
+  useEffect6(() => {
     let cancelled = false;
     setResp(null);
     setError(null);
@@ -839,59 +923,65 @@ function ZipEntryList({ store, path, routeBase, rootPrefix = "" }) {
       cancelled = true;
     };
   }, [store, path]);
-  if (error) return /* @__PURE__ */ jsxs6("div", { style: { color: "salmon" }, children: [
+  const names = useMemo3(() => resp?.entries.map((e) => e.name) ?? [], [resp]);
+  const load2 = useCallback(
+    async (name) => (await readZipEntry(store, path, name, { max: ARCHIVE_README_MAX_BYTES })).bytes,
+    [store, path]
+  );
+  if (error) return /* @__PURE__ */ jsxs7("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!resp) return /* @__PURE__ */ jsxs6("div", { style: { opacity: 0.6 }, children: [
+  if (!resp) return /* @__PURE__ */ jsxs7("div", { style: { opacity: 0.6 }, children: [
     "reading central directory of ",
     path,
     "\u2026"
   ] });
   const baseTrimmed = routeBase.replace(/\/+$/, "");
   const splat = keyToSplat(path, rootPrefix);
-  return /* @__PURE__ */ jsxs6(Fragment3, { children: [
-    /* @__PURE__ */ jsxs6("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em" }, children: [
-      /* @__PURE__ */ jsx6("b", { children: resp.entries.length }),
+  return /* @__PURE__ */ jsxs7(Fragment3, { children: [
+    /* @__PURE__ */ jsxs7("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em" }, children: [
+      /* @__PURE__ */ jsx8("b", { children: resp.entries.length }),
       " entries \xB7 uncompressed",
       " ",
-      /* @__PURE__ */ jsx6("b", { children: fmtSize(resp.totalSize) }),
+      /* @__PURE__ */ jsx8("b", { children: fmtSize(resp.totalSize) }),
       " \xB7 compressed",
       " ",
-      /* @__PURE__ */ jsx6("b", { children: fmtSize(resp.totalCompressed) })
+      /* @__PURE__ */ jsx8("b", { children: fmtSize(resp.totalCompressed) })
     ] }),
-    /* @__PURE__ */ jsxs6("table", { style: { borderCollapse: "collapse", width: "100%" }, children: [
-      /* @__PURE__ */ jsx6("thead", { children: /* @__PURE__ */ jsxs6("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
-        /* @__PURE__ */ jsx6("th", { style: { padding: "0.2em 0.6em 0.2em 0", fontWeight: 400 }, children: "name" }),
-        /* @__PURE__ */ jsx6("th", { style: { padding: "0.2em 0.6em", fontWeight: 400, textAlign: "right" }, children: "size" }),
-        /* @__PURE__ */ jsx6("th", { style: { padding: "0.2em 0.6em", fontWeight: 400, textAlign: "right" }, children: "compressed" }),
-        /* @__PURE__ */ jsx6("th", { style: { padding: "0.2em 0", fontWeight: 400, textAlign: "right" }, children: "method" })
+    /* @__PURE__ */ jsxs7("table", { style: { borderCollapse: "collapse", width: "100%" }, children: [
+      /* @__PURE__ */ jsx8("thead", { children: /* @__PURE__ */ jsxs7("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
+        /* @__PURE__ */ jsx8("th", { style: { padding: "0.2em 0.6em 0.2em 0", fontWeight: 400 }, children: "name" }),
+        /* @__PURE__ */ jsx8("th", { style: { padding: "0.2em 0.6em", fontWeight: 400, textAlign: "right" }, children: "size" }),
+        /* @__PURE__ */ jsx8("th", { style: { padding: "0.2em 0.6em", fontWeight: 400, textAlign: "right" }, children: "compressed" }),
+        /* @__PURE__ */ jsx8("th", { style: { padding: "0.2em 0", fontWeight: 400, textAlign: "right" }, children: "method" })
       ] }) }),
-      /* @__PURE__ */ jsx6("tbody", { children: resp.entries.map((e) => {
+      /* @__PURE__ */ jsx8("tbody", { children: resp.entries.map((e) => {
         const href = `${baseTrimmed}/${splat}!/${e.name}`;
         const methodLabel = e.method === 0 ? "store" : e.method === 8 ? "deflate" : `m${e.method}`;
-        return /* @__PURE__ */ jsxs6("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.2)" }, children: [
-          /* @__PURE__ */ jsx6("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: /* @__PURE__ */ jsx6(Link3, { to: href, children: e.name }) }),
-          /* @__PURE__ */ jsx6("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: fmtSize(e.size) }),
-          /* @__PURE__ */ jsx6("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.7 }, children: fmtSize(e.compressedSize) }),
-          /* @__PURE__ */ jsx6("td", { style: { padding: "0.3em 0", textAlign: "right", opacity: 0.7, fontSize: "0.9em" }, children: methodLabel })
+        return /* @__PURE__ */ jsxs7("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.2)" }, children: [
+          /* @__PURE__ */ jsx8("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: /* @__PURE__ */ jsx8(Link3, { to: href, children: e.name }) }),
+          /* @__PURE__ */ jsx8("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: fmtSize(e.size) }),
+          /* @__PURE__ */ jsx8("td", { style: { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.7 }, children: fmtSize(e.compressedSize) }),
+          /* @__PURE__ */ jsx8("td", { style: { padding: "0.3em 0", textAlign: "right", opacity: 0.7, fontSize: "0.9em" }, children: methodLabel })
         ] }, e.name);
       }) })
-    ] })
+    ] }),
+    markdownRenderer && /* @__PURE__ */ jsx8(ArchiveReadme, { store, path, names, load: load2, markdownRenderer, routeBase, rootPrefix })
   ] });
 }
 
 // src/react/ZipEntryPreview.tsx
-import { useEffect as useEffect6, useMemo as useMemo2, useState as useState7 } from "react";
-import { Fragment as Fragment4, jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
+import { useEffect as useEffect7, useMemo as useMemo4, useState as useState8 } from "react";
+import { Fragment as Fragment4, jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
 var STREAMING_PREVIEW_BYTES = 256 * 1024;
 var FULL_FETCH_THRESHOLD = 4 * 1024 * 1024;
 function ZipEntryPreview({ store, path, entry, markdownRenderer }) {
-  const [bytes, setBytes] = useState7(null);
-  const [totalSize, setTotalSize] = useState7(void 0);
-  const [error, setError] = useState7(null);
-  const ext = useMemo2(() => extOf(entry), [entry]);
-  useEffect6(() => {
+  const [bytes, setBytes] = useState8(null);
+  const [totalSize, setTotalSize] = useState8(void 0);
+  const [error, setError] = useState8(null);
+  const ext = useMemo4(() => extOf(entry), [entry]);
+  useEffect7(() => {
     let cancelled = false;
     setBytes(null);
     setError(null);
@@ -908,30 +998,30 @@ function ZipEntryPreview({ store, path, entry, markdownRenderer }) {
       cancelled = true;
     };
   }, [store, path, entry]);
-  const blobUrl = useMemo2(() => {
+  const blobUrl = useMemo4(() => {
     if (!bytes || !IMAGE.has(ext)) return null;
     return URL.createObjectURL(new Blob([bytes]));
   }, [bytes, ext]);
-  useEffect6(() => () => {
+  useEffect7(() => () => {
     if (blobUrl) URL.revokeObjectURL(blobUrl);
   }, [blobUrl]);
-  if (error) return /* @__PURE__ */ jsxs7("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ jsxs8("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!bytes) return /* @__PURE__ */ jsxs7("div", { style: { opacity: 0.6 }, children: [
+  if (!bytes) return /* @__PURE__ */ jsxs8("div", { style: { opacity: 0.6 }, children: [
     "inflating ",
     entry,
     "\u2026"
   ] });
   const truncated = totalSize != null && totalSize > FULL_FETCH_THRESHOLD && bytes.byteLength < totalSize;
-  const banner = truncated && totalSize != null ? /* @__PURE__ */ jsx7(TruncationBanner, { shown: bytes.byteLength, total: totalSize }) : null;
+  const banner = truncated && totalSize != null ? /* @__PURE__ */ jsx9(TruncationBanner, { shown: bytes.byteLength, total: totalSize }) : null;
   if (TEXTY.has(ext)) {
     const text = new TextDecoder().decode(bytes);
     const isMd = ext === "md" || ext === "markdown";
-    return /* @__PURE__ */ jsxs7(Fragment4, { children: [
+    return /* @__PURE__ */ jsxs8(Fragment4, { children: [
       banner,
-      isMd && markdownRenderer ? /* @__PURE__ */ jsx7("div", { className: "rdub-file-tree-markdown", "data-entry": entry, children: markdownRenderer(text) }) : /* @__PURE__ */ jsx7("pre", { style: {
+      isMd && markdownRenderer ? /* @__PURE__ */ jsx9("div", { className: "rdub-file-tree-markdown", "data-entry": entry, children: markdownRenderer(text) }) : /* @__PURE__ */ jsx9("pre", { style: {
         background: "rgba(127,127,127,0.08)",
         padding: "0.6em 0.8em",
         borderRadius: 4,
@@ -944,9 +1034,9 @@ function ZipEntryPreview({ store, path, entry, markdownRenderer }) {
     ] });
   }
   if (IMAGE.has(ext) && blobUrl) {
-    return /* @__PURE__ */ jsxs7(Fragment4, { children: [
+    return /* @__PURE__ */ jsxs8(Fragment4, { children: [
       banner,
-      /* @__PURE__ */ jsx7(
+      /* @__PURE__ */ jsx9(
         "img",
         {
           src: blobUrl,
@@ -956,9 +1046,9 @@ function ZipEntryPreview({ store, path, entry, markdownRenderer }) {
       )
     ] });
   }
-  return /* @__PURE__ */ jsxs7("div", { style: { opacity: 0.7 }, children: [
+  return /* @__PURE__ */ jsxs8("div", { style: { opacity: 0.7 }, children: [
     "Inline preview not supported for ",
-    /* @__PURE__ */ jsxs7("code", { children: [
+    /* @__PURE__ */ jsxs8("code", { children: [
       ".",
       ext
     ] }),
@@ -966,7 +1056,7 @@ function ZipEntryPreview({ store, path, entry, markdownRenderer }) {
   ] });
 }
 function TruncationBanner({ shown, total }) {
-  return /* @__PURE__ */ jsxs7("div", { style: {
+  return /* @__PURE__ */ jsxs8("div", { style: {
     background: "rgba(220, 165, 60, 0.12)",
     border: "1px solid rgba(220, 165, 60, 0.4)",
     padding: "0.5em 0.8em",
@@ -974,7 +1064,7 @@ function TruncationBanner({ shown, total }) {
     marginBottom: "0.6em",
     fontSize: "0.9em"
   }, children: [
-    /* @__PURE__ */ jsx7("b", { children: "Streaming preview:" }),
+    /* @__PURE__ */ jsx9("b", { children: "Streaming preview:" }),
     " showing the first ",
     fmtSize(shown),
     " of ",
@@ -984,7 +1074,7 @@ function TruncationBanner({ shown, total }) {
 }
 
 // src/react/BinaryView.tsx
-import { useEffect as useEffect7, useState as useState8 } from "react";
+import { useEffect as useEffect8, useState as useState9 } from "react";
 
 // src/react/hexdump.ts
 function hexdump(bytes, base = 0) {
@@ -1028,7 +1118,7 @@ function trimPartialUtf8(bytes) {
 }
 
 // src/react/BinaryView.tsx
-import { Fragment as Fragment5, jsx as jsx8, jsxs as jsxs8 } from "react/jsx-runtime";
+import { Fragment as Fragment5, jsx as jsx10, jsxs as jsxs9 } from "react/jsx-runtime";
 var HEXDUMP_BYTES = 4096;
 var PRE = {
   background: "rgba(127,127,127,0.08)",
@@ -1041,9 +1131,9 @@ var PRE = {
   margin: 0
 };
 function BinaryView({ store, path }) {
-  const [head, setHead] = useState8(null);
-  const [error, setError] = useState8(null);
-  useEffect7(() => {
+  const [head, setHead] = useState9(null);
+  const [error, setError] = useState9(null);
+  useEffect8(() => {
     let cancelled = false;
     setHead(null);
     setError(null);
@@ -1058,29 +1148,29 @@ function BinaryView({ store, path }) {
       cancelled = true;
     };
   }, [store, path]);
-  if (error) return /* @__PURE__ */ jsxs8("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ jsxs9("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!head) return /* @__PURE__ */ jsxs8("div", { style: { opacity: 0.6 }, children: [
+  if (!head) return /* @__PURE__ */ jsxs9("div", { style: { opacity: 0.6 }, children: [
     "loading ",
     path,
     "\u2026"
   ] });
   const text = looksLikeText(head.bytes);
   const shown = head.total != null && head.total > head.bytes.byteLength ? `first ${fmtSize(head.bytes.byteLength)} of ${fmtSize(head.total)}` : fmtSize(head.bytes.byteLength);
-  return /* @__PURE__ */ jsxs8(Fragment5, { children: [
-    /* @__PURE__ */ jsxs8("div", { style: { opacity: 0.7, fontSize: "0.85em", margin: "0 0 0.5em" }, children: [
+  return /* @__PURE__ */ jsxs9(Fragment5, { children: [
+    /* @__PURE__ */ jsxs9("div", { style: { opacity: 0.7, fontSize: "0.85em", margin: "0 0 0.5em" }, children: [
       text ? "Unknown type; reads as text" : "Binary",
       " \xB7 ",
       shown
     ] }),
-    text ? /* @__PURE__ */ jsx8("pre", { "data-testid": "binary-text", style: { ...PRE, whiteSpace: "pre-wrap" }, children: new TextDecoder().decode(head.bytes) }) : /* @__PURE__ */ jsx8("pre", { "data-testid": "hexdump", style: PRE, children: hexdump(head.bytes).join("\n") })
+    text ? /* @__PURE__ */ jsx10("pre", { "data-testid": "binary-text", style: { ...PRE, whiteSpace: "pre-wrap" }, children: new TextDecoder().decode(head.bytes) }) : /* @__PURE__ */ jsx10("pre", { "data-testid": "hexdump", style: PRE, children: hexdump(head.bytes).join("\n") })
   ] });
 }
 
 // src/react/TarEntryList.tsx
-import { useEffect as useEffect8, useState as useState9 } from "react";
+import { useCallback as useCallback2, useEffect as useEffect9, useMemo as useMemo5, useState as useState10 } from "react";
 import { Link as Link4 } from "react-router-dom";
 
 // src/react/decompress.ts
@@ -1267,12 +1357,12 @@ function readTar(store, path, codec) {
 }
 
 // src/react/TarEntryList.tsx
-import { Fragment as Fragment6, jsx as jsx9, jsxs as jsxs9 } from "react/jsx-runtime";
+import { Fragment as Fragment6, jsx as jsx11, jsxs as jsxs10 } from "react/jsx-runtime";
 var TD = { padding: "0.3em 0.6em", textAlign: "right", fontVariantNumeric: "tabular-nums" };
-function TarEntryList({ store, path, codec, routeBase, rootPrefix = "" }) {
-  const [archive, setArchive] = useState9(null);
-  const [error, setError] = useState9(null);
-  useEffect8(() => {
+function TarEntryList({ store, path, codec, routeBase, rootPrefix = "", markdownRenderer }) {
+  const [archive, setArchive] = useState10(null);
+  const [error, setError] = useState10(null);
+  useEffect9(() => {
     let cancelled = false;
     setArchive(null);
     setError(null);
@@ -1285,11 +1375,17 @@ function TarEntryList({ store, path, codec, routeBase, rootPrefix = "" }) {
       cancelled = true;
     };
   }, [store, path, codec]);
-  if (error) return /* @__PURE__ */ jsxs9("div", { style: { color: "salmon" }, children: [
+  const names = useMemo5(() => archive?.entries.filter((e) => e.type === "file").map((e) => e.name) ?? [], [archive]);
+  const load2 = useCallback2(async (name) => {
+    const entry = archive?.entries.find((e) => e.name === name);
+    if (!archive || !entry) throw new Error(`tar: no member ${name}`);
+    return tarEntryBytes(archive, entry);
+  }, [archive]);
+  if (error) return /* @__PURE__ */ jsxs10("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!archive) return /* @__PURE__ */ jsxs9("div", { style: { opacity: 0.6 }, children: [
+  if (!archive) return /* @__PURE__ */ jsxs10("div", { style: { opacity: 0.6 }, children: [
     "reading ",
     path,
     "\u2026"
@@ -1297,41 +1393,42 @@ function TarEntryList({ store, path, codec, routeBase, rootPrefix = "" }) {
   const href = (name) => `${routeBase.replace(/\/+$/, "")}/${keyToSplat(path, rootPrefix)}!/${name}`;
   const files = archive.entries.filter((e) => e.type === "file");
   const total = files.reduce((n, e) => n + e.size, 0);
-  return /* @__PURE__ */ jsxs9(Fragment6, { children: [
-    /* @__PURE__ */ jsxs9("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em" }, children: [
-      /* @__PURE__ */ jsx9("b", { children: files.length }),
+  return /* @__PURE__ */ jsxs10(Fragment6, { children: [
+    /* @__PURE__ */ jsxs10("p", { style: { opacity: 0.7, fontSize: "0.95em", margin: "0 0 0.6em" }, children: [
+      /* @__PURE__ */ jsx11("b", { children: files.length }),
       " files \xB7 ",
-      /* @__PURE__ */ jsx9("b", { children: fmtSize(total) }),
-      codec && /* @__PURE__ */ jsxs9(Fragment6, { children: [
+      /* @__PURE__ */ jsx11("b", { children: fmtSize(total) }),
+      codec && /* @__PURE__ */ jsxs10(Fragment6, { children: [
         " \xB7 ",
         codec
       ] })
     ] }),
-    archive.truncated && /* @__PURE__ */ jsxs9("p", { "data-testid": "tar-truncated", style: { fontSize: "0.9em", margin: "0 0 0.6em", color: "rgb(220,165,60)" }, children: [
+    archive.truncated && /* @__PURE__ */ jsxs10("p", { "data-testid": "tar-truncated", style: { fontSize: "0.9em", margin: "0 0 0.6em", color: "rgb(220,165,60)" }, children: [
       "Archive read stopped at ",
       fmtSize(archive.bytes.byteLength),
       "; members past that point aren't listed."
     ] }),
-    /* @__PURE__ */ jsxs9("table", { style: { borderCollapse: "collapse", width: "100%" }, children: [
-      /* @__PURE__ */ jsx9("thead", { children: /* @__PURE__ */ jsxs9("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
-        /* @__PURE__ */ jsx9("th", { style: { padding: "0.2em 0.6em 0.2em 0", fontWeight: 400 }, children: "name" }),
-        /* @__PURE__ */ jsx9("th", { style: { ...TD, padding: "0.2em 0.6em", fontWeight: 400 }, children: "size" }),
-        /* @__PURE__ */ jsx9("th", { style: { ...TD, padding: "0.2em 0", fontWeight: 400 }, children: "modified" })
+    /* @__PURE__ */ jsxs10("table", { style: { borderCollapse: "collapse", width: "100%" }, children: [
+      /* @__PURE__ */ jsx11("thead", { children: /* @__PURE__ */ jsxs10("tr", { style: { textAlign: "left", opacity: 0.7 }, children: [
+        /* @__PURE__ */ jsx11("th", { style: { padding: "0.2em 0.6em 0.2em 0", fontWeight: 400 }, children: "name" }),
+        /* @__PURE__ */ jsx11("th", { style: { ...TD, padding: "0.2em 0.6em", fontWeight: 400 }, children: "size" }),
+        /* @__PURE__ */ jsx11("th", { style: { ...TD, padding: "0.2em 0", fontWeight: 400 }, children: "modified" })
       ] }) }),
-      /* @__PURE__ */ jsx9("tbody", { children: archive.entries.map((e) => /* @__PURE__ */ jsxs9("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.2)" }, children: [
-        /* @__PURE__ */ jsx9("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: e.type === "file" ? /* @__PURE__ */ jsx9(Link4, { to: href(e.name), children: e.name }) : /* @__PURE__ */ jsxs9("span", { style: { opacity: 0.7 }, children: [
+      /* @__PURE__ */ jsx11("tbody", { children: archive.entries.map((e) => /* @__PURE__ */ jsxs10("tr", { style: { borderTop: "1px solid rgba(127,127,127,0.2)" }, children: [
+        /* @__PURE__ */ jsx11("td", { style: { padding: "0.3em 0.6em 0.3em 0", fontFamily: "ui-monospace, monospace" }, children: e.type === "file" ? /* @__PURE__ */ jsx11(Link4, { to: href(e.name), children: e.name }) : /* @__PURE__ */ jsxs10("span", { style: { opacity: 0.7 }, children: [
           e.name,
           e.linkName ? ` \u2192 ${e.linkName}` : ""
         ] }) }),
-        /* @__PURE__ */ jsx9("td", { style: TD, children: e.type === "file" ? fmtSize(e.size) : "" }),
-        /* @__PURE__ */ jsx9("td", { style: { ...TD, padding: "0.3em 0", opacity: 0.7 }, children: e.lastModified?.slice(0, 10) ?? "" })
+        /* @__PURE__ */ jsx11("td", { style: TD, children: e.type === "file" ? fmtSize(e.size) : "" }),
+        /* @__PURE__ */ jsx11("td", { style: { ...TD, padding: "0.3em 0", opacity: 0.7 }, children: e.lastModified?.slice(0, 10) ?? "" })
       ] }, e.name)) })
-    ] })
+    ] }),
+    markdownRenderer && /* @__PURE__ */ jsx11(ArchiveReadme, { store, path, names, load: load2, markdownRenderer, routeBase, rootPrefix })
   ] });
 }
 
 // src/react/VirtualFile.tsx
-import { useEffect as useEffect9, useMemo as useMemo3, useState as useState10 } from "react";
+import { useEffect as useEffect10, useMemo as useMemo6, useState as useState11 } from "react";
 
 // src/types.ts
 var NotFoundError = class extends Error {
@@ -1361,10 +1458,10 @@ function bytesStore(key, load2, opts = {}) {
 }
 
 // src/react/VirtualFile.tsx
-import { Fragment as Fragment7, jsx as jsx10, jsxs as jsxs10 } from "react/jsx-runtime";
+import { Fragment as Fragment7, jsx as jsx12, jsxs as jsxs11 } from "react/jsx-runtime";
 function useLoaded(load2, deps) {
-  const [state, setState] = useState10({});
-  useEffect9(() => {
+  const [state, setState] = useState11({});
+  useEffect10(() => {
     let cancelled = false;
     setState({});
     load2().then((loaded) => {
@@ -1379,25 +1476,25 @@ function useLoaded(load2, deps) {
   return state;
 }
 function Note({ children }) {
-  return /* @__PURE__ */ jsx10("div", { style: { opacity: 0.7, fontSize: "0.85em", margin: "0 0 0.5em" }, children });
+  return /* @__PURE__ */ jsx12("div", { style: { opacity: 0.7, fontSize: "0.85em", margin: "0 0 0.5em" }, children });
 }
 function Virtual({ vkey, state, label, render }) {
   const { loaded, error } = state;
-  const store = useMemo3(
+  const store = useMemo6(
     () => loaded ? bytesStore(vkey, async () => loaded.bytes) : null,
     [vkey, loaded]
   );
-  if (error) return /* @__PURE__ */ jsxs10("div", { style: { color: "salmon" }, children: [
+  if (error) return /* @__PURE__ */ jsxs11("div", { style: { color: "salmon" }, children: [
     "error: ",
     error
   ] });
-  if (!loaded || !store) return /* @__PURE__ */ jsxs10("div", { style: { opacity: 0.6 }, children: [
+  if (!loaded || !store) return /* @__PURE__ */ jsxs11("div", { style: { opacity: 0.6 }, children: [
     "reading ",
     vkey,
     "\u2026"
   ] });
-  return /* @__PURE__ */ jsxs10(Fragment7, { children: [
-    /* @__PURE__ */ jsx10(Note, { children: label(loaded) }),
+  return /* @__PURE__ */ jsxs11(Fragment7, { children: [
+    /* @__PURE__ */ jsx12(Note, { children: label(loaded) }),
     render(store, vkey)
   ] });
 }
@@ -1409,19 +1506,19 @@ function CompressedView({ store, path, codec, inner, render }) {
     const d = await decompress(raw, codec, { inputTruncated: compressed > raw.byteLength });
     return { ...d, compressed };
   }, [store, path, codec]);
-  return /* @__PURE__ */ jsx10(
+  return /* @__PURE__ */ jsx12(
     Virtual,
     {
       vkey: inner,
       state,
       render,
-      label: (l) => /* @__PURE__ */ jsxs10("span", { "data-testid": "decompressed-note", children: [
+      label: (l) => /* @__PURE__ */ jsxs11("span", { "data-testid": "decompressed-note", children: [
         codec,
         ": ",
         fmtSize(l.compressed),
         " \u2192 ",
         fmtSize(l.bytes.byteLength),
-        l.truncated && /* @__PURE__ */ jsxs10("b", { children: [
+        l.truncated && /* @__PURE__ */ jsxs11("b", { children: [
           " (truncated: showing the first ",
           fmtSize(l.bytes.byteLength),
           ")"
@@ -1438,18 +1535,18 @@ function TarMember({ store, path, entry, codec, render }) {
     const bytes = tarEntryBytes(archive, e);
     return { bytes, truncated: bytes.byteLength < e.size };
   }, [store, path, entry, codec]);
-  return /* @__PURE__ */ jsx10(
+  return /* @__PURE__ */ jsx12(
     Virtual,
     {
       vkey: `${path}!/${entry}`,
       state,
       render,
-      label: (l) => /* @__PURE__ */ jsxs10("span", { "data-testid": "tar-member-note", children: [
+      label: (l) => /* @__PURE__ */ jsxs11("span", { "data-testid": "tar-member-note", children: [
         "member of ",
-        /* @__PURE__ */ jsx10("code", { children: path }),
+        /* @__PURE__ */ jsx12("code", { children: path }),
         " \xB7 ",
         fmtSize(l.bytes.byteLength),
-        l.truncated && /* @__PURE__ */ jsx10("b", { children: " (truncated: the archive read stopped partway through this member)" })
+        l.truncated && /* @__PURE__ */ jsx12("b", { children: " (truncated: the archive read stopped partway through this member)" })
       ] })
     }
   );
@@ -1457,7 +1554,7 @@ function TarMember({ store, path, entry, codec, render }) {
 
 // src/react/viewers.tsx
 import { lazy, Suspense } from "react";
-import { jsx as jsx11 } from "react/jsx-runtime";
+import { jsx as jsx13 } from "react/jsx-runtime";
 var lazyCache = /* @__PURE__ */ new Map();
 function lazyFor(entry) {
   let C = lazyCache.get(entry.id);
@@ -1474,18 +1571,18 @@ function findViewer(viewers, path) {
 }
 function RegistryViewer({ entry, store, path, usePersistedState, fallback }) {
   const Component = lazyFor(entry);
-  return /* @__PURE__ */ jsx11(Suspense, { fallback: fallback ?? /* @__PURE__ */ jsx11("div", { style: { opacity: 0.6 }, children: "loading viewer\u2026" }), children: /* @__PURE__ */ jsx11(Component, { store, path, usePersistedState, ...entry.options ?? {} }) });
+  return /* @__PURE__ */ jsx13(Suspense, { fallback: fallback ?? /* @__PURE__ */ jsx13("div", { style: { opacity: 0.6 }, children: "loading viewer\u2026" }), children: /* @__PURE__ */ jsx13(Component, { store, path, usePersistedState, ...entry.options ?? {} }) });
 }
 
 // src/react/FileTree.tsx
-import { Fragment as Fragment8, jsx as jsx12, jsxs as jsxs11 } from "react/jsx-runtime";
+import { Fragment as Fragment8, jsx as jsx14, jsxs as jsxs12 } from "react/jsx-runtime";
 function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleHref, home, className, style, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, viewerActions, renderCell, renderCrumb, filterPlaceholder, usePersistedState, treeSource, treemapRenderer }) {
   const location = useLocation();
   const baseRe = new RegExp(`^${routeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`);
   const splat = location.pathname.replace(baseRe, "");
-  const parsed = useMemo4(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
-  const texty = useMemo4(() => extraTexty ? /* @__PURE__ */ new Set([...TEXTY, ...extraTexty]) : TEXTY, [extraTexty]);
-  const crumbs = useMemo4(() => {
+  const parsed = useMemo7(() => parsePath(splat, { rootPrefix, extraTexty }), [splat, rootPrefix, extraTexty]);
+  const texty = useMemo7(() => extraTexty ? /* @__PURE__ */ new Set([...TEXTY, ...extraTexty]) : TEXTY, [extraTexty]);
+  const crumbs = useMemo7(() => {
     const tree = buildCrumbs(parsed, routeBase, rootPrefix, store.describe?.() ?? "root");
     return home ? [{ label: home.label, to: home.href, kind: "home" }, ...tree] : tree;
   }, [parsed, routeBase, rootPrefix, home]);
@@ -1499,12 +1596,12 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleH
     ...parsed.kind === "zipEntry" || parsed.kind === "tarEntry" ? { entry: parsed.entry } : {}
   };
   const actionsNode = ctx && viewerActions ? viewerActions(ctx) : null;
-  const right = downloadHref || actionsNode ? /* @__PURE__ */ jsxs11("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.6em" }, children: [
+  const right = downloadHref || actionsNode ? /* @__PURE__ */ jsxs12("span", { style: { display: "inline-flex", alignItems: "center", gap: "0.6em" }, children: [
     actionsNode,
-    downloadHref && /* @__PURE__ */ jsx12(DownloadIcon, { href: downloadHref, name: downloadName })
+    downloadHref && /* @__PURE__ */ jsx14(DownloadIcon, { href: downloadHref, name: downloadName })
   ] }) : void 0;
-  return /* @__PURE__ */ jsxs11("div", { className, style, children: [
-    title && /* @__PURE__ */ jsx12("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: titleHref ? /* @__PURE__ */ jsx12(
+  return /* @__PURE__ */ jsxs12("div", { className, style, children: [
+    title && /* @__PURE__ */ jsx14("h1", { style: { fontSize: "1.4em", margin: "0 0 0.3em" }, children: titleHref ? /* @__PURE__ */ jsx14(
       "a",
       {
         href: titleHref,
@@ -1518,23 +1615,23 @@ function FileTree({ store, routeBase, rootPrefix = "", extraTexty, title, titleH
         children: title
       }
     ) : title }),
-    /* @__PURE__ */ jsx12(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
-    /* @__PURE__ */ jsx12(Body, { store, parsed, texty, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer })
+    /* @__PURE__ */ jsx14(Breadcrumb, { crumbs, rightSlot: right, renderCrumb }),
+    /* @__PURE__ */ jsx14(Body, { store, parsed, texty, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer })
   ] });
 }
 function Body(props) {
   const { store, parsed, texty, routeBase, rootPrefix, markdownRenderer, parquetRenderer, parquetOptions, viewers, jsonRenderer, jsonlRenderer, csvRenderer, notebookRenderer, pdfRenderer, codeRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource, treemapRenderer } = props;
-  const inner = (s, key) => /* @__PURE__ */ jsx12(Body, { ...props, store: s, parsed: parseFileKey(key, texty) });
-  const navigate = useNavigate2();
+  const inner = (s, key) => /* @__PURE__ */ jsx14(Body, { ...props, store: s, parsed: parseFileKey(key, texty) });
+  const navigate = useNavigate3();
   if (parsed.kind !== "dir" && parsed.kind !== "zipEntry" && parsed.kind !== "tarEntry") {
     const entry = findViewer(viewers, parsed.path);
-    if (entry) return /* @__PURE__ */ jsx12(RegistryViewer, { entry, store, path: parsed.path, usePersistedState });
+    if (entry) return /* @__PURE__ */ jsx14(RegistryViewer, { entry, store, path: parsed.path, usePersistedState });
   }
   switch (parsed.kind) {
     case "dir": {
-      const listing = /* @__PURE__ */ jsx12(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource });
+      const listing = /* @__PURE__ */ jsx14(DirListing, { store, prefix: parsed.prefix, routeBase, rootPrefix, markdownRenderer, renderCell, filterPlaceholder, usePersistedState, treeSource });
       if (!treeSource || !treemapRenderer) return listing;
-      return /* @__PURE__ */ jsx12(
+      return /* @__PURE__ */ jsx14(
         DirView,
         {
           treeSource,
@@ -1556,13 +1653,13 @@ function Body(props) {
       const lang = CODE_LANG[ext];
       if (isCsv && csvRenderer) {
         const Component = csvRenderer;
-        return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
+        return /* @__PURE__ */ jsx14(Component, { store, path: parsed.path, delimiter: ext === "tsv" ? "	" : ",", usePersistedState });
       }
       if (JSONL.has(ext) && jsonlRenderer) {
         const Component = jsonlRenderer;
-        return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, usePersistedState });
+        return /* @__PURE__ */ jsx14(Component, { store, path: parsed.path, usePersistedState });
       }
-      return /* @__PURE__ */ jsx12(
+      return /* @__PURE__ */ jsx14(
         TextViewer,
         {
           store,
@@ -1576,57 +1673,57 @@ function Body(props) {
       );
     }
     case "zip":
-      return /* @__PURE__ */ jsx12(ZipEntryList, { store, path: parsed.path, routeBase, rootPrefix });
+      return /* @__PURE__ */ jsx14(ZipEntryList, { store, path: parsed.path, routeBase, rootPrefix, markdownRenderer });
     case "zipEntry":
-      return /* @__PURE__ */ jsx12(ZipEntryPreview, { store, path: parsed.path, entry: parsed.entry, markdownRenderer });
+      return /* @__PURE__ */ jsx14(ZipEntryPreview, { store, path: parsed.path, entry: parsed.entry, markdownRenderer });
     case "tar":
-      return /* @__PURE__ */ jsx12(TarEntryList, { store, path: parsed.path, codec: parsed.codec, routeBase, rootPrefix });
+      return /* @__PURE__ */ jsx14(TarEntryList, { store, path: parsed.path, codec: parsed.codec, routeBase, rootPrefix, markdownRenderer });
     case "tarEntry":
-      return /* @__PURE__ */ jsx12(TarMember, { store, path: parsed.path, entry: parsed.entry, codec: parsed.codec, render: inner });
+      return /* @__PURE__ */ jsx14(TarMember, { store, path: parsed.path, entry: parsed.entry, codec: parsed.codec, render: inner });
     case "compressed":
-      return /* @__PURE__ */ jsx12(CompressedView, { store, path: parsed.path, codec: parsed.codec, inner: parsed.inner, render: inner });
+      return /* @__PURE__ */ jsx14(CompressedView, { store, path: parsed.path, codec: parsed.codec, inner: parsed.inner, render: inner });
     case "parquet": {
-      if (!parquetRenderer) return /* @__PURE__ */ jsx12(UnsupportedView, { label: "Parquet preview" });
+      if (!parquetRenderer) return /* @__PURE__ */ jsx14(UnsupportedView, { label: "Parquet preview" });
       const Component = parquetRenderer;
-      return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, usePersistedState, ...parquetOptions });
+      return /* @__PURE__ */ jsx14(Component, { store, path: parsed.path, usePersistedState, ...parquetOptions });
     }
     case "notebook": {
-      if (!notebookRenderer) return /* @__PURE__ */ jsx12(UnsupportedView, { label: "Notebook preview" });
+      if (!notebookRenderer) return /* @__PURE__ */ jsx14(UnsupportedView, { label: "Notebook preview" });
       const Component = notebookRenderer;
-      return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, usePersistedState });
+      return /* @__PURE__ */ jsx14(Component, { store, path: parsed.path, usePersistedState });
     }
     case "image":
-      return /* @__PURE__ */ jsx12(MediaViewer, { store, path: parsed.path, kind: "image" });
+      return /* @__PURE__ */ jsx14(MediaViewer, { store, path: parsed.path, kind: "image" });
     case "video":
-      return /* @__PURE__ */ jsx12(MediaViewer, { store, path: parsed.path, kind: "video" });
+      return /* @__PURE__ */ jsx14(MediaViewer, { store, path: parsed.path, kind: "video" });
     case "audio":
-      return /* @__PURE__ */ jsx12(MediaViewer, { store, path: parsed.path, kind: "audio" });
+      return /* @__PURE__ */ jsx14(MediaViewer, { store, path: parsed.path, kind: "audio" });
     case "pdf": {
       if (pdfRenderer) {
         const Component = pdfRenderer;
-        return /* @__PURE__ */ jsx12(Component, { store, path: parsed.path, usePersistedState });
+        return /* @__PURE__ */ jsx14(Component, { store, path: parsed.path, usePersistedState });
       }
-      return /* @__PURE__ */ jsx12(PdfViewer, { store, path: parsed.path });
+      return /* @__PURE__ */ jsx14(PdfViewer, { store, path: parsed.path });
     }
     case "binary":
-      return /* @__PURE__ */ jsx12(BinaryView, { store, path: parsed.path });
+      return /* @__PURE__ */ jsx14(BinaryView, { store, path: parsed.path });
   }
 }
 function DirView({ treeSource, treemapRenderer: Map2, prefix, routeBase, rootPrefix, rootLabel, usePersistedState, listing }) {
   const use = usePersistedState ?? defaultUseState;
-  const navigate = useNavigate2();
+  const navigate = useNavigate3();
   const [stored, setView] = use("view", "split");
   const view = stored === "tree" || stored === "split" ? stored : "list";
   const treePath = keyToSplat(prefix, rootPrefix).replace(/\/+$/, "");
-  const [hovered, setHovered] = useState11(null);
-  const [selected, setSelected] = useState11(null);
-  useEffect10(() => {
+  const [hovered, setHovered] = useState12(null);
+  const [selected, setSelected] = useState12(null);
+  useEffect11(() => {
     setSelected(null);
     setHovered(null);
   }, [treePath]);
   const baseTrimmed = routeBase.replace(/\/+$/, "");
   const navigateTo = (p) => navigate(`${baseTrimmed}/${p}/`);
-  const map = (height, onHover) => /* @__PURE__ */ jsx12(
+  const map = (height, onHover) => /* @__PURE__ */ jsx14(
     Map2,
     {
       source: treeSource,
@@ -1644,18 +1741,18 @@ function DirView({ treeSource, treemapRenderer: Map2, prefix, routeBase, rootPre
     listing,
     { highlightedPath: hovered, selectedPath: selected, onHoverPath: setHovered }
   ) : listing;
-  return /* @__PURE__ */ jsxs11("div", { children: [
-    /* @__PURE__ */ jsx12(ViewToggle, { view, setView }),
+  return /* @__PURE__ */ jsxs12("div", { children: [
+    /* @__PURE__ */ jsx14(ViewToggle, { view, setView }),
     view === "tree" && map(),
     view === "list" && listing,
-    view === "split" && /* @__PURE__ */ jsxs11("div", { style: { display: "flex", flexDirection: "column", gap: "1em" }, children: [
+    view === "split" && /* @__PURE__ */ jsxs12("div", { style: { display: "flex", flexDirection: "column", gap: "1em" }, children: [
       scrubListing,
       map("45vh", setHovered)
     ] })
   ] });
 }
 function ViewToggle({ view, setView }) {
-  const btn = (v, label, path) => /* @__PURE__ */ jsx12(
+  const btn = (v, label, path) => /* @__PURE__ */ jsx14(
     "button",
     {
       type: "button",
@@ -1673,36 +1770,36 @@ function ViewToggle({ view, setView }) {
         color: "inherit",
         lineHeight: 1
       },
-      children: /* @__PURE__ */ jsx12("svg", { viewBox: "0 0 24 24", width: "1.15em", height: "1.15em", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: path })
+      children: /* @__PURE__ */ jsx14("svg", { viewBox: "0 0 24 24", width: "1.15em", height: "1.15em", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: path })
     }
   );
-  return /* @__PURE__ */ jsxs11("div", { style: { display: "inline-flex", gap: 0, marginBottom: "0.5em" }, role: "group", "aria-label": "View", children: [
-    btn("list", "List view", /* @__PURE__ */ jsxs11(Fragment8, { children: [
-      /* @__PURE__ */ jsx12("path", { d: "M8 6h13" }),
-      /* @__PURE__ */ jsx12("path", { d: "M8 12h13" }),
-      /* @__PURE__ */ jsx12("path", { d: "M8 18h13" }),
-      /* @__PURE__ */ jsx12("path", { d: "M3 6h.01" }),
-      /* @__PURE__ */ jsx12("path", { d: "M3 12h.01" }),
-      /* @__PURE__ */ jsx12("path", { d: "M3 18h.01" })
+  return /* @__PURE__ */ jsxs12("div", { style: { display: "inline-flex", gap: 0, marginBottom: "0.5em" }, role: "group", "aria-label": "View", children: [
+    btn("list", "List view", /* @__PURE__ */ jsxs12(Fragment8, { children: [
+      /* @__PURE__ */ jsx14("path", { d: "M8 6h13" }),
+      /* @__PURE__ */ jsx14("path", { d: "M8 12h13" }),
+      /* @__PURE__ */ jsx14("path", { d: "M8 18h13" }),
+      /* @__PURE__ */ jsx14("path", { d: "M3 6h.01" }),
+      /* @__PURE__ */ jsx14("path", { d: "M3 12h.01" }),
+      /* @__PURE__ */ jsx14("path", { d: "M3 18h.01" })
     ] })),
-    btn("tree", "Treemap view", /* @__PURE__ */ jsxs11(Fragment8, { children: [
-      /* @__PURE__ */ jsx12("rect", { x: "3", y: "3", width: "8", height: "8", rx: "1" }),
-      /* @__PURE__ */ jsx12("rect", { x: "13", y: "3", width: "8", height: "5", rx: "1" }),
-      /* @__PURE__ */ jsx12("rect", { x: "13", y: "10", width: "8", height: "11", rx: "1" }),
-      /* @__PURE__ */ jsx12("rect", { x: "3", y: "13", width: "8", height: "8", rx: "1" })
+    btn("tree", "Treemap view", /* @__PURE__ */ jsxs12(Fragment8, { children: [
+      /* @__PURE__ */ jsx14("rect", { x: "3", y: "3", width: "8", height: "8", rx: "1" }),
+      /* @__PURE__ */ jsx14("rect", { x: "13", y: "3", width: "8", height: "5", rx: "1" }),
+      /* @__PURE__ */ jsx14("rect", { x: "13", y: "10", width: "8", height: "11", rx: "1" }),
+      /* @__PURE__ */ jsx14("rect", { x: "3", y: "13", width: "8", height: "8", rx: "1" })
     ] })),
-    btn("split", "Split view (list + map)", /* @__PURE__ */ jsxs11(Fragment8, { children: [
-      /* @__PURE__ */ jsx12("path", { d: "M4 6h16" }),
-      /* @__PURE__ */ jsx12("path", { d: "M4 9h16" }),
-      /* @__PURE__ */ jsx12("rect", { x: "4", y: "13", width: "7", height: "7", rx: "1" }),
-      /* @__PURE__ */ jsx12("rect", { x: "13", y: "13", width: "7", height: "7", rx: "1" })
+    btn("split", "Split view (list + map)", /* @__PURE__ */ jsxs12(Fragment8, { children: [
+      /* @__PURE__ */ jsx14("path", { d: "M4 6h16" }),
+      /* @__PURE__ */ jsx14("path", { d: "M4 9h16" }),
+      /* @__PURE__ */ jsx14("rect", { x: "4", y: "13", width: "7", height: "7", rx: "1" }),
+      /* @__PURE__ */ jsx14("rect", { x: "13", y: "13", width: "7", height: "7", rx: "1" })
     ] }))
   ] });
 }
 function useDownloadHref(store, path) {
   const syncHref = path != null && typeof store.getUrl === "function" ? store.getUrl(path) : null;
-  const [asyncHref, setAsyncHref] = useState11(null);
-  useEffect10(() => {
+  const [asyncHref, setAsyncHref] = useState12(null);
+  useEffect11(() => {
     if (path == null || typeof store.getDownloadUrl !== "function") {
       setAsyncHref(null);
       return;
@@ -1726,7 +1823,7 @@ function useDownloadHref(store, path) {
   return syncHref;
 }
 function DownloadIcon({ href, name }) {
-  return /* @__PURE__ */ jsx12(
+  return /* @__PURE__ */ jsx14(
     "a",
     {
       href,
@@ -1734,7 +1831,7 @@ function DownloadIcon({ href, name }) {
       title: `Download ${name}`,
       "aria-label": `Download ${name}`,
       style: { textDecoration: "none", display: "inline-block", lineHeight: 1, verticalAlign: "middle" },
-      children: /* @__PURE__ */ jsxs11(
+      children: /* @__PURE__ */ jsxs12(
         "svg",
         {
           viewBox: "0 0 24 24",
@@ -1747,9 +1844,9 @@ function DownloadIcon({ href, name }) {
           strokeLinejoin: "round",
           "aria-hidden": "true",
           children: [
-            /* @__PURE__ */ jsx12("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
-            /* @__PURE__ */ jsx12("path", { d: "M16.5 12 12 16.5 7.5 12" }),
-            /* @__PURE__ */ jsx12("path", { d: "M12 3v13.5" })
+            /* @__PURE__ */ jsx14("path", { d: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" }),
+            /* @__PURE__ */ jsx14("path", { d: "M16.5 12 12 16.5 7.5 12" }),
+            /* @__PURE__ */ jsx14("path", { d: "M12 3v13.5" })
           ]
         }
       )
@@ -1757,7 +1854,7 @@ function DownloadIcon({ href, name }) {
   );
 }
 function UnsupportedView({ label }) {
-  return /* @__PURE__ */ jsxs11("div", { style: { opacity: 0.7 }, children: [
+  return /* @__PURE__ */ jsxs12("div", { style: { opacity: 0.7 }, children: [
     label,
     " not yet supported in this version."
   ] });
@@ -2210,9 +2307,12 @@ export {
   parseFileKey,
   parsePath,
   parseTar,
+  pickArchiveReadme,
+  pickReadme,
   readTar,
   readZipEntries,
   readZipEntry,
+  readmeFormat,
   resolveTreeHref,
   resolveTreeKey,
   tarCodec,
